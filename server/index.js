@@ -38,10 +38,22 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Production: Serve frontend build files
+const publicPath = path.join(__dirname, 'public');
+app.use(express.static(publicPath));
+app.get('*', (req, res) => {
+    const indexPath = path.join(publicPath, 'index.html');
+    if (require('fs').existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).json({ error: 'Frontend build not found. Run: cd client && npm run build' });
+    }
+});
+
 // WebSocket for console
 setupWebSocket(server);
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.error(`[KnozySunucu] Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Sunucu Paneli] Port ${PORT} uzerinde calisiyor`);
 });
