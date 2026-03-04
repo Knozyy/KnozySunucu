@@ -29,6 +29,37 @@ router.delete('/:name', authMiddleware, (req, res) => {
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// Drag & Drop mod yükleme
+const multer = require('multer');
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const modsDir = path.join(process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server', 'mods');
+        if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
+        cb(null, modsDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, file.originalname);
+    },
+});
+const upload = multer({
+    storage,
+    limits: { fileSize: 200 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!file.originalname.endsWith('.jar')) {
+            return cb(new Error('Sadece .jar dosyaları yüklenebilir'));
+        }
+        cb(null, true);
+    },
+});
+
+router.post('/upload', authMiddleware, upload.array('mods', 20), (req, res) => {
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'Dosya yüklenmedi' });
+    }
+    const names = req.files.map(f => f.originalname);
+    res.json({ message: `${names.length} mod yüklendi`, files: names });
+});
+
 // CurseForge mod arama
 router.get('/search', authMiddleware, async (req, res) => {
     try {

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import {
     HiOutlinePuzzlePiece, HiOutlineTrash, HiOutlineCheck,
     HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineArrowDownTray,
-    HiOutlineDocumentText, HiOutlinePencil,
+    HiOutlineDocumentText, HiOutlinePencil, HiOutlineCloudArrowUp,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
@@ -20,6 +20,7 @@ export default function ModsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [editingConfig, setEditingConfig] = useState(null);
     const [configContent, setConfigContent] = useState('');
+    const [isDragging, setIsDragging] = useState(false);
     const queryClient = useQueryClient();
 
     const { data, isLoading } = useQuery({
@@ -66,10 +67,46 @@ export default function ModsPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Kaydedilemedi'),
     });
 
+    const uploadMutation = useMutation({
+        mutationFn: (files) => {
+            const formData = new FormData();
+            for (const file of files) formData.append('mods', file);
+            return api.post('/mods/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        },
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            queryClient.invalidateQueries({ queryKey: ['mods'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
+    });
+
     const handleSearch = (e) => {
         e.preventDefault();
         if (!searchQuery.trim()) return;
         doSearch();
+    };
+
+    const handleDrop = useCallback((e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.jar'));
+        if (files.length === 0) { toast.error('Sadece .jar dosyaları yüklenebilir'); return; }
+        uploadMutation.mutate(files);
+    }, [uploadMutation]);
+
+    const handleDragOver = useCallback((e) => { e.preventDefault(); setIsDragging(true); }, []);
+    const handleDragLeave = useCallback(() => setIsDragging(false), []);
+
+    const handleFileSelect = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = '.jar';
+        input.onchange = (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length > 0) uploadMutation.mutate(files);
+        };
+        input.click();
     };
 
     const openConfig = async (file) => {
@@ -159,38 +196,67 @@ export default function ModsPage() {
 
             {/* Installed Mods */}
             {activeTab === 'installed' && (
-                <div className="glass-card overflow-hidden fade-in">
-                    {isLoading ? (
-                        <div className="p-8 text-center text-gray-400">Yükleniyor...</div>
-                    ) : mods.length > 0 ? mods.map(mod => (
-                        <div key={mod.name} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors group">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mod.enabled ? 'bg-green-50' : 'bg-gray-100'}`}>
-                                <HiOutlinePuzzlePiece className={`w-4 h-4 ${mod.enabled ? 'text-green-600' : 'text-gray-400'}`} />
+                <>
+                    {/* Drag & Drop Zone */}
+                    <div
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onClick={handleFileSelect}
+                        className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all fade-in ${isDragging
+                                ? 'border-gray-900 bg-gray-50 dark:bg-gray-800 scale-[1.02]'
+                                : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50/50'
+                            }`}
+                    >
+                        {uploadMutation.isPending ? (
+                            <div className="flex items-center justify-center gap-3">
+                                <div className="w-6 h-6 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                                <span className="text-sm font-medium text-gray-700">Yükleniyor...</span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium truncate ${mod.enabled ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{mod.name}</p>
-                                <p className="text-xs text-gray-400">{formatSize(mod.size)}</p>
+                        ) : (
+                            <>
+                                <HiOutlineCloudArrowUp className={`w-10 h-10 mx-auto mb-3 transition-colors ${isDragging ? 'text-gray-900' : 'text-gray-300'}`} />
+                                <p className="text-sm font-medium text-gray-600">
+                                    {isDragging ? 'Bırakarak yükle!' : '.jar dosyalarını sürükle & bırak veya tıkla'}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-1">Birden fazla mod aynı anda yüklenebilir (max 200MB)</p>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="glass-card overflow-hidden fade-in">
+                        {isLoading ? (
+                            <div className="p-8 text-center text-gray-400">Yükleniyor...</div>
+                        ) : mods.length > 0 ? mods.map(mod => (
+                            <div key={mod.name} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors group">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mod.enabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                                    <HiOutlinePuzzlePiece className={`w-4 h-4 ${mod.enabled ? 'text-green-600' : 'text-gray-400'}`} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className={`text-sm font-medium truncate ${mod.enabled ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{mod.name}</p>
+                                    <p className="text-xs text-gray-400">{formatSize(mod.size)}</p>
+                                </div>
+                                <button
+                                    onClick={() => toggleMutation.mutate({ name: mod.name, enabled: mod.enabled })}
+                                    className={`p-2 rounded-lg transition-colors ${mod.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                >
+                                    {mod.enabled ? <HiOutlineCheck className="w-4 h-4" /> : <HiOutlineXMark className="w-4 h-4" />}
+                                </button>
+                                <button
+                                    onClick={() => { if (confirm(`${mod.name} kalıcı olarak silinecek. Emin misiniz?`)) deleteMutation.mutate(mod.name); }}
+                                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-2"
+                                >
+                                    <HiOutlineTrash className="w-4 h-4" />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => toggleMutation.mutate({ name: mod.name, enabled: mod.enabled })}
-                                className={`p-2 rounded-lg transition-colors ${mod.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                            >
-                                {mod.enabled ? <HiOutlineCheck className="w-4 h-4" /> : <HiOutlineXMark className="w-4 h-4" />}
-                            </button>
-                            <button
-                                onClick={() => { if (confirm(`${mod.name} kalıcı olarak silinecek. Emin misiniz?`)) deleteMutation.mutate(mod.name); }}
-                                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-2"
-                            >
-                                <HiOutlineTrash className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )) : (
-                        <div className="p-8 text-center text-gray-400">
-                            <HiOutlinePuzzlePiece className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                            <p>mods/ klasöründe mod bulunamadı</p>
-                        </div>
-                    )}
-                </div>
+                        )) : (
+                            <div className="p-8 text-center text-gray-400">
+                                <HiOutlinePuzzlePiece className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                <p>mods/ klasöründe mod bulunamadı</p>
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Config Editor */}
