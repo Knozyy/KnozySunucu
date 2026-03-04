@@ -55,7 +55,7 @@ app.get('/api/health', (req, res) => {
 // Production: Serve frontend build files
 const publicPath = path.join(__dirname, 'public');
 app.use(express.static(publicPath));
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
     const indexPath = path.join(publicPath, 'index.html');
     if (require('fs').existsSync(indexPath)) {
         res.sendFile(indexPath);
