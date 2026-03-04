@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineCog6Tooth,
     HiOutlineArrowPath,
@@ -104,12 +105,14 @@ export default function SettingsPage() {
         || JSON.stringify(currentRam) !== JSON.stringify(ramSettings);
     const isSaving = savePropertiesMutation.isPending || saveRamMutation.isPending;
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between fade-in">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Sunucu Ayarları</h1>
-                    <p className="text-gray-500">RAM, JVM ve server.properties ayarları</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('settings.title')}</h1>
+                    <p className="text-gray-500">{t('settings.subtitle')}</p>
                 </div>
                 <button onClick={handleSaveAll} disabled={!hasChanges || isSaving} className="btn-primary">
                     {isSaving ? (

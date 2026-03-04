@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlinePuzzlePiece, HiOutlineTrash, HiOutlineCheck,
     HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineArrowDownTray,
@@ -128,10 +129,12 @@ export default function ModsPage() {
         { id: 'configs', label: 'Config Editörü' },
     ];
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Mod Yönetimi</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('mods.title')}</h1>
                 <p className="text-gray-500">{count.active} aktif, {count.disabled} devre dışı — toplam {count.total} mod</p>
             </div>
 
@@ -204,8 +207,8 @@ export default function ModsPage() {
                         onDragLeave={handleDragLeave}
                         onClick={handleFileSelect}
                         className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all fade-in ${isDragging
-                                ? 'border-gray-900 bg-gray-50 dark:bg-gray-800 scale-[1.02]'
-                                : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50/50'
+                            ? 'border-gray-900 bg-gray-50 dark:bg-gray-800 scale-[1.02]'
+                            : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50/50'
                             }`}
                     >
                         {uploadMutation.isPending ? (

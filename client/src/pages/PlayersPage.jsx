@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineUserPlus, HiOutlineTrash, HiOutlineShieldCheck,
     HiOutlineNoSymbol, HiOutlineUsers,
@@ -69,11 +70,13 @@ export default function PlayersPage() {
         else unbanPlayer.mutate(name);
     };
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Oyuncu Yönetimi</h1>
-                <p className="text-gray-500">Whitelist, operatör ve ban yönetimi</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('players.title')}</h1>
+                <p className="text-gray-500">{t('players.subtitle')}</p>
             </div>
 
             <div className="flex gap-2 fade-in">

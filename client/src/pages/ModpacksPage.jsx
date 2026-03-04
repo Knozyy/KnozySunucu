@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineMagnifyingGlass,
     HiOutlineArrowDownTray,
@@ -91,11 +92,13 @@ export default function ModpacksPage() {
 
     const isInstalling = installMutation.isPending || installStatusData?.isInstalling;
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Modpack Yönetimi</h1>
-                <p className="text-gray-500">CurseForge modpack&apos;leri arayın ve yönetin</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('modpacks.title')}</h1>
+                <p className="text-gray-500">{t('modpacks.subtitle')}</p>
             </div>
 
             {/* Tabs */}

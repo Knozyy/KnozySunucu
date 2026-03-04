@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import { formatBytes, formatUptime } from '@/utils/formatters';
 import {
     HiOutlineCpuChip,
@@ -127,11 +128,13 @@ export default function DashboardPage() {
     const mainDisk = usage?.disk?.[0];
     const diskPercent = mainDisk?.usePercent || 0;
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-                <p className="text-gray-500">Sistem durumu ve kaynak kullanımı</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h1>
+                <p className="text-gray-500">{t('dashboard.subtitle')}</p>
             </div>
 
             {/* Güncelleme Uyarısı */}

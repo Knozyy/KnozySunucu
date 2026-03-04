@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
+import { useI18n } from '@/context/I18nContext';
 import { formatBytes } from '@/utils/formatters';
 import { HiOutlineDocumentText, HiOutlineArrowPath } from 'react-icons/hi2';
 
@@ -26,11 +27,13 @@ export default function LogsPage() {
 
     const logContent = selectedFile ? fileContent?.content : latestLog?.content;
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between fade-in">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Loglar</h1>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('nav.logs')}</h1>
                     <p className="text-gray-500">Sunucu log dosyalarını görüntüle</p>
                 </div>
                 <button onClick={() => { setSelectedFile(null); refetchLatest(); }} className="btn-secondary">

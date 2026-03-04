@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineClock, HiOutlineTrash, HiOutlinePlus,
     HiOutlinePlay, HiOutlinePause,
@@ -39,12 +40,14 @@ export default function SchedulerPage() {
         webhook: '🔔 Webhook Gönder',
     };
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Zamanlanmış Görevler</h1>
-                    <p className="text-gray-500">Otomatik işlemleri planla</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('scheduler.title')}</h1>
+                    <p className="text-gray-500">{t('scheduler.subtitle')}</p>
                 </div>
                 <button onClick={() => setShowForm(!showForm)} className="btn-primary">
                     <HiOutlinePlus className="w-5 h-5" /> Yeni Görev

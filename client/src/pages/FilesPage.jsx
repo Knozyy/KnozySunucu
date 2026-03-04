@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineFolder, HiOutlineDocument, HiOutlineArrowLeft,
     HiOutlineTrash, HiOutlinePencil, HiOutlineFolderPlus,
@@ -75,11 +76,13 @@ export default function FilesPage() {
 
     const pathParts = currentPath.split('/').filter(Boolean);
 
+    const { t } = useI18n();
+
     return (
         <div className="space-y-6">
             <div className="fade-in flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Dosya Yöneticisi</h1>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('files.title')}</h1>
                     <div className="flex items-center gap-1 text-sm text-gray-500">
                         <button onClick={() => { setCurrentPath(''); setEditingFile(null); }} className="hover:text-gray-900 transition-colors">root</button>
                         {pathParts.map((part, i) => (

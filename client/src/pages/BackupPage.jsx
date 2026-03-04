@@ -2,10 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatBytes, formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
+import { useI18n } from '@/context/I18nContext';
 import { HiOutlineArchiveBox, HiOutlinePlus, HiOutlineTrash, HiOutlineArrowPath } from 'react-icons/hi2';
 
 export default function BackupPage() {
     const queryClient = useQueryClient();
+    const { t } = useI18n();
 
     const { data, isLoading } = useQuery({
         queryKey: ['backups'],
@@ -51,7 +53,7 @@ export default function BackupPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between fade-in">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Yedekleme</h1>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('nav.backup')}</h1>
                     <p className="text-gray-500">Dünya ve konfigürasyon yedeklerini yönet</p>
                 </div>
                 <button onClick={handleCreate} disabled={createMutation.isPending} className="btn-primary">

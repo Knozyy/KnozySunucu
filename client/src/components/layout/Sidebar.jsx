@@ -11,18 +11,18 @@ import {
 } from 'react-icons/hi2';
 
 const navItems = [
-    { path: '/', label: 'Dashboard', icon: HiOutlineHome },
-    { path: '/server', label: 'Sunucu', icon: HiOutlineServer },
-    { path: '/modpacks', label: 'Modpackler', icon: HiOutlinePuzzlePiece },
-    { path: '/mods', label: 'Modlar', icon: HiOutlineCube },
-    { path: '/console', label: 'Konsol', icon: HiOutlineCommandLine },
-    { path: '/files', label: 'Dosyalar', icon: HiOutlineFolder },
-    { path: '/players', label: 'Oyuncular', icon: HiOutlineUsers },
-    { path: '/worlds', label: 'Dünyalar', icon: HiOutlineGlobeAlt },
-    { path: '/scheduler', label: 'Görevler', icon: HiOutlineClock },
-    { path: '/settings', label: 'Ayarlar', icon: HiOutlineCog6Tooth },
-    { path: '/backup', label: 'Yedekleme', icon: HiOutlineArchiveBox },
-    { path: '/logs', label: 'Loglar', icon: HiOutlineDocumentText },
+    { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
+    { path: '/server', i18nKey: 'nav.server', icon: HiOutlineServer },
+    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece },
+    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube },
+    { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
+    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder },
+    { path: '/players', i18nKey: 'nav.players', icon: HiOutlineUsers },
+    { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
+    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock },
+    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth },
+    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox },
+    { path: '/logs', i18nKey: 'nav.logs', icon: HiOutlineDocumentText },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -74,7 +74,7 @@ export default function Sidebar({ isOpen, onClose }) {
                                     end={item.path === '/'}
                                 >
                                     <item.icon className="w-5 h-5 flex-shrink-0" />
-                                    <span>{item.label}</span>
+                                    <span>{t(item.i18nKey)}</span>
                                 </NavLink>
                             </li>
                         ))}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineCommandLine,
     HiOutlineSignal,
@@ -11,6 +12,7 @@ import {
 export default function ConsolePage() {
     const { token } = useAuth();
     const { logs, status, connected, sendCommand, clearLogs } = useWebSocket(token);
+    const { t } = useI18n();
     const [command, setCommand] = useState('');
     const [commandHistory, setCommandHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -55,16 +57,16 @@ export default function ConsolePage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between fade-in">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Konsol</h1>
-                    <p className="text-gray-500">Sunucu konsoluna komut gönder</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('console.title')}</h1>
+                    <p className="text-gray-500">{t('console.subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <span className={`flex items-center gap-2 text-sm ${connected ? 'text-green-600' : 'text-red-500'}`}>
                         <HiOutlineSignal className="w-4 h-4" />
-                        {connected ? 'Bağlı' : 'Bağlantı Yok'}
+                        {connected ? t('console.connected') : t('console.disconnected')}
                     </span>
                     <button onClick={clearLogs} className="btn-secondary text-xs py-1.5 px-3">
-                        <HiOutlineTrash className="w-4 h-4" /> Temizle
+                        <HiOutlineTrash className="w-4 h-4" /> {t('console.clear')}
                     </button>
                 </div>
             </div>

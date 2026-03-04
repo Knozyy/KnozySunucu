@@ -43,10 +43,114 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  .dark body,
-  body:where(.dark *) {
+  /* Dark mode global overrides */
+  html.dark body {
     background: #0F172A;
     color: #E2E8F0;
+  }
+
+  /* Dark mode - tüm sayfalardaki text renklerini okunaklı yap */
+  html.dark h1,
+  html.dark h2,
+  html.dark h3,
+  html.dark h4 {
+    color: #F1F5F9 !important;
+  }
+
+  html.dark p,
+  html.dark span,
+  html.dark label {
+    color: inherit;
+  }
+
+  /* Gray-900 text → light in dark mode */
+  html.dark .text-gray-900 {
+    color: #F1F5F9;
+  }
+
+  html.dark .text-gray-800 {
+    color: #E2E8F0;
+  }
+
+  html.dark .text-gray-700 {
+    color: #CBD5E1;
+  }
+
+  html.dark .text-gray-600 {
+    color: #94A3B8;
+  }
+
+  html.dark .text-gray-500 {
+    color: #94A3B8;
+  }
+
+  /* Background overrides for dark mode */
+  html.dark .bg-gray-50 {
+    background-color: #1E293B;
+  }
+
+  html.dark .bg-gray-100 {
+    background-color: #334155;
+  }
+
+  html.dark .bg-white {
+    background-color: #1E293B;
+  }
+
+  /* Border overrides */
+  html.dark .border-gray-50 {
+    border-color: #1E293B;
+  }
+
+  html.dark .border-gray-100 {
+    border-color: #334155;
+  }
+
+  html.dark .border-gray-200 {
+    border-color: #334155;
+  }
+
+  /* Hover states */
+  html.dark .hover\:bg-gray-50:hover {
+    background-color: #334155;
+  }
+
+  html.dark .hover\:bg-gray-100:hover {
+    background-color: #475569;
+  }
+
+  html.dark .hover\:text-gray-900:hover {
+    color: #F1F5F9;
+  }
+
+  /* Form elements */
+  html.dark input,
+  html.dark textarea,
+  html.dark select {
+    background-color: #1E293B;
+    color: #E2E8F0;
+    border-color: #334155;
+  }
+
+  html.dark input:focus,
+  html.dark textarea:focus,
+  html.dark select:focus {
+    border-color: #64748B;
+  }
+
+  html.dark input::placeholder,
+  html.dark textarea::placeholder {
+    color: #64748B;
+  }
+
+  /* Table-like rows */
+  html.dark .divide-gray-100> :not([hidden])~ :not([hidden]) {
+    border-color: #334155;
+  }
+
+  /* MainLayout bg */
+  html.dark main {
+    background: #0F172A;
   }
 
   ::-webkit-scrollbar {
@@ -58,9 +162,17 @@
     background: var(--color-surface-dark);
   }
 
+  html.dark ::-webkit-scrollbar-track {
+    background: #0F172A;
+  }
+
   ::-webkit-scrollbar-thumb {
     background: var(--color-border);
     border-radius: 3px;
+  }
+
+  html.dark ::-webkit-scrollbar-thumb {
+    background: #475569;
   }
 
   ::-webkit-scrollbar-thumb:hover {
