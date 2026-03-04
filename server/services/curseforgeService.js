@@ -243,7 +243,7 @@ class CurseForgeService {
 
             // 4. İndir
             this._updateProgress('İndiriliyor', 20, 'Modpack indiriliyor...');
-            const destPath = path.join(modsDir, selectedFile.fileName);
+            const destPath = path.join(profilePath, selectedFile.fileName); // Direkt profile path'e indir
             await this.downloadFile(downloadUrl, destPath, (pct, downloaded, total) => {
                 const overallPct = 20 + Math.floor(pct * 0.5);
                 const dlMB = (downloaded / 1024 / 1024).toFixed(1);
@@ -251,11 +251,32 @@ class CurseForgeService {
                 this._updateProgress('İndiriliyor', overallPct, `${dlMB} / ${totalMB} MB`);
             });
 
-            // 5. İlk kurulumsa aktif yap
+            // 5. Arşivi Çıkart
+            if (destPath.endsWith('.zip')) {
+                this._updateProgress('Çıkartılıyor', 75, 'Sunucu dosyaları çıkartılıyor...');
+                try {
+                    const { execSync } = require('child_process');
+                    // Windows uyumluluğu için basit bir kontrol ama genel olarak Ubuntu/Linux'ta çalışacak.
+                    if (process.platform === 'win32') {
+                        execSync(`tar -xf "${destPath}" -C "${profilePath}"`);
+                    } else {
+                        execSync(`unzip -o "${destPath}" -d "${profilePath}"`);
+                    }
+                    fs.unlinkSync(destPath); // Çıkarttıktan sonra zip'i sil
+
+                    // Eğer zip içinde tek bir klasör varsa (örn: "ServerPack/"), içindeki dosyaları dışarı almamız gerekebilir.
+                    // Şimdilik sadece extract yapıyoruz, CurseForge Server Pack'leri genellikle direkt dizine oturur.
+                } catch (err) {
+                    console.error('Arşiv çıkartma hatası:', err);
+                    throw new Error('Dosyalar çıkartılamadı ("unzip" hatası).');
+                }
+            }
+
+            // 6. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
             const isFirstInstall = !existingActive;
 
-            // 6. Veritabanını güncelle
+            // 7. Veritabanını güncelle
             this._updateProgress('Kayıt', 90, 'Veritabanı güncelleniyor...');
             const stmt = db.prepare(`
                 INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status) 
