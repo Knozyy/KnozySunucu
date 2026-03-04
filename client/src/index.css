@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #374151;
   --color-primary-dark: #1F2937;
@@ -39,6 +41,12 @@
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark body,
+  body:where(.dark *) {
+    background: #0F172A;
+    color: #E2E8F0;
   }
 
   ::-webkit-scrollbar {
@@ -269,5 +277,60 @@
     border-radius: 4px;
     transition: width 0.5s ease;
     background: linear-gradient(90deg, #374151 0%, #6B7280 100%);
+  }
+
+  /* Dark mode overrides */
+  :where(.dark) .glass-card {
+    background: #1E293B;
+    border-color: #334155;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  :where(.dark) .glass-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  :where(.dark) .stat-card {
+    background: #1E293B;
+    border-color: #334155;
+  }
+
+  :where(.dark) .input-field {
+    background: #1E293B;
+    border-color: #334155;
+    color: #E2E8F0;
+  }
+
+  :where(.dark) .input-field:focus {
+    border-color: #64748B;
+    box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.2);
+  }
+
+  :where(.dark) .btn-secondary {
+    background: #1E293B;
+    color: #E2E8F0;
+    border-color: #334155;
+  }
+
+  :where(.dark) .btn-secondary:hover {
+    background: #334155;
+  }
+
+  :where(.dark) .btn-primary {
+    background: #E2E8F0;
+    color: #0F172A;
+  }
+
+  :where(.dark) .btn-primary:hover {
+    background: #CBD5E1;
+  }
+
+  :where(.dark) .skeleton {
+    background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%);
+    background-size: 200% 100%;
+  }
+
+  :where(.dark) .progress-bar {
+    background: #334155;
   }
 }

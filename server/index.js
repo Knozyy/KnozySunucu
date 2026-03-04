@@ -14,13 +14,19 @@ const modpackRoutes = require('./routes/modpacks');
 const backupRoutes = require('./routes/backup');
 const logRoutes = require('./routes/logs');
 const javaRoutes = require('./routes/java');
+const fileRoutes = require('./routes/files');
+const playerRoutes = require('./routes/players');
+const modRoutes = require('./routes/mods');
+const worldRoutes = require('./routes/worlds');
+const schedulerRoutes = require('./routes/scheduler');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 const server = http.createServer(app);
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Database
@@ -34,6 +40,12 @@ app.use('/api/modpacks', modpackRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/java', javaRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/players', playerRoutes);
+app.use('/api/mods', modRoutes);
+app.use('/api/worlds', worldRoutes);
+app.use('/api/scheduler', schedulerRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
