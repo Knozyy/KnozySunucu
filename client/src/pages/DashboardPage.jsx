@@ -267,6 +267,9 @@ export default function DashboardPage() {
                 </div>
             )}
 
+            {/* Connection Info */}
+            <ConnectionInfoWidget />
+
             {infoLoading && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {[1, 2].map(i => (
@@ -290,6 +293,48 @@ function InfoRow({ label, value }) {
         <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
             <span className="text-sm text-gray-500">{label}</span>
             <span className="text-sm text-gray-900 font-medium">{value}</span>
+        </div>
+    );
+}
+
+function ConnectionInfoWidget() {
+    const { data } = useQuery({
+        queryKey: ['connectionInfo'],
+        queryFn: () => api.get('/system/connection-info').then(r => r.data),
+        staleTime: 60000,
+    });
+
+    if (!data) return null;
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        toast.success('Kopyalandı!');
+    };
+
+    return (
+        <div className="glass-card p-6 fade-in">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <HiOutlineSignal className="w-5 h-5 text-green-600" />
+                Bağlantı Bilgisi
+            </h3>
+            <div className="space-y-3">
+                <InfoRow label="Sunucu IP (Yerel)" value={data.localIp} />
+                {data.externalIp && <InfoRow label="Sunucu IP (Dış)" value={data.externalIp} />}
+                <InfoRow label="Port" value={data.port} />
+                <InfoRow label="Hostname" value={data.hostname} />
+                <div className="flex items-center justify-between py-3 bg-gray-50 dark:bg-gray-800 rounded-xl mt-3 px-4">
+                    <div>
+                        <p className="text-xs text-gray-500 mb-1">Bağlantı Komutu</p>
+                        <code className="text-sm font-mono font-bold text-gray-900 dark:text-white">{data.connectCommand}</code>
+                    </div>
+                    <button
+                        onClick={() => copyToClipboard(data.connectCommand)}
+                        className="btn-primary text-xs py-2 px-3"
+                    >
+                        Kopyala
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { I18nProvider } from '@/context/I18nContext';
 
 import MainLayout from '@/components/layout/MainLayout';
 import LoginPage from '@/pages/LoginPage';
@@ -55,51 +56,53 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <ThemeProvider>
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: '#FFFFFF',
-                  color: '#111827',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: '12px',
-                  fontSize: '0.875rem',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-                },
-                success: {
-                  iconTheme: { primary: '#16A34A', secondary: '#FFFFFF' },
-                },
-                error: {
-                  iconTheme: { primary: '#DC2626', secondary: '#FFFFFF' },
-                },
-              }}
-            />
+            <I18nProvider>
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  duration: 4000,
+                  style: {
+                    background: '#FFFFFF',
+                    color: '#111827',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '12px',
+                    fontSize: '0.875rem',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                  },
+                  success: {
+                    iconTheme: { primary: '#16A34A', secondary: '#FFFFFF' },
+                  },
+                  error: {
+                    iconTheme: { primary: '#DC2626', secondary: '#FFFFFF' },
+                  },
+                }}
+              />
 
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <MainLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<DashboardPage />} />
-                <Route path="server" element={<ServerPage />} />
-                <Route path="modpacks" element={<ModpacksPage />} />
-                <Route path="mods" element={<ModsPage />} />
-                <Route path="console" element={<ConsolePage />} />
-                <Route path="files" element={<FilesPage />} />
-                <Route path="players" element={<PlayersPage />} />
-                <Route path="worlds" element={<WorldsPage />} />
-                <Route path="scheduler" element={<SchedulerPage />} />
-                <Route path="settings" element={<SettingsPage />} />
-                <Route path="backup" element={<BackupPage />} />
-                <Route path="logs" element={<LogsPage />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <MainLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<DashboardPage />} />
+                  <Route path="server" element={<ServerPage />} />
+                  <Route path="modpacks" element={<ModpacksPage />} />
+                  <Route path="mods" element={<ModsPage />} />
+                  <Route path="console" element={<ConsolePage />} />
+                  <Route path="files" element={<FilesPage />} />
+                  <Route path="players" element={<PlayersPage />} />
+                  <Route path="worlds" element={<WorldsPage />} />
+                  <Route path="scheduler" element={<SchedulerPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                  <Route path="backup" element={<BackupPage />} />
+                  <Route path="logs" element={<LogsPage />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </I18nProvider>
           </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>

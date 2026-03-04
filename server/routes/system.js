@@ -106,4 +106,65 @@ router.get('/ram-settings', authMiddleware, (req, res) => {
     });
 });
 
+// GET /api/system/connection-info - Sunucu bağlantı bilgisi
+router.get('/connection-info', authMiddleware, async (req, res) => {
+    try {
+        const os = require('os');
+        const fs = require('fs');
+        const path = require('path');
+        const si = require('systeminformation');
+
+        // IP adresi al
+        const nets = os.networkInterfaces();
+        let serverIp = '0.0.0.0';
+        for (const name of Object.keys(nets)) {
+            for (const net of nets[name]) {
+                if (net.family === 'IPv4' && !net.internal) {
+                    serverIp = net.address;
+                    break;
+                }
+            }
+        }
+
+        // server.properties'den port oku
+        let serverPort = '25565';
+        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const propsPath = path.join(serverPath, 'server.properties');
+        if (fs.existsSync(propsPath)) {
+            const content = fs.readFileSync(propsPath, 'utf-8');
+            const portMatch = content.match(/server-port=(\d+)/);
+            if (portMatch) serverPort = portMatch[1];
+        }
+
+        // External IP (opsiyonel)
+        let externalIp = null;
+        try {
+            const https = require('https');
+            externalIp = await new Promise((resolve) => {
+                https.get('https://api.ipify.org?format=json', (r) => {
+                    let data = '';
+                    r.on('data', c => { data += c; });
+                    r.on('end', () => { try { resolve(JSON.parse(data).ip); } catch { resolve(null); } });
+                }).on('error', () => resolve(null));
+                setTimeout(() => resolve(null), 3000);
+            });
+        } catch { /* ignore */ }
+
+        const connectCmd = serverPort === '25565'
+            ? (externalIp || serverIp)
+            : `${externalIp || serverIp}:${serverPort}`;
+
+        res.json({
+            localIp: serverIp,
+            externalIp,
+            port: serverPort,
+            connectCommand: connectCmd,
+            hostname: os.hostname(),
+        });
+    } catch (error) {
+        console.error('[System] Connection info error:', error.message);
+        res.status(500).json({ error: 'Bağlantı bilgisi alınamadı' });
+    }
+});
+
 module.exports = router;

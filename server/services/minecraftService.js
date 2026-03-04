@@ -224,6 +224,8 @@ class MinecraftService extends EventEmitter {
         });
 
         this.process.on('close', (code) => {
+            const wasRunning = this.status === 'running' || this.status === 'starting';
+            const wasStopping = this.status === 'stopping';
             this.status = 'stopped';
             this.players = [];
             this.process = null;
@@ -231,6 +233,29 @@ class MinecraftService extends EventEmitter {
             this._stopStatsTracking();
             this.emit('status', this.status);
             this.emit('log', `[System] Sunucu kapandı (exit code: ${code})`);
+
+            // Otomatik çökme kurtarma
+            if (wasRunning && !wasStopping && code !== 0) {
+                this.addLog('[System] ⚠️ Sunucu beklenmedik şekilde çöktü! 10 saniye sonra otomatik yeniden başlatılacak...');
+                this.emit('log', '[System] ⚠️ Sunucu çöktü! Otomatik yeniden başlatma 10sn...');
+
+                // Discord bildirim gönder
+                try {
+                    const notificationService = require('./notificationService');
+                    notificationService.send('server_crash', `Sunucu çöktü (exit code: ${code}). Otomatik yeniden başlatma yapılıyor...`);
+                } catch { /* ignore */ }
+
+                setTimeout(() => {
+                    if (this.status === 'stopped') {
+                        try {
+                            this.addLog('[System] Otomatik yeniden başlatma başlatılıyor...');
+                            this.start();
+                        } catch (err) {
+                            this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`);
+                        }
+                    }
+                }, 10000);
+            }
         });
 
         this.process.on('error', (err) => {

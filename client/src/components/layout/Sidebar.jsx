@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineHome, HiOutlineServer, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineDocumentText, HiOutlineFolder, HiOutlineUsers,
     HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
-    HiOutlineSun, HiOutlineMoon,
+    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage,
 } from 'react-icons/hi2';
 
 const navItems = [
@@ -27,6 +28,7 @@ const navItems = [
 export default function Sidebar({ isOpen, onClose }) {
     const { user } = useAuth();
     const { isDark, toggle } = useTheme();
+    const { locale, changeLocale, t } = useI18n();
 
     return (
         <>
@@ -86,7 +88,14 @@ export default function Sidebar({ isOpen, onClose }) {
                         className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     >
                         {isDark ? <HiOutlineSun className="w-5 h-5" /> : <HiOutlineMoon className="w-5 h-5" />}
-                        {isDark ? 'Aydınlık Tema' : 'Karanlık Tema'}
+                        {isDark ? t('common.lightTheme') : t('common.darkTheme')}
+                    </button>
+                    <button
+                        onClick={() => changeLocale(locale === 'tr' ? 'en' : 'tr')}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    >
+                        <HiOutlineLanguage className="w-5 h-5" />
+                        {locale === 'tr' ? 'English' : 'Türkçe'}
                     </button>
                     <div className="flex items-center gap-3 px-3 py-2">
                         <div className="w-8 h-8 rounded-lg bg-gray-900 dark:bg-white flex items-center justify-center text-white dark:text-gray-900 text-sm font-bold">
