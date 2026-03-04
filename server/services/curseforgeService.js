@@ -197,7 +197,7 @@ class CurseForgeService {
 
         try {
             const db = getDb();
-            const baseServerPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+            const baseServerPath = process.env.MINECRAFT_SERVER_PATH || path.join(__dirname, '../../sunucular');
 
             // 1. Bilgi al
             this._updateProgress('Bilgi Alınıyor', 5, 'Modpack bilgileri alınıyor...');

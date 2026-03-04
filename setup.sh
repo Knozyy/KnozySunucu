@@ -50,16 +50,16 @@ if [ ! -f ".env" ]; then
 
     echo ""
     read -p "  CurseForge API Key (boş bırakılabilir): " CF_KEY
-    read -p "  Minecraft sunucu dizini [/home/minecraft/server]: " MC_PATH
-    MC_PATH=${MC_PATH:-/home/minecraft/server}
+    read -p "  Minecraft sunucu dizini [$SCRIPT_DIR/sunucular]: " MC_PATH
+    MC_PATH=${MC_PATH:-$SCRIPT_DIR/sunucular}
     read -p "  Minecraft server JAR adı [forge-server.jar]: " MC_JAR
     MC_JAR=${MC_JAR:-forge-server.jar}
     read -p "  Max RAM [4G]: " MAX_RAM
     MAX_RAM=${MAX_RAM:-4G}
     read -p "  Min RAM [2G]: " MIN_RAM
     MIN_RAM=${MIN_RAM:-2G}
-    read -p "  Yedek dizini [/home/minecraft/backups]: " BACKUP_DIR
-    BACKUP_DIR=${BACKUP_DIR:-/home/minecraft/backups}
+    read -p "  Yedek dizini [$SCRIPT_DIR/yedekler]: " BACKUP_DIR
+    BACKUP_DIR=${BACKUP_DIR:-$SCRIPT_DIR/yedekler}
     read -p "  Panel portu [3001]: " PORT
     PORT=${PORT:-3001}
 
