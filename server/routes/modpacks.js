@@ -8,10 +8,7 @@ const router = express.Router();
 router.get('/search', authMiddleware, async (req, res) => {
     try {
         const { query } = req.query;
-        if (!query) {
-            return res.status(400).json({ error: 'Arama sorgusu gerekli' });
-        }
-
+        if (!query) return res.status(400).json({ error: 'Arama sorgusu gerekli' });
         const results = await curseforgeService.searchModpacks(query);
         res.json({ modpacks: results });
     } catch (error) {
@@ -31,6 +28,28 @@ router.get('/popular', authMiddleware, async (req, res) => {
     }
 });
 
+// GET /api/modpacks/installed
+router.get('/installed', authMiddleware, (req, res) => {
+    try {
+        const installed = curseforgeService.getInstalledModpacks();
+        res.json({ modpacks: installed });
+    } catch (error) {
+        console.error('[Modpacks] Installed error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/modpacks/install-status
+router.get('/install-status', authMiddleware, (req, res) => {
+    res.json(curseforgeService.getInstallStatus());
+});
+
+// POST /api/modpacks/install-status/reset
+router.post('/install-status/reset', authMiddleware, (req, res) => {
+    curseforgeService.resetInstallStatus();
+    res.json({ message: 'Kurulum durumu sıfırlandı' });
+});
+
 // GET /api/modpacks/:modId/files
 router.get('/:modId/files', authMiddleware, async (req, res) => {
     try {
@@ -46,14 +65,54 @@ router.get('/:modId/files', authMiddleware, async (req, res) => {
 router.post('/install', authMiddleware, async (req, res) => {
     try {
         const { modId, fileId } = req.body;
-        if (!modId) {
-            return res.status(400).json({ error: 'Mod ID gerekli' });
-        }
+        if (!modId) return res.status(400).json({ error: 'Mod ID gerekli' });
 
-        const result = await curseforgeService.installModpack(modId, fileId);
-        res.json({ message: 'Modpack yüklendi', ...result });
+        // Async başlat, hemen cevap dön
+        curseforgeService.installModpack(modId, fileId).catch(err => {
+            console.error('[Modpacks] Install async error:', err.message);
+        });
+
+        res.json({ message: 'Kurulum başlatıldı. İlerlemeyi takip edebilirsiniz.' });
     } catch (error) {
         console.error('[Modpacks] Install error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/modpacks/update
+router.post('/update', authMiddleware, async (req, res) => {
+    try {
+        const { dbId, modId, fileId } = req.body;
+        if (!dbId || !modId || !fileId) {
+            return res.status(400).json({ error: 'dbId, modId ve fileId gerekli' });
+        }
+
+        curseforgeService.updateModpack(dbId, modId, fileId).catch(err => {
+            console.error('[Modpacks] Update async error:', err.message);
+        });
+
+        res.json({ message: 'Güncelleme başlatıldı.' });
+    } catch (error) {
+        console.error('[Modpacks] Update error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/modpacks/check-update
+router.post('/check-update', authMiddleware, async (req, res) => {
+    try {
+        const { modpackId } = req.body;
+        if (!modpackId) {
+            // Yüklü ilk modpack'i kontrol et
+            const installed = curseforgeService.getInstalledModpacks();
+            if (installed.length === 0) return res.json({ hasUpdate: false });
+            const result = await curseforgeService.checkUpdate(installed[0].curseforge_id);
+            return res.json(result);
+        }
+        const result = await curseforgeService.checkUpdate(modpackId);
+        res.json(result);
+    } catch (error) {
+        console.error('[Modpacks] Check update error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -69,27 +128,13 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// GET /api/modpacks/installed
-router.get('/installed', authMiddleware, (req, res) => {
-    try {
-        const installed = curseforgeService.getInstalledModpacks();
-        res.json({ modpacks: installed });
-    } catch (error) {
-        console.error('[Modpacks] Installed error:', error.message);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// PUT /api/modpacks/:id/settings - Update modpack settings
+// PUT /api/modpacks/:id/settings
 router.put('/:id/settings', authMiddleware, (req, res) => {
     try {
         const { name, version } = req.body;
         const db = require('../db/database').getDb();
-
         const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(req.params.id);
-        if (!modpack) {
-            return res.status(404).json({ error: 'Modpack bulunamadı' });
-        }
+        if (!modpack) return res.status(404).json({ error: 'Modpack bulunamadı' });
 
         db.prepare(`
             UPDATE installed_modpacks 

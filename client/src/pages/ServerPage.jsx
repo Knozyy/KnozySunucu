@@ -7,6 +7,9 @@ import {
     HiOutlineArrowPath,
     HiOutlineUsers,
     HiOutlineSignal,
+    HiOutlineWrenchScrewdriver,
+    HiOutlineCpuChip,
+    HiOutlineCircleStack,
 } from 'react-icons/hi2';
 
 export default function ServerPage() {
@@ -43,6 +46,15 @@ export default function ServerPage() {
             queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Yeniden başlatılamadı'),
+    });
+
+    const repairMutation = useMutation({
+        mutationFn: () => api.post('/minecraft/repair'),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Onarım başarısız'),
     });
 
     const isRunning = status?.status === 'running';
@@ -91,6 +103,7 @@ export default function ServerPage() {
                             )}
                             {getStatusText()}
                         </p>
+                        {status?.pid && <p className="text-xs text-gray-400 mt-1">PID: {status.pid}</p>}
                     </div>
 
                     <div className="flex gap-3 flex-wrap justify-center">
@@ -103,9 +116,44 @@ export default function ServerPage() {
                         <button onClick={() => restartMutation.mutate()} disabled={isBusy} className="btn-secondary">
                             <HiOutlineArrowPath className="w-5 h-5" /> Yeniden Başlat
                         </button>
+                        <button
+                            onClick={() => {
+                                if (confirm('Sunucu kurulum dosyaları (kütüphaneler) silinecek ve tekrar başladığında yeniden indirilecek. Emin misiniz?')) {
+                                    repairMutation.mutate();
+                                }
+                            }}
+                            disabled={isRunning || isBusy || repairMutation.isPending}
+                            className="bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-2 transition-all disabled:opacity-50"
+                        >
+                            <HiOutlineWrenchScrewdriver className="w-5 h-5" /> Onar
+                        </button>
                     </div>
                 </div>
             </div>
+
+            {/* Process Stats */}
+            {isRunning && status?.processStats && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 fade-in">
+                    <div className="glass-card p-5 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                            <HiOutlineCpuChip className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Sunucu CPU</p>
+                            <p className="text-xl font-bold text-gray-900">{status.processStats.cpuPercent || 0}%</p>
+                        </div>
+                    </div>
+                    <div className="glass-card p-5 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center">
+                            <HiOutlineCircleStack className="w-6 h-6 text-purple-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Sunucu RAM</p>
+                            <p className="text-xl font-bold text-gray-900">{status.processStats.memoryMB || 0} MB</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Players */}
             <div className="glass-card p-6 fade-in">

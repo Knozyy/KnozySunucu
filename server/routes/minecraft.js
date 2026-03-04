@@ -48,13 +48,22 @@ router.post('/restart', authMiddleware, async (req, res) => {
     }
 });
 
+// POST /api/minecraft/repair
+router.post('/repair', authMiddleware, (req, res) => {
+    try {
+        const result = minecraftService.repair();
+        res.json(result);
+    } catch (error) {
+        console.error('[MC] Repair error:', error.message);
+        res.status(400).json({ error: error.message });
+    }
+});
+
 // POST /api/minecraft/command
 router.post('/command', authMiddleware, (req, res) => {
     try {
         const { command } = req.body;
-        if (!command) {
-            return res.status(400).json({ error: 'Komut gerekli' });
-        }
+        if (!command) return res.status(400).json({ error: 'Komut gerekli' });
         minecraftService.sendCommand(command);
         res.json({ message: 'Komut gönderildi' });
     } catch (error) {
@@ -77,8 +86,7 @@ router.get('/players', authMiddleware, (req, res) => {
 // GET /api/minecraft/properties
 router.get('/properties', authMiddleware, (req, res) => {
     try {
-        const properties = minecraftService.getProperties();
-        res.json(properties);
+        res.json(minecraftService.getProperties());
     } catch (error) {
         console.error('[MC] Properties read error:', error.message);
         res.status(500).json({ error: 'Özellikler okunamadı' });
@@ -88,8 +96,7 @@ router.get('/properties', authMiddleware, (req, res) => {
 // PUT /api/minecraft/properties
 router.put('/properties', authMiddleware, (req, res) => {
     try {
-        const properties = req.body;
-        minecraftService.setProperties(properties);
+        minecraftService.setProperties(req.body);
         res.json({ message: 'Ayarlar güncellendi' });
     } catch (error) {
         console.error('[MC] Properties write error:', error.message);
@@ -101,11 +108,22 @@ router.put('/properties', authMiddleware, (req, res) => {
 router.get('/logs', authMiddleware, (req, res) => {
     try {
         const count = parseInt(req.query.count) || 100;
-        const logs = minecraftService.getRecentLogs(count);
-        res.json({ logs });
+        res.json({ logs: minecraftService.getRecentLogs(count) });
     } catch (error) {
         console.error('[MC] Logs error:', error.message);
         res.status(500).json({ error: 'Loglar alınamadı' });
+    }
+});
+
+// GET /api/minecraft/detect-info
+router.get('/detect-info', authMiddleware, (req, res) => {
+    try {
+        res.json({
+            modLoader: minecraftService.detectModLoader(),
+            mcVersion: minecraftService.detectMinecraftVersion(),
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Tespit yapılamadı' });
     }
 });
 

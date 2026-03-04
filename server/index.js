@@ -13,6 +13,7 @@ const minecraftRoutes = require('./routes/minecraft');
 const modpackRoutes = require('./routes/modpacks');
 const backupRoutes = require('./routes/backup');
 const logRoutes = require('./routes/logs');
+const javaRoutes = require('./routes/java');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +33,7 @@ app.use('/api/minecraft', minecraftRoutes);
 app.use('/api/modpacks', modpackRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/java', javaRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

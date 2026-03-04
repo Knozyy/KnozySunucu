@@ -37,11 +37,18 @@ export default function ModpacksPage() {
 
     const installMutation = useMutation({
         mutationFn: ({ modId, fileId }) => api.post('/modpacks/install', { modId, fileId }),
-        onSuccess: (res) => {
-            toast.success(`${res.data.name} yüklendi!`);
+        onSuccess: () => {
+            toast.success('Kurulum başlatıldı! İlerlemeyi takip edebilirsiniz.');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
+    });
+
+    // Kurulum durumu takibi
+    const { data: installStatusData } = useQuery({
+        queryKey: ['installStatus'],
+        queryFn: () => api.get('/modpacks/install-status').then(r => r.data),
+        refetchInterval: installMutation.isPending || installStatusData?.isInstalling ? 1000 : false,
     });
 
     const uninstallMutation = useMutation({
@@ -81,6 +88,8 @@ export default function ModpacksPage() {
     const modpacksToShow = activeTab === 'search'
         ? (searchResults?.modpacks || popularData?.modpacks || [])
         : (installedData?.modpacks || []);
+
+    const isInstalling = installMutation.isPending || installStatusData?.isInstalling;
 
     return (
         <div className="space-y-6">
@@ -130,12 +139,40 @@ export default function ModpacksPage() {
                 </form>
             )}
 
-            {installMutation.isPending && (
-                <div className="glass-card p-4 border-gray-300 fade-in">
-                    <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-sm text-gray-700 font-medium">Modpack yükleniyor... Bu işlem birkaç dakika sürebilir.</span>
+            {/* Kurulum İlerleme Çubuğu */}
+            {(isInstalling || (installStatusData?.progress > 0 && installStatusData?.progress < 100)) && (
+                <div className="glass-card p-5 fade-in border-l-4 border-gray-900">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-6 h-6 border-2 border-gray-900 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-sm font-semibold text-gray-900">{installStatusData?.task || 'Kurulum'}</p>
+                            <p className="text-xs text-gray-500">{installStatusData?.status || 'İşleniyor...'}</p>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">{installStatusData?.progress || 0}%</span>
                     </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                        <div
+                            className="h-full rounded-full transition-all duration-500 ease-out"
+                            style={{
+                                width: `${installStatusData?.progress || 0}%`,
+                                background: 'linear-gradient(90deg, #1F2937, #374151)',
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Kurulum tamamlandı mesajı */}
+            {installStatusData?.progress === 100 && !installStatusData?.isInstalling && (
+                <div className="glass-card p-4 bg-green-50/50 border-l-4 border-green-500 fade-in">
+                    <p className="text-sm font-medium text-green-700">✅ {installStatusData?.status || 'Kurulum tamamlandı!'}</p>
+                </div>
+            )}
+
+            {/* Hata mesajı */}
+            {installStatusData?.error && (
+                <div className="glass-card p-4 bg-red-50/50 border-l-4 border-red-500 fade-in">
+                    <p className="text-sm font-medium text-red-700">❌ {installStatusData.error}</p>
                 </div>
             )}
 

@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '@/services/api';
+import toast from 'react-hot-toast';
 import { formatBytes, formatUptime } from '@/utils/formatters';
 import {
     HiOutlineCpuChip,
@@ -8,6 +9,8 @@ import {
     HiOutlineClock,
     HiOutlineSignal,
     HiOutlineUsers,
+    HiOutlineArrowDownTray,
+    HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -96,6 +99,13 @@ export default function DashboardPage() {
         refetchInterval: 5000,
     });
 
+    const { data: updateInfo } = useQuery({
+        queryKey: ['modpackUpdate'],
+        queryFn: () => api.post('/modpacks/check-update', {}).then(r => r.data),
+        refetchInterval: 300000, // 5 dakikada bir kontrol
+        retry: false,
+    });
+
     useEffect(() => {
         if (!usage) return;
 
@@ -123,6 +133,26 @@ export default function DashboardPage() {
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
                 <p className="text-gray-500">Sistem durumu ve kaynak kullanımı</p>
             </div>
+
+            {/* Güncelleme Uyarısı */}
+            {updateInfo?.hasUpdate && (
+                <div className="glass-card p-4 fade-in border-l-4 border-amber-500 bg-amber-50/50">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <HiOutlineExclamationTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
+                            <div>
+                                <p className="font-semibold text-gray-900">Yeni Güncelleme Mevcut!</p>
+                                <p className="text-sm text-gray-600">
+                                    {updateInfo.currentVersion} → <span className="font-medium text-amber-700">{updateInfo.latestVersion}</span>
+                                </p>
+                            </div>
+                        </div>
+                        <a href="/modpacks" className="btn-primary text-sm flex items-center gap-2 flex-shrink-0">
+                            <HiOutlineArrowDownTray className="w-4 h-4" /> Güncelle
+                        </a>
+                    </div>
+                </div>
+            )}
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
