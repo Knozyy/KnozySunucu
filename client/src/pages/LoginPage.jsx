@@ -9,8 +9,9 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [checkingAuth, setCheckingAuth] = useState(true);
+    const [isSetupMode, setIsSetupMode] = useState(false);
 
-    const { login, user } = useAuth();
+    const { login, register, checkAdmin, user } = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -18,8 +19,20 @@ export default function LoginPage() {
             navigate('/');
             return;
         }
-        setCheckingAuth(false);
-    }, [user, navigate]);
+
+        const verifyDb = async () => {
+            try {
+                const hasAdmin = await checkAdmin();
+                setIsSetupMode(!hasAdmin); // Admin yoksa setup modunu aç
+            } catch (err) {
+                console.error("DB kontrol hatası:", err);
+            } finally {
+                setCheckingAuth(false);
+            }
+        };
+
+        verifyDb();
+    }, [user, navigate, checkAdmin]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -27,10 +40,19 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            await login(username, password);
-            navigate('/');
+            if (isSetupMode) {
+                // Kayıt ol
+                await register(username, password);
+                // Kayıt sonrası otomatik giriş yap
+                await login(username, password);
+                navigate('/');
+            } else {
+                // Giriş yap
+                await login(username, password);
+                navigate('/');
+            }
         } catch (err) {
-            setError(err.response?.data?.error || 'Giriş başarısız');
+            setError(err.response?.data?.error || (isSetupMode ? 'Kayıt başarısız' : 'Giriş başarısız'));
         } finally {
             setLoading(false);
         }
@@ -54,9 +76,15 @@ export default function LoginPage() {
                     <p className="text-gray-500">Minecraft Sunucu Yönetim Paneli</p>
                 </div>
 
-                {/* Login form */}
+                {/* Login/Setup form */}
                 <div className="glass-card p-8 fade-in" style={{ animationDelay: '0.1s' }}>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">Giriş Yap</h2>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                        {isSetupMode ? 'İlk Kurulum: Admin Hesabı Oluştur' : 'Giriş Yap'}
+                    </h2>
+                    {isSetupMode && (
+                        <p className="text-sm text-gray-500 mb-6">Sisteme erişim için ilk yönetici hesabını oluşturun.</p>
+                    )}
+                    {!isSetupMode && <div className="mb-6"></div>}
 
                     {error && (
                         <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">
@@ -100,19 +128,19 @@ export default function LoginPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="btn-primary w-full justify-center py-3 text-base"
+                            className="btn-primary w-full justify-center py-3 text-base mt-2"
                         >
                             {loading ? (
                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             ) : (
-                                'Giriş Yap'
+                                isSetupMode ? 'Hesap Oluştur ve Başla' : 'Giriş Yap'
                             )}
                         </button>
                     </form>
                 </div>
 
                 <p className="text-center text-gray-400 text-sm mt-6">
-                    Panel erişimi yetkilendirilmiş kullanıcılara açıktır
+                    {isSetupMode ? 'Bu hesap tüm panel yetkilerine sahip olacaktır.' : 'Panel erişimi yetkilendirilmiş kullanıcılara açıktır.'}
                 </p>
             </div>
         </div>
