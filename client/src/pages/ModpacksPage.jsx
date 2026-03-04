@@ -11,13 +11,17 @@ import {
     HiOutlineFire,
     HiOutlinePuzzlePiece,
     HiOutlineCog6Tooth,
+    HiOutlinePlay,
+    HiOutlineCheckCircle,
 } from 'react-icons/hi2';
 
 export default function ModpacksPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('search');
     const [editingModpack, setEditingModpack] = useState(null);
+    const [confirmSwitch, setConfirmSwitch] = useState(null);
     const queryClient = useQueryClient();
+    const { t } = useI18n();
 
     const { data: searchResults, isLoading: searching, refetch: doSearch } = useQuery({
         queryKey: ['modpackSearch', searchQuery],
@@ -36,6 +40,11 @@ export default function ModpacksPage() {
         queryFn: () => api.get('/modpacks/installed').then(r => r.data),
     });
 
+    const { data: activeProfileData } = useQuery({
+        queryKey: ['activeProfile'],
+        queryFn: () => api.get('/modpacks/active').then(r => r.data),
+    });
+
     const installMutation = useMutation({
         mutationFn: ({ modId, fileId }) => api.post('/modpacks/install', { modId, fileId }),
         onSuccess: () => {
@@ -45,7 +54,6 @@ export default function ModpacksPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
     });
 
-    // Kurulum durumu takibi
     const { data: installStatusData } = useQuery({
         queryKey: ['installStatus'],
         queryFn: () => api.get('/modpacks/install-status').then(r => r.data),
@@ -57,8 +65,20 @@ export default function ModpacksPage() {
         onSuccess: () => {
             toast.success('Modpack kaldırıldı');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Kaldırma başarısız'),
+    });
+
+    const activateMutation = useMutation({
+        mutationFn: (id) => api.post(`/modpacks/activate/${id}`),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            setConfirmSwitch(null);
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Profil değişimi başarısız'),
     });
 
     const updateSettingsMutation = useMutation({
@@ -79,11 +99,17 @@ export default function ModpacksPage() {
 
     const handleInstall = (modpack) => {
         const latestFile = modpack.latestFiles?.[0];
-        if (!latestFile) {
-            toast.error('İndirilebilir dosya bulunamadı');
-            return;
-        }
+        if (!latestFile) { toast.error('İndirilebilir dosya bulunamadı'); return; }
         installMutation.mutate({ modId: modpack.id, fileId: latestFile.id });
+    };
+
+    const handleActivate = (modpack) => {
+        // Sunucu açıksa onay iste
+        if (activeProfileData?.serverStatus === 'running') {
+            setConfirmSwitch(modpack);
+        } else {
+            activateMutation.mutate(modpack.id);
+        }
     };
 
     const modpacksToShow = activeTab === 'search'
@@ -92,8 +118,6 @@ export default function ModpacksPage() {
 
     const isInstalling = installMutation.isPending || installStatusData?.isInstalling;
 
-    const { t } = useI18n();
-
     return (
         <div className="space-y-6">
             <div className="fade-in">
@@ -101,23 +125,40 @@ export default function ModpacksPage() {
                 <p className="text-gray-500">{t('modpacks.subtitle')}</p>
             </div>
 
+            {/* Aktif Profil Banner */}
+            {activeProfileData?.profile && (
+                <div className="glass-card p-4 border-l-4 border-green-500 fade-in">
+                    <div className="flex items-center gap-3">
+                        <HiOutlineCheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-sm font-semibold text-gray-900">
+                                Aktif Profil: <span className="text-green-600">{activeProfileData.profile.name}</span>
+                            </p>
+                            <p className="text-xs text-gray-400">{activeProfileData.profile.install_path}</p>
+                        </div>
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${activeProfileData.serverStatus === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                            {activeProfileData.serverStatus === 'running' ? '🟢 Çalışıyor' : '⚫ Kapalı'}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Tabs */}
             <div className="flex gap-2 fade-in">
                 <button
                     onClick={() => setActiveTab('search')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'search' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                        }`}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'search' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
                 >
                     <HiOutlineMagnifyingGlass className="w-4 h-4 inline mr-2" />
                     Ara & Yükle
                 </button>
                 <button
                     onClick={() => setActiveTab('installed')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'installed' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                        }`}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'installed' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
                 >
                     <HiOutlinePuzzlePiece className="w-4 h-4 inline mr-2" />
-                    Yüklü ({installedData?.modpacks?.length || 0})
+                    Profiller ({installedData?.modpacks?.length || 0})
                 </button>
             </div>
 
@@ -127,13 +168,8 @@ export default function ModpacksPage() {
                     <div className="flex gap-3">
                         <div className="flex-1 relative">
                             <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="input-field pl-12"
-                                placeholder="Modpack adı ara... (örn: RLCraft, All the Mods)"
-                            />
+                            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input-field pl-12" placeholder="Modpack adı ara... (örn: RLCraft, All the Mods)" />
                         </div>
                         <button type="submit" disabled={searching || !searchQuery.trim()} className="btn-primary">
                             {searching ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Ara'}
@@ -154,32 +190,24 @@ export default function ModpacksPage() {
                         <span className="text-sm font-bold text-gray-900">{installStatusData?.progress || 0}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                        <div
-                            className="h-full rounded-full transition-all duration-500 ease-out"
-                            style={{
-                                width: `${installStatusData?.progress || 0}%`,
-                                background: 'linear-gradient(90deg, #1F2937, #374151)',
-                            }}
-                        />
+                        <div className="h-full rounded-full transition-all duration-500 ease-out"
+                            style={{ width: `${installStatusData?.progress || 0}%`, background: 'linear-gradient(90deg, #1F2937, #374151)' }} />
                     </div>
                 </div>
             )}
 
-            {/* Kurulum tamamlandı mesajı */}
             {installStatusData?.progress === 100 && !installStatusData?.isInstalling && (
                 <div className="glass-card p-4 bg-green-50/50 border-l-4 border-green-500 fade-in">
                     <p className="text-sm font-medium text-green-700">✅ {installStatusData?.status || 'Kurulum tamamlandı!'}</p>
                 </div>
             )}
 
-            {/* Hata mesajı */}
             {installStatusData?.error && (
                 <div className="glass-card p-4 bg-red-50/50 border-l-4 border-red-500 fade-in">
                     <p className="text-sm font-medium text-red-700">❌ {installStatusData.error}</p>
                 </div>
             )}
 
-            {/* Modpack Settings Modal */}
             {editingModpack && (
                 <ModpackSettingsModal
                     modpack={editingModpack}
@@ -187,6 +215,35 @@ export default function ModpacksPage() {
                     onSave={(settings) => updateSettingsMutation.mutate({ id: editingModpack.id, settings })}
                     saving={updateSettingsMutation.isPending}
                 />
+            )}
+
+            {/* Profil Geçiş Onay Modalı */}
+            {confirmSwitch && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setConfirmSwitch(null)}>
+                    <div className="glass-card p-6 w-full max-w-md fade-in" onClick={e => e.stopPropagation()}>
+                        <h2 className="text-lg font-bold text-gray-900 mb-3">⚠️ Sunucu Açık</h2>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Şu an <strong>{activeProfileData?.profile?.name}</strong> çalışıyor.
+                            <strong> {confirmSwitch.name}</strong> profiline geçmek için açık sunucu
+                            <strong> save alınıp kapatılacak</strong>. Devam etmek istiyor musunuz?
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setConfirmSwitch(null)} className="btn-secondary">İptal</button>
+                            <button
+                                onClick={() => activateMutation.mutate(confirmSwitch.id)}
+                                disabled={activateMutation.isPending}
+                                className="btn-primary"
+                            >
+                                {activateMutation.isPending ? (
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Geçiliyor...
+                                    </div>
+                                ) : 'Evet, Geçiş Yap'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {activeTab === 'search' && !searchResults && !searching && (
@@ -218,11 +275,14 @@ export default function ModpacksPage() {
                             key={modpack.id}
                             modpack={modpack}
                             isInstalled={activeTab === 'installed'}
+                            isActive={modpack.is_active === 1}
                             onInstall={() => handleInstall(modpack)}
                             onUninstall={() => uninstallMutation.mutate(modpack.id)}
                             onSettings={() => setEditingModpack(modpack)}
+                            onActivate={() => handleActivate(modpack)}
                             installing={installMutation.isPending}
                             uninstalling={uninstallMutation.isPending}
+                            activating={activateMutation.isPending}
                         />
                     ))
                 ) : (
@@ -238,9 +298,16 @@ export default function ModpacksPage() {
     );
 }
 
-function ModpackCard({ modpack, isInstalled, onInstall, onUninstall, onSettings, installing, uninstalling }) {
+function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, installing, uninstalling, activating }) {
     return (
-        <div className="glass-card p-4 fade-in group">
+        <div className={`glass-card p-4 fade-in group relative ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
+            {/* Aktif Badge */}
+            {isActive && (
+                <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                    <HiOutlineCheckCircle className="w-3.5 h-3.5" /> AKTİF
+                </div>
+            )}
+
             <div className="flex gap-4">
                 <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
                     {(modpack.logoUrl || modpack.logo_url) ? (
@@ -253,13 +320,17 @@ function ModpackCard({ modpack, isInstalled, onInstall, onUninstall, onSettings,
                 </div>
 
                 <div className="flex-1 min-w-0">
-                    <h3 className="text-gray-900 font-semibold truncate group-hover:text-gray-600 transition-colors">{modpack.name}</h3>
+                    <h3 className="text-gray-900 font-semibold truncate">{modpack.name}</h3>
                     <p className="text-sm text-gray-500 line-clamp-2 mt-1">{modpack.summary || modpack.version || 'Açıklama yok'}</p>
                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
                         {modpack.author && <span>👤 {modpack.author}</span>}
                         {modpack.downloadCount && <span>📥 {formatNumber(modpack.downloadCount)}</span>}
                         {modpack.installed_at && <span>📅 {formatDate(modpack.installed_at)}</span>}
                     </div>
+
+                    {modpack.install_path && (
+                        <p className="text-xs text-gray-300 mt-1 truncate">📁 {modpack.install_path}</p>
+                    )}
 
                     {modpack.latestFiles?.[0]?.gameVersions && (
                         <div className="flex gap-1 mt-2 flex-wrap">
@@ -274,6 +345,11 @@ function ModpackCard({ modpack, isInstalled, onInstall, onUninstall, onSettings,
             <div className="mt-4 flex gap-2 justify-end">
                 {isInstalled ? (
                     <>
+                        {!isActive && (
+                            <button onClick={onActivate} disabled={activating} className="btn-primary text-xs py-1.5 px-3">
+                                <HiOutlinePlay className="w-4 h-4" /> Aktif Yap
+                            </button>
+                        )}
                         <button onClick={onSettings} className="btn-secondary text-xs py-1.5 px-3">
                             <HiOutlineCog6Tooth className="w-4 h-4" /> Ayarlar
                         </button>
@@ -318,12 +394,10 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Modpack Adı</label>
                         <input type="text" value={settings.name} onChange={e => handleChange('name', e.target.value)} className="input-field" />
                     </div>
-
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Versiyon</label>
                         <input type="text" value={settings.version} onChange={e => handleChange('version', e.target.value)} className="input-field" />
                     </div>
-
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM</label>
@@ -334,20 +408,9 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
                             <input type="text" value={settings.minRam} onChange={e => handleChange('minRam', e.target.value)} className="input-field" placeholder="2G" />
                         </div>
                     </div>
-
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">JVM Argümanları</label>
                         <input type="text" value={settings.jvmArgs} onChange={e => handleChange('jvmArgs', e.target.value)} className="input-field" placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled" />
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => handleChange('autoRestart', !settings.autoRestart)}
-                            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${settings.autoRestart ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-50 text-gray-400 border border-gray-200'
-                                }`}
-                        >
-                            {settings.autoRestart ? 'Otomatik Yeniden Başlatma: Aktif' : 'Otomatik Yeniden Başlatma: Kapalı'}
-                        </button>
                     </div>
                 </div>
 

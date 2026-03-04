@@ -5,17 +5,17 @@ const DB_PATH = path.resolve(__dirname, 'knozy.db');
 let db;
 
 function getDb() {
-    if (!db) {
-        db = new Database(DB_PATH);
-        db.pragma('journal_mode = WAL');
-    }
-    return db;
+  if (!db) {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+  }
+  return db;
 }
 
 function initDatabase() {
-    const database = getDb();
+  const database = getDb();
 
-    database.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
@@ -30,6 +30,8 @@ function initDatabase() {
       version TEXT,
       author TEXT,
       logo_url TEXT,
+      install_path TEXT,
+      is_active INTEGER DEFAULT 0,
       installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       status TEXT DEFAULT 'installed'
     );
@@ -43,7 +45,20 @@ function initDatabase() {
     );
   `);
 
-    console.error('[DB] Database initialized successfully');
+  // Migration: install_path ve is_active sütunları yoksa ekle
+  try {
+    const cols = database.prepare("PRAGMA table_info(installed_modpacks)").all();
+    const colNames = cols.map(c => c.name);
+    if (!colNames.includes('install_path')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN install_path TEXT");
+    }
+    if (!colNames.includes('is_active')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN is_active INTEGER DEFAULT 0");
+    }
+  } catch { /* columns already exist */ }
+
+  console.error('[DB] Database initialized successfully');
 }
 
 module.exports = { getDb, initDatabase };
+

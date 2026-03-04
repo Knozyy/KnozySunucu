@@ -197,7 +197,7 @@ class CurseForgeService {
 
         try {
             const db = getDb();
-            const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+            const baseServerPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
 
             // 1. Bilgi al
             this._updateProgress('Bilgi Alınıyor', 5, 'Modpack bilgileri alınıyor...');
@@ -206,6 +206,10 @@ class CurseForgeService {
             const selectedFile = files.find(f => f.id === fileId) || files[0];
 
             if (!selectedFile) throw new Error('Dosya bulunamadı');
+
+            // Profil klasör adı (slug)
+            const slug = modDetails.slug || modDetails.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            const profilePath = path.join(baseServerPath, slug);
 
             // 2. Server Pack kontrolü
             this._updateProgress('İndirme Hazırlığı', 10, 'İndirme linki kontrol ediliyor...');
@@ -231,26 +235,31 @@ class CurseForgeService {
                 throw new Error('Bu modpack\'in indirme URL\'si mevcut değil.');
             }
 
-            // 3. Mods dizinini hazırla
-            this._updateProgress('Dizin Hazırlığı', 15, 'Dizin hazırlanıyor...');
-            const modsDir = path.join(serverPath, 'mods');
+            // 3. Profil dizinini hazırla
+            this._updateProgress('Dizin Hazırlığı', 15, `Profil klasörü: ${slug}/`);
+            if (!fs.existsSync(profilePath)) fs.mkdirSync(profilePath, { recursive: true });
+            const modsDir = path.join(profilePath, 'mods');
             if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
 
             // 4. İndir
             this._updateProgress('İndiriliyor', 20, 'Modpack indiriliyor...');
             const destPath = path.join(modsDir, selectedFile.fileName);
             await this.downloadFile(downloadUrl, destPath, (pct, downloaded, total) => {
-                const overallPct = 20 + Math.floor(pct * 0.5); // 20-70 arası
+                const overallPct = 20 + Math.floor(pct * 0.5);
                 const dlMB = (downloaded / 1024 / 1024).toFixed(1);
                 const totalMB = (total / 1024 / 1024).toFixed(1);
                 this._updateProgress('İndiriliyor', overallPct, `${dlMB} / ${totalMB} MB`);
             });
 
-            // 5. Veritabanını güncelle
+            // 5. İlk kurulumsa aktif yap
+            const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
+            const isFirstInstall = !existingActive;
+
+            // 6. Veritabanını güncelle
             this._updateProgress('Kayıt', 90, 'Veritabanı güncelleniyor...');
             const stmt = db.prepare(`
-                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, status) 
-                VALUES (?, ?, ?, ?, ?, 'installed')
+                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed')
             `);
 
             stmt.run(
@@ -259,14 +268,16 @@ class CurseForgeService {
                 selectedFile.displayName,
                 modDetails.authors?.[0]?.name || 'Bilinmiyor',
                 modDetails.logo?.url || null,
+                profilePath,
+                isFirstInstall ? 1 : 0,
             );
 
-            // 6. Tamamlandı
+            // 7. Tamamlandı
             installStatus = {
                 isInstalling: false,
                 progress: 100,
                 task: 'Tamamlandı',
-                status: 'Kurulum tamamlandı!',
+                status: `Kurulum tamamlandı! (${slug}/)`,
                 error: null,
             };
 
@@ -275,6 +286,8 @@ class CurseForgeService {
                 version: selectedFile.displayName,
                 fileName: selectedFile.fileName,
                 isServerPack,
+                profilePath,
+                slug,
             };
         } catch (error) {
             this._setError(error.message);

@@ -4,6 +4,15 @@ const curseforgeService = require('../services/curseforgeService');
 
 const router = express.Router();
 
+// Lazy-load minecraft service (singleton)
+let _mcService = null;
+function getMcService() {
+    if (!_mcService) {
+        _mcService = require('../services/minecraftService');
+    }
+    return _mcService;
+}
+
 // GET /api/modpacks/search?query=
 router.get('/search', authMiddleware, async (req, res) => {
     try {
@@ -146,6 +155,30 @@ router.put('/:id/settings', authMiddleware, (req, res) => {
     } catch (error) {
         console.error('[Modpacks] Settings update error:', error.message);
         res.status(500).json({ error: 'Ayarlar güncellenemedi' });
+    }
+});
+
+// GET /api/modpacks/active - Aktif profil bilgisi
+router.get('/active', authMiddleware, (req, res) => {
+    try {
+        const mcService = getMcService();
+        const profile = mcService.getActiveProfile();
+        const serverStatus = mcService.getStatus().status;
+        res.json({ profile, serverStatus });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/modpacks/activate/:id - Profil geçişi
+router.post('/activate/:id', authMiddleware, async (req, res) => {
+    try {
+        const mcService = getMcService();
+        const result = await mcService.switchProfile(parseInt(req.params.id));
+        res.json(result);
+    } catch (error) {
+        console.error('[Modpacks] Activate error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 

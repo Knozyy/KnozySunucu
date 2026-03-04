@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
+const { getDb } = require('../db/database');
 
 class MinecraftService extends EventEmitter {
     constructor() {
@@ -16,7 +17,50 @@ class MinecraftService extends EventEmitter {
     }
 
     getServerPath() {
+        // Aktif profil varsa onun yolunu kullan
+        try {
+            const db = getDb();
+            const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
+            if (active?.install_path && fs.existsSync(active.install_path)) {
+                return active.install_path;
+            }
+        } catch { /* fallback */ }
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+    }
+
+    getActiveProfile() {
+        try {
+            const db = getDb();
+            return db.prepare('SELECT * FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get() || null;
+        } catch { return null; }
+    }
+
+    async switchProfile(profileId) {
+        const db = getDb();
+        const target = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(profileId);
+        if (!target) throw new Error('Profil bulunamadı');
+
+        // Sunucu açıksa kapat
+        if (this.status === 'running' || this.process) {
+            this.addLog('[Profil] Sunucu kapatılıyor (save-all)...');
+            this.sendCommand('save-all');
+            await new Promise(r => setTimeout(r, 3000));
+            this.sendCommand('stop');
+            // Sunucu kapanmasını bekle (max 30sn)
+            await new Promise((resolve) => {
+                const check = setInterval(() => {
+                    if (!this.process) { clearInterval(check); resolve(); }
+                }, 500);
+                setTimeout(() => { clearInterval(check); resolve(); }, 30000);
+            });
+        }
+
+        // Tüm profilleri pasif yap, hedefi aktif yap
+        db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
+        db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(profileId);
+
+        this.addLog(`[Profil] "${target.name}" profili aktif edildi`);
+        return { message: `"${target.name}" profili aktif edildi`, profile: target };
     }
 
     getServerJar() {
