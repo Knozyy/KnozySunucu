@@ -54,10 +54,16 @@ export default function ModpacksPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
     });
 
+    const [isPolling, setIsPolling] = useState(false);
+
     const { data: installStatusData } = useQuery({
         queryKey: ['installStatus'],
-        queryFn: () => api.get('/modpacks/install-status').then(r => r.data),
-        refetchInterval: installMutation.isPending || installStatusData?.isInstalling ? 1000 : false,
+        queryFn: () => api.get('/modpacks/install-status').then(r => {
+            const d = r.data;
+            setIsPolling(d.isInstalling);
+            return d;
+        }),
+        refetchInterval: isPolling ? 1000 : false,
     });
 
     const uninstallMutation = useMutation({
