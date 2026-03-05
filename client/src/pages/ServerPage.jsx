@@ -11,6 +11,7 @@ import {
     HiOutlineWrenchScrewdriver,
     HiOutlineCpuChip,
     HiOutlineCircleStack,
+    HiOutlinePuzzlePiece,
 } from 'react-icons/hi2';
 
 export default function ServerPage() {
@@ -20,6 +21,27 @@ export default function ServerPage() {
         queryKey: ['minecraftStatus'],
         queryFn: () => api.get('/minecraft/status').then(r => r.data),
         refetchInterval: 3000,
+    });
+
+    const { data: installedData } = useQuery({
+        queryKey: ['modpackInstalled'],
+        queryFn: () => api.get('/modpacks/installed').then(r => r.data),
+    });
+
+    const { data: activeProfileData } = useQuery({
+        queryKey: ['activeProfile'],
+        queryFn: () => api.get('/modpacks/active').then(r => r.data),
+    });
+
+    const activateMutation = useMutation({
+        mutationFn: (id) => api.post(`/modpacks/activate/${id}`),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
+            queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Profil değişimi başarısız'),
     });
 
     const startMutation = useMutation({
@@ -99,7 +121,33 @@ export default function ServerPage() {
                     </div>
 
                     <div className="flex-1 text-center md:text-left">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-1">Sunucu Durumu</h2>
+                        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2 justify-center md:justify-start">
+                            <h2 className="text-2xl font-bold text-gray-900">Sunucu Durumu</h2>
+
+                            {installedData?.modpacks?.length > 0 && (
+                                <div className="relative inline-flex items-center">
+                                    <HiOutlinePuzzlePiece className="absolute left-3 text-gray-400 w-4 h-4" />
+                                    <select
+                                        className="bg-gray-50 border border-gray-200 text-gray-900 text-xs rounded-lg focus:ring-primary-500 focus:border-primary-500 block pl-9 pr-8 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                                        value={activeProfileData?.profile?.id || ''}
+                                        onChange={(e) => {
+                                            const profileId = e.target.value;
+                                            if (!profileId) return;
+                                            if (isRunning && !window.confirm('Açık olan sunucu kapatılıp yeni profil ile başlatılacak. Emin misiniz?')) {
+                                                return;
+                                            }
+                                            activateMutation.mutate(profileId);
+                                        }}
+                                        disabled={activateMutation.isPending || isStarting || isStopping}
+                                    >
+                                        <option value="" disabled>Profil Seçin</option>
+                                        {installedData.modpacks.map(mp => (
+                                            <option key={mp.id} value={mp.id}>{mp.name} {mp.version}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
                         <p className={`text-lg font-semibold ${getStatusColor()}`}>
                             {(isStarting || isStopping) && (
                                 <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2 align-middle" />
