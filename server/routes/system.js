@@ -189,27 +189,66 @@ router.get('/connection-info', authMiddleware, async (req, res) => {
 // GET /api/system/processes - Çalışan Java (Sunucu) süreçlerini listele
 router.get('/processes', authMiddleware, async (req, res) => {
     try {
-        const si = require('systeminformation');
-        const processData = await si.processes();
+        const isLinux = process.platform === 'linux';
+        let targetProcesses = [];
 
-        // Sadece java veya tünel uygulamalarını filtrele
-        const targetProcesses = processData.list.filter(p =>
-            p.name.toLowerCase().includes('java') ||
-            (p.command && p.command.toLowerCase().includes('java')) ||
-            p.name.toLowerCase().includes('ngrok') ||
-            p.name.toLowerCase().includes('playit') ||
-            p.name.toLowerCase().includes('cmd.exe') || // Windows bat scriptleri için
-            p.name.toLowerCase().includes('bash') // Linux sh scriptleri için
-        ).map(p => ({
-            pid: p.pid,
-            parentPid: p.parentPid,
-            name: p.name,
-            cpu: p.cpu.toFixed(1),
-            mem: (p.memRss / 1024).toFixed(1), // MB cinsinden RAM kullanımı
-            user: p.user,
-            command: p.command,
-            started: p.started
-        }));
+        if (isLinux) {
+            const { execSync } = require('child_process');
+            // ps -eo pid,ppid,%cpu,rss,user,comm,args
+            const out = execSync('ps -eo pid,ppid,%cpu,rss,user,comm,args').toString();
+            const lines = out.split('\n').slice(1).filter(Boolean);
+
+            for (const line of lines) {
+                // Parse correctly knowing that args can have spaces
+                // Format: PID PPID %CPU RSS USER COMMAND ARGS
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+([0-9.]+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/);
+                if (match) {
+                    const [_, pid, ppid, cpu, rss, user, comm, args] = match;
+                    const fullCmd = args || comm;
+                    const lowerCmd = fullCmd.toLowerCase();
+                    const lowerComm = comm.toLowerCase();
+
+                    if (lowerComm.includes('java') || lowerCmd.includes('java') ||
+                        lowerComm.includes('ngrok') || lowerComm.includes('playit') ||
+                        lowerComm.includes('bash')) {
+
+                        targetProcesses.push({
+                            pid: parseInt(pid),
+                            parentPid: parseInt(ppid),
+                            name: comm,
+                            cpu: parseFloat(cpu).toFixed(1), // htop uses per-core %
+                            mem: (parseInt(rss) / 1024).toFixed(1), // RSS is in KB -> MB
+                            user: user,
+                            command: fullCmd,
+                            started: 'N/A'
+                        });
+                    }
+                }
+            }
+        } else {
+            const si = require('systeminformation');
+            const processData = await si.processes();
+            const cpuData = await si.cpu();
+            const cores = cpuData.cores || 1;
+
+            targetProcesses = processData.list.filter(p =>
+                p.name.toLowerCase().includes('java') ||
+                (p.command && p.command.toLowerCase().includes('java')) ||
+                p.name.toLowerCase().includes('ngrok') ||
+                p.name.toLowerCase().includes('playit') ||
+                p.name.toLowerCase().includes('cmd.exe')
+            ).map(p => ({
+                pid: p.pid,
+                parentPid: p.parentPid,
+                name: p.name,
+                // sistem bilgisinde CPU genel olabilir, htop gibi per-core yapmak için core sayısıyla çarpılır
+                cpu: (p.cpu * cores).toFixed(1),
+                mem: (p.memRss / 1024).toFixed(1), // MB cinsinden RAM kullanımı
+                user: p.user,
+                command: p.command,
+                started: p.started
+            }));
+        }
 
         res.json({ processes: targetProcesses });
     } catch (error) {
