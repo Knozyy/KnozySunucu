@@ -248,6 +248,43 @@ class Scheduler {
                     break;
                 }
 
+                case 'clear_items': {
+                    if (mcService.status === 'running') {
+                        try {
+                            mcService.sendCommand('say §e[Dikkat] Yerdeki tüm eşyalar 10 saniye içinde silinecek!');
+                            this._addLog(task.name, 'Açıklama: 10 saniye sonra eşyalar silinecek');
+                            await new Promise(r => setTimeout(r, 10000));
+                            mcService.sendCommand('kill @e[type=item]');
+                            mcService.sendCommand('say §a[Sistem] Yerdeki eşyalar başarıyla temizlendi.');
+                            this._addLog(task.name, 'Yerdeki eşyalar temizlendi');
+                        } catch (e) {
+                            this._addLog(task.name, `Eşya silme hatası: ${e.message}`);
+                        }
+                    } else {
+                        this._addLog(task.name, `Sunucu çalışmıyor, temizleme atlandı`);
+                    }
+                    break;
+                }
+
+                case 'custom_command': {
+                    if (mcService.status === 'running') {
+                        try {
+                            const data = JSON.parse(task.action_data || '{}');
+                            if (data.command) {
+                                mcService.sendCommand(data.command);
+                                this._addLog(task.name, `Özel komut gönderildi: /${data.command}`);
+                            } else {
+                                this._addLog(task.name, 'Hata: Komut tanımlanmamış');
+                            }
+                        } catch (e) {
+                            this._addLog(task.name, `Komut gönderme hatası: ${e.message}`);
+                        }
+                    } else {
+                        this._addLog(task.name, `Sunucu çalışmıyor, komut atlandı`);
+                    }
+                    break;
+                }
+
                 default:
                     this._addLog(task.name, `Bilinmeyen aksiyon: ${task.action}`);
             }

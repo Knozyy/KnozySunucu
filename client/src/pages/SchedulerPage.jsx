@@ -92,6 +92,27 @@ export default function SchedulerPage() {
         backup: '💾 Yedek Al',
         announce: '📢 Duyuru Yap',
         webhook: '🔔 Webhook Gönder',
+        clear_items: '🗑️ Yerdeki Eşyaları Sil',
+        custom_command: '⚡ Özel Komut Çalıştır'
+    };
+
+    const [formInput, setFormInput] = useState({
+        intervalValue: 6,
+        intervalUnit: 'hours', // 'minutes' veya 'hours'
+    });
+
+    const handleFormSubmit = () => {
+        let finalMinutes = formInput.intervalValue;
+        if (formInput.intervalUnit === 'hours') {
+            finalMinutes = formInput.intervalValue * 60;
+        }
+
+        const dataToSubmit = {
+            ...form,
+            intervalMinutes: finalMinutes,
+        };
+
+        createMutation.mutate(dataToSubmit);
     };
 
     return (
@@ -124,11 +145,10 @@ export default function SchedulerPage() {
                     <div className="max-h-60 overflow-y-auto bg-gray-900 rounded-xl p-3 text-xs font-mono space-y-1">
                         {logData?.log?.length > 0 ? (
                             [...logData.log].reverse().map((entry, i) => (
-                                <div key={i} className={`px-2 py-0.5 rounded ${entry.message.includes('HATA') ? 'text-red-400 bg-red-900/10' :
-                                        entry.message.includes('hatası') ? 'text-red-300' :
-                                            entry.message.includes('başарı') || entry.message.includes('tamamlandı') ? 'text-green-400' :
-                                                entry.message.includes('atlandı') ? 'text-amber-400' :
-                                                    'text-gray-400'
+                                <div key={i} className={`px-2 py-0.5 rounded ${entry.message.includes('HATA') || entry.message.includes('hatası') ? 'text-red-400 bg-red-900/10' :
+                                    entry.message.includes('başarıyla') || entry.message.includes('tamamlandı') || entry.message.includes('temizlendi') ? 'text-green-400' :
+                                        entry.message.includes('atlandı') ? 'text-amber-400' :
+                                            'text-gray-400'
                                     }`}>
                                     <span className="text-gray-600">{new Date(entry.time).toLocaleString('tr-TR')}</span>
                                     {' '}
@@ -152,7 +172,7 @@ export default function SchedulerPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Görev Adı</label>
-                            <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="input-field" placeholder="Otomatik restart" />
+                            <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="input-field" placeholder="Örn: Otomatik restart" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">İşlem</label>
@@ -160,30 +180,47 @@ export default function SchedulerPage() {
                                 <option value="restart">Sunucu Yeniden Başlat</option>
                                 <option value="backup">Yedek Al</option>
                                 <option value="announce">Oyun İçi Duyuru</option>
+                                <option value="clear_items">Yerdeki Eşyaları Sil (Clear Items)</option>
+                                <option value="custom_command">Özel Komut Çalıştır</option>
                                 <option value="webhook">Discord Webhook</option>
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tekrar Süresi (dk)</label>
-                            <input type="number" value={form.intervalMinutes} onChange={e => setForm(p => ({ ...p, intervalMinutes: parseInt(e.target.value) || 60 }))} className="input-field" min={1} />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Tekrar Süresi</label>
+                            <div className="flex gap-2">
+                                <input type="number"
+                                    className="input-field flex-1" min={1}
+                                    value={formInput.intervalValue}
+                                    onChange={e => setFormInput(p => ({ ...p, intervalValue: parseInt(e.target.value) || 1 }))}
+                                />
+                                <select
+                                    className="input-field w-28"
+                                    value={formInput.intervalUnit}
+                                    onChange={e => setFormInput(p => ({ ...p, intervalUnit: e.target.value }))}
+                                >
+                                    <option value="minutes">Dakika</option>
+                                    <option value="hours">Saat</option>
+                                </select>
+                            </div>
                         </div>
-                        {(form.action === 'announce' || form.action === 'webhook') && (
+                        {(form.action === 'announce' || form.action === 'webhook' || form.action === 'custom_command') && (
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {form.action === 'announce' ? 'Duyuru Mesajı' : 'Webhook URL'}
+                                    {form.action === 'announce' ? 'Duyuru Mesajı' : form.action === 'custom_command' ? 'Özel Sunucu Komutu' : 'Webhook URL'}
                                 </label>
                                 <input type="text"
-                                    value={form.action === 'announce' ? (form.actionData.message || '') : (form.actionData.url || '')}
-                                    onChange={e => setForm(p => ({ ...p, actionData: form.action === 'announce' ? { message: e.target.value } : { url: e.target.value, message: form.name } }))}
+                                    value={form.action === 'announce' ? (form.actionData.message || '') : form.action === 'custom_command' ? (form.actionData.command || '') : (form.actionData.url || '')}
+                                    onChange={e => setForm(p => ({ ...p, actionData: form.action === 'announce' ? { message: e.target.value } : form.action === 'custom_command' ? { command: e.target.value } : { url: e.target.value, message: form.name } }))}
                                     className="input-field"
-                                    placeholder={form.action === 'announce' ? 'Sunucu 5 dakika içinde yeniden başlayacak!' : 'https://discord.com/api/webhooks/...'}
+                                    placeholder={form.action === 'announce' ? 'Sunucu 5 dakika içinde kapanacak!' : form.action === 'custom_command' ? 'say Komut testi && kill @a' : 'https://discord.com/api/webhooks/...'}
                                 />
+                                {form.action === 'custom_command' && <p className="text-xs text-gray-500 mt-1">Başına '/' koymanıza gerek yoktur.</p>}
                             </div>
                         )}
                     </div>
                     <div className="flex gap-3 mt-4 justify-end">
                         <button onClick={() => setShowForm(false)} className="btn-secondary">İptal</button>
-                        <button onClick={() => createMutation.mutate(form)} disabled={!form.name || createMutation.isPending} className="btn-primary">
+                        <button onClick={handleFormSubmit} disabled={!form.name || createMutation.isPending} className="btn-primary">
                             {createMutation.isPending ? 'Oluşturuluyor...' : 'Oluştur'}
                         </button>
                     </div>
@@ -192,33 +229,48 @@ export default function SchedulerPage() {
 
             {/* Task List */}
             <div className="space-y-3">
-                {tasks.length > 0 ? tasks.map(task => (
-                    <div key={task.id} className="glass-card p-5 fade-in flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${task.enabled ? 'bg-green-50' : 'bg-gray-100'}`}>
-                            <HiOutlineClock className={`w-5 h-5 ${task.enabled ? 'text-green-600' : 'text-gray-400'}`} />
-                        </div>
-                        <div className="flex-1">
-                            <p className="font-semibold text-gray-900">{task.name}</p>
-                            <p className="text-sm text-gray-500">
-                                {actionLabels[task.action] || task.action} • Her {task.interval_minutes} dakikada
-                            </p>
-                            <div className="flex items-center gap-4 mt-1.5">
-                                {task.last_run && <p className="text-xs text-gray-400">Son: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
-                                <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                    Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled} />
-                                </p>
+                {tasks.length > 0 ? tasks.map(task => {
+                    // Dakikayı daha güzel formatlama logic
+                    let displayInterval = `${task.interval_minutes} dakika`;
+                    if (task.interval_minutes >= 60 && task.interval_minutes % 60 === 0) {
+                        displayInterval = `${task.interval_minutes / 60} saat`;
+                    }
+
+                    return (
+                        <div key={task.id} className="glass-card p-5 fade-in flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${task.enabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                                <HiOutlineClock className={`w-5 h-5 ${task.enabled ? 'text-green-600' : 'text-gray-400'}`} />
                             </div>
+                            <div className="flex-1">
+                                <p className="font-semibold text-gray-900">
+                                    {task.name}
+                                    {task.action === 'custom_command' && task.action_data && (
+                                        <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono">
+                                            /{JSON.parse(task.action_data).command}
+                                        </span>
+                                    )}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                    {actionLabels[task.action] || task.action} • Her {displayInterval}'da
+                                </p>
+                                <div className="flex items-center gap-4 mt-1.5">
+                                    {task.last_run && <p className="text-xs text-gray-400">Son: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
+                                    <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
+                                        Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled} />
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => toggleMutation.mutate(task.id)}
+                                className={`p-2 rounded-lg transition-colors ${task.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                            >
+                                {task.enabled ? <HiOutlinePause className="w-5 h-5" /> : <HiOutlinePlay className="w-5 h-5" />}
+                            </button>
+                            <button onClick={() => deleteMutation.mutate(task.id)} className="text-red-400 hover:text-red-600 transition-colors p-2">
+                                <HiOutlineTrash className="w-5 h-5" />
+                            </button>
                         </div>
-                        <button onClick={() => toggleMutation.mutate(task.id)}
-                            className={`p-2 rounded-lg transition-colors ${task.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                        >
-                            {task.enabled ? <HiOutlinePause className="w-5 h-5" /> : <HiOutlinePlay className="w-5 h-5" />}
-                        </button>
-                        <button onClick={() => deleteMutation.mutate(task.id)} className="text-red-400 hover:text-red-600 transition-colors p-2">
-                            <HiOutlineTrash className="w-5 h-5" />
-                        </button>
-                    </div>
-                )) : (
+                    );
+                }) : (
                     <div className="text-center py-12 text-gray-400">
                         <HiOutlineClock className="w-16 h-16 mx-auto mb-4 opacity-20" />
                         <p className="text-lg">Henüz zamanlanmış görev yok</p>
