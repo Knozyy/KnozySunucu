@@ -3,26 +3,22 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useI18n } from '@/context/I18nContext';
 import {
-    HiOutlineHome, HiOutlineServer, HiOutlinePuzzlePiece,
+    HiOutlineHome, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
-    HiOutlineDocumentText, HiOutlineFolder, HiOutlineUsers,
-    HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
+    HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage,
 } from 'react-icons/hi2';
 
 const navItems = [
     { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
-    { path: '/server', i18nKey: 'nav.server', icon: HiOutlineServer },
     { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece },
     { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube },
     { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
     { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder },
-    { path: '/players', i18nKey: 'nav.players', icon: HiOutlineUsers },
     { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
     { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock },
-    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth },
     { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox },
-    { path: '/logs', i18nKey: 'nav.logs', icon: HiOutlineDocumentText },
+    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {

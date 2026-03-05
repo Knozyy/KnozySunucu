@@ -4,10 +4,10 @@ import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
 import {
-    HiOutlineCog6Tooth,
-    HiOutlineArrowPath,
-    HiOutlineCpuChip,
-    HiOutlineCircleStack,
+    HiOutlineCog6Tooth, HiOutlineArrowPath,
+    HiOutlineCpuChip, HiOutlineCircleStack,
+    HiOutlineUsers, HiOutlineShieldCheck, HiOutlineNoSymbol,
+    HiOutlineUserPlus, HiOutlineTrash,
 } from 'react-icons/hi2';
 
 const PROPERTY_LABELS = {
@@ -32,20 +32,19 @@ const PROPERTY_LABELS = {
 };
 
 export default function SettingsPage() {
+    const [activeTab, setActiveTab] = useState('general');
     const [editedProps, setEditedProps] = useState({});
     const [ramSettings, setRamSettings] = useState({ minRam: '', maxRam: '', jvmArgs: '' });
     const [ramSystem, setRamSystem] = useState(null);
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
-    // server.properties
     const { data: properties, isLoading } = useQuery({
         queryKey: ['serverProperties'],
         queryFn: () => api.get('/minecraft/properties').then(r => r.data),
         onSuccess: (data) => setEditedProps(data),
     });
 
-    // RAM ayarları (tek endpoint — akıllı varsayılanlar dahil)
     const { data: currentRam } = useQuery({
         queryKey: ['ramSettings'],
         queryFn: () => api.get('/system/ram-settings').then(r => r.data),
@@ -57,29 +56,18 @@ export default function SettingsPage() {
 
     const savePropertiesMutation = useMutation({
         mutationFn: (props) => api.put('/minecraft/properties', props),
-        onSuccess: () => {
-            toast.success('Server properties kaydedildi!');
-            queryClient.invalidateQueries({ queryKey: ['serverProperties'] });
-        },
+        onSuccess: () => { toast.success('Server properties kaydedildi!'); queryClient.invalidateQueries({ queryKey: ['serverProperties'] }); },
         onError: (err) => toast.error(err.response?.data?.error || 'Kaydetme başarısız'),
     });
 
     const saveRamMutation = useMutation({
         mutationFn: (settings) => api.put('/system/ram-settings', settings),
-        onSuccess: (res) => {
-            toast.success(res.data.message);
-            queryClient.invalidateQueries({ queryKey: ['ramSettings'] });
-        },
+        onSuccess: (res) => { toast.success(res.data.message); queryClient.invalidateQueries({ queryKey: ['ramSettings'] }); },
         onError: (err) => toast.error(err.response?.data?.error || 'RAM ayarları güncellenemedi'),
     });
 
-    const handlePropChange = (key, value) => {
-        setEditedProps(prev => ({ ...prev, [key]: value }));
-    };
-
-    const handleRamChange = (key, value) => {
-        setRamSettings(prev => ({ ...prev, [key]: value }));
-    };
+    const handlePropChange = (key, value) => setEditedProps(prev => ({ ...prev, [key]: value }));
+    const handleRamChange = (key, value) => setRamSettings(prev => ({ ...prev, [key]: value }));
 
     const handleSaveAll = () => {
         savePropertiesMutation.mutate(editedProps);
@@ -91,6 +79,11 @@ export default function SettingsPage() {
         || JSON.stringify({ minRam: currentRam?.minRam, maxRam: currentRam?.maxRam, jvmArgs: currentRam?.jvmArgs }) !== JSON.stringify(ramSettings);
     const isSaving = savePropertiesMutation.isPending || saveRamMutation.isPending;
 
+    const tabs = [
+        { id: 'general', label: 'Genel Ayarlar', icon: HiOutlineCog6Tooth },
+        { id: 'players', label: 'Oyuncu Yönetimi', icon: HiOutlineUsers },
+    ];
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between fade-in">
@@ -98,136 +91,230 @@ export default function SettingsPage() {
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('settings.title')}</h1>
                     <p className="text-gray-500">{t('settings.subtitle')}</p>
                 </div>
-                <button onClick={handleSaveAll} disabled={!hasChanges || isSaving} className="btn-primary">
-                    {isSaving ? (
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                        <><HiOutlineCog6Tooth className="w-5 h-5" /> Tümünü Kaydet</>
-                    )}
-                </button>
+                {activeTab === 'general' && (
+                    <button onClick={handleSaveAll} disabled={!hasChanges || isSaving} className="btn-primary">
+                        {isSaving ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            <><HiOutlineCog6Tooth className="w-5 h-5" /> Tümünü Kaydet</>
+                        )}
+                    </button>
+                )}
             </div>
 
-            {hasChanges && (
-                <div className="glass-card p-3 border-amber-200 bg-amber-50 text-amber-700 text-sm flex items-center gap-2">
-                    <HiOutlineArrowPath className="w-4 h-4" />
-                    Kaydedilmemiş değişiklikler var. Değişikliklerin etkili olması için sunucuyu yeniden başlatın.
-                </div>
-            )}
+            {/* Tab buttons */}
+            <div className="flex gap-2 fade-in">
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                            }`}>
+                        <tab.icon className="w-4 h-4" /> {tab.label}
+                    </button>
+                ))}
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Sol: RAM & JVM */}
-                <div className="space-y-6 fade-in">
-                    {/* RAM Ayarları — tek yer */}
-                    <div className="glass-card p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <HiOutlineCircleStack className="w-5 h-5 text-blue-600" />
-                            RAM Ayarları
-                        </h2>
-
-                        {/* Sistem bilgisi (sadece bilgilendirme) */}
-                        {ramSystem && (
-                            <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl text-sm text-gray-500">
-                                Sistem RAM: <span className="font-semibold text-gray-900">{ramSystem.totalGB} GB</span>
-                                <span className="mx-2">•</span>
-                                Max verilebilir: <span className="font-semibold text-gray-900">{ramSystem.maxAllocatable} GB</span>
-                                <span className="text-xs ml-1 text-gray-400">(toplam - 2GB OS)</span>
-                            </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Min RAM</label>
-                                <input
-                                    type="text"
-                                    value={ramSettings.minRam}
-                                    onChange={e => handleRamChange('minRam', e.target.value)}
-                                    className="input-field"
-                                    placeholder="2G"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM</label>
-                                <input
-                                    type="text"
-                                    value={ramSettings.maxRam}
-                                    onChange={e => handleRamChange('maxRam', e.target.value)}
-                                    className="input-field"
-                                    placeholder="4G"
-                                />
-                            </div>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-3">
-                            Örn: 4G, 8G, 12G. Max RAM = toplam sistem RAM - 2GB (OS için) olarak önerilir.
-                        </p>
-                    </div>
-
-                    {/* JVM Argümanları */}
-                    <div className="glass-card p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <HiOutlineCpuChip className="w-5 h-5 text-gray-600" />
-                            JVM Argümanları
-                        </h2>
-                        <textarea
-                            value={ramSettings.jvmArgs}
-                            onChange={e => handleRamChange('jvmArgs', e.target.value)}
-                            className="input-field h-32 font-mono text-xs resize-none"
-                            placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
-                        />
-                        <p className="text-xs text-gray-400 mt-2">
-                            Boş bırakırsanız varsayılan JVM ayarları kullanılır.
-                        </p>
-                    </div>
-                </div>
-
-                {/* Sağ: server.properties */}
-                <div className="fade-in">
-                    {isLoading ? (
-                        <div className="glass-card p-6">
-                            <div className="space-y-4">
-                                {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="glass-card p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                <HiOutlineCog6Tooth className="w-5 h-5 text-gray-600" />
-                                Oyun Ayarları (server.properties)
-                            </h2>
-                            <div className="space-y-3">
-                                {Object.entries(currentProps).map(([key, value]) => {
-                                    const meta = PROPERTY_LABELS[key];
-                                    const label = meta?.label || key;
-                                    const type = meta?.type || 'text';
-
-                                    return (
-                                        <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
-                                            <label className="text-sm text-gray-700 flex-shrink-0" htmlFor={`prop-${key}`}>
-                                                {label}
-                                            </label>
-                                            <div className="flex-shrink-0">
-                                                {type === 'boolean' ? (
-                                                    <button
-                                                        onClick={() => handlePropChange(key, value === 'true' ? 'false' : 'true')}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === 'true' ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-50 text-gray-400 border border-gray-200'
-                                                            }`}
-                                                    >
-                                                        {value === 'true' ? 'Aktif' : 'Kapalı'}
-                                                    </button>
-                                                ) : type === 'select' ? (
-                                                    <select id={`prop-${key}`} value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-32">
-                                                        {meta.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                    </select>
-                                                ) : (
-                                                    <input id={`prop-${key}`} type={type} value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-40" />
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+            {activeTab === 'general' ? (
+                <>
+                    {hasChanges && (
+                        <div className="glass-card p-3 border-amber-200 bg-amber-50 text-amber-700 text-sm flex items-center gap-2">
+                            <HiOutlineArrowPath className="w-4 h-4" />
+                            Kaydedilmemiş değişiklikler var. Değişikliklerin etkili olması için sunucuyu yeniden başlatın.
                         </div>
                     )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Sol: RAM & JVM */}
+                        <div className="space-y-6 fade-in">
+                            <div className="glass-card p-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <HiOutlineCircleStack className="w-5 h-5 text-blue-600" /> RAM Ayarları
+                                </h2>
+                                {ramSystem && (
+                                    <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl text-sm text-gray-500">
+                                        Sistem RAM: <span className="font-semibold text-gray-900">{ramSystem.totalGB} GB</span>
+                                        <span className="mx-2">•</span>
+                                        Max verilebilir: <span className="font-semibold text-gray-900">{ramSystem.maxAllocatable} GB</span>
+                                        <span className="text-xs ml-1 text-gray-400">(toplam - 2GB OS)</span>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Min RAM</label>
+                                        <input type="text" value={ramSettings.minRam} onChange={e => handleRamChange('minRam', e.target.value)} className="input-field" placeholder="2G" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM</label>
+                                        <input type="text" value={ramSettings.maxRam} onChange={e => handleRamChange('maxRam', e.target.value)} className="input-field" placeholder="4G" />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-3">Örn: 4G, 8G, 12G. Max RAM = toplam sistem RAM - 2GB (OS için).</p>
+                            </div>
+                            <div className="glass-card p-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <HiOutlineCpuChip className="w-5 h-5 text-gray-600" /> JVM Argümanları
+                                </h2>
+                                <textarea value={ramSettings.jvmArgs} onChange={e => handleRamChange('jvmArgs', e.target.value)}
+                                    className="input-field h-32 font-mono text-xs resize-none"
+                                    placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..." />
+                                <p className="text-xs text-gray-400 mt-2">Boş bırakırsanız varsayılan JVM ayarları kullanılır.</p>
+                            </div>
+                        </div>
+
+                        {/* Sağ: server.properties */}
+                        <div className="fade-in">
+                            {isLoading ? (
+                                <div className="glass-card p-6">
+                                    <div className="space-y-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
+                                </div>
+                            ) : (
+                                <div className="glass-card p-6">
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                        <HiOutlineCog6Tooth className="w-5 h-5 text-gray-600" /> Oyun Ayarları
+                                    </h2>
+                                    <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                                        {Object.entries(currentProps).map(([key, value]) => {
+                                            const meta = PROPERTY_LABELS[key];
+                                            const label = meta?.label || key;
+                                            const type = meta?.type || 'text';
+                                            return (
+                                                <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
+                                                    <label className="text-sm text-gray-700 flex-shrink-0">{label}</label>
+                                                    <div className="flex-shrink-0">
+                                                        {type === 'boolean' ? (
+                                                            <button onClick={() => handlePropChange(key, value === 'true' ? 'false' : 'true')}
+                                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === 'true' ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-50 text-gray-400 border border-gray-200'}`}>
+                                                                {value === 'true' ? 'Aktif' : 'Kapalı'}
+                                                            </button>
+                                                        ) : type === 'select' ? (
+                                                            <select value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-32">
+                                                                {meta.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <input type={type} value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-40" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <PlayersPanel />
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// OYUNCU YÖNETİMİ PANELİ (eski PlayersPage)
+// ============================================================
+function PlayersPanel() {
+    const [activeList, setActiveList] = useState('whitelist');
+    const [newName, setNewName] = useState('');
+    const queryClient = useQueryClient();
+
+    const { data: whitelist } = useQuery({ queryKey: ['whitelist'], queryFn: () => api.get('/players/whitelist').then(r => r.data) });
+    const { data: ops } = useQuery({ queryKey: ['ops'], queryFn: () => api.get('/players/ops').then(r => r.data) });
+    const { data: banned } = useQuery({ queryKey: ['banned'], queryFn: () => api.get('/players/banned').then(r => r.data) });
+
+    const addWhitelist = useMutation({
+        mutationFn: (name) => api.post('/players/whitelist', { name }),
+        onSuccess: () => { toast.success('Whitelist\'e eklendi'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['whitelist'] }); },
+        onError: (err) => toast.error(err.response?.data?.error || 'Eklenemedi'),
+    });
+    const removeWhitelist = useMutation({
+        mutationFn: (name) => api.delete(`/players/whitelist/${name}`),
+        onSuccess: () => { toast.success('Çıkarıldı'); queryClient.invalidateQueries({ queryKey: ['whitelist'] }); },
+    });
+    const addOp = useMutation({
+        mutationFn: (name) => api.post('/players/ops', { name }),
+        onSuccess: () => { toast.success('OP yapıldı'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['ops'] }); },
+        onError: (err) => toast.error(err.response?.data?.error || 'Eklenemedi'),
+    });
+    const removeOp = useMutation({
+        mutationFn: (name) => api.delete(`/players/ops/${name}`),
+        onSuccess: () => { toast.success('OP kaldırıldı'); queryClient.invalidateQueries({ queryKey: ['ops'] }); },
+    });
+    const banPlayer = useMutation({
+        mutationFn: (name) => api.post('/players/ban', { name }),
+        onSuccess: () => { toast.success('Banlandı'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['banned'] }); },
+        onError: (err) => toast.error(err.response?.data?.error || 'Banlanamadı'),
+    });
+    const unbanPlayer = useMutation({
+        mutationFn: (name) => api.delete(`/players/ban/${name}`),
+        onSuccess: () => { toast.success('Ban kaldırıldı'); queryClient.invalidateQueries({ queryKey: ['banned'] }); },
+    });
+
+    const listTabs = [
+        { id: 'whitelist', label: 'Whitelist', icon: HiOutlineUsers, count: whitelist?.players?.length || 0 },
+        { id: 'ops', label: 'Operatörler', icon: HiOutlineShieldCheck, count: ops?.players?.length || 0 },
+        { id: 'banned', label: 'Banlı', icon: HiOutlineNoSymbol, count: banned?.players?.length || 0 },
+    ];
+
+    const handleAdd = () => {
+        if (!newName.trim()) return;
+        if (activeList === 'whitelist') addWhitelist.mutate(newName.trim());
+        else if (activeList === 'ops') addOp.mutate(newName.trim());
+        else banPlayer.mutate(newName.trim());
+    };
+
+    const getList = () => {
+        if (activeList === 'whitelist') return whitelist?.players || [];
+        if (activeList === 'ops') return ops?.players || [];
+        return banned?.players || [];
+    };
+
+    const handleRemove = (name) => {
+        if (activeList === 'whitelist') removeWhitelist.mutate(name);
+        else if (activeList === 'ops') removeOp.mutate(name);
+        else unbanPlayer.mutate(name);
+    };
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="flex gap-2 flex-wrap">
+                {listTabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveList(tab.id)}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeList === tab.id ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                            }`}>
+                        <tab.icon className="w-4 h-4" /> {tab.label} ({tab.count})
+                    </button>
+                ))}
+            </div>
+
+            <div className="glass-card p-4">
+                <div className="flex gap-3">
+                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                        className="input-field flex-1" placeholder="Oyuncu adı..."
+                        onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }} />
+                    <button onClick={handleAdd} className="btn-primary">
+                        <HiOutlineUserPlus className="w-5 h-5" /> Ekle
+                    </button>
                 </div>
+            </div>
+
+            <div className="glass-card overflow-hidden">
+                {getList().length > 0 ? getList().map((player, i) => (
+                    <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors group">
+                        <img src={`https://mc-heads.net/avatar/${player.name}/32`} alt={player.name} className="w-8 h-8 rounded-lg" loading="lazy" />
+                        <span className="text-sm text-gray-900 font-medium flex-1">{player.name}</span>
+                        {player.level && <span className="text-xs text-gray-400">Level {player.level}</span>}
+                        {player.reason && <span className="text-xs text-red-400 truncate max-w-[200px]">{player.reason}</span>}
+                        <button onClick={() => handleRemove(player.name)}
+                            className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all">
+                            <HiOutlineTrash className="w-4 h-4" />
+                        </button>
+                    </div>
+                )) : (
+                    <div className="p-8 text-center text-gray-400">
+                        <HiOutlineUsers className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                        <p>Henüz oyuncu yok</p>
+                    </div>
+                )}
             </div>
         </div>
     );

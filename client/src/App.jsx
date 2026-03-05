@@ -8,14 +8,11 @@ import { I18nProvider } from '@/context/I18nContext';
 import MainLayout from '@/components/layout/MainLayout';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
-import ServerPage from '@/pages/ServerPage';
 import ModpacksPage from '@/pages/ModpacksPage';
 import ConsolePage from '@/pages/ConsolePage';
 import SettingsPage from '@/pages/SettingsPage';
 import BackupPage from '@/pages/BackupPage';
-import LogsPage from '@/pages/LogsPage';
 import FilesPage from '@/pages/FilesPage';
-import PlayersPage from '@/pages/PlayersPage';
 import ModsPage from '@/pages/ModsPage';
 import WorldsPage from '@/pages/WorldsPage';
 import SchedulerPage from '@/pages/SchedulerPage';
@@ -88,18 +85,19 @@ function App() {
                   }
                 >
                   <Route index element={<DashboardPage />} />
-                  <Route path="server" element={<ServerPage />} />
                   <Route path="modpacks" element={<ModpacksPage />} />
                   <Route path="mods" element={<ModsPage />} />
                   <Route path="console" element={<ConsolePage />} />
                   <Route path="files" element={<FilesPage />} />
-                  <Route path="players" element={<PlayersPage />} />
                   <Route path="worlds" element={<WorldsPage />} />
                   <Route path="scheduler" element={<SchedulerPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
                   <Route path="backup" element={<BackupPage />} />
-                  <Route path="logs" element={<LogsPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
                 </Route>
+                {/* Eski URL'ler → yenilere yönlendir */}
+                <Route path="/server" element={<Navigate to="/" replace />} />
+                <Route path="/players" element={<Navigate to="/settings" replace />} />
+                <Route path="/logs" element={<Navigate to="/console" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </I18nProvider>
