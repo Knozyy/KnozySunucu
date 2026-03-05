@@ -189,7 +189,7 @@ function LogFilesPanel() {
             <div className="glass-card p-4 flex flex-col sm:flex-row gap-3">
                 <select value={selectedFile} onChange={e => setSelectedFile(e.target.value)}
                     className="input-field text-sm flex-1">
-                    {logFiles?.files?.map(f => <option key={f} value={f}>{f}</option>)}
+                    {logFiles?.files?.map(f => <option key={f.name} value={f.name}>{f.name} ({(f.size / 1024).toFixed(0)} KB)</option>)}
                 </select>
                 <div className="flex gap-2 items-center">
                     <div className="relative flex-1 sm:w-48">
