@@ -40,18 +40,24 @@ class MinecraftService extends EventEmitter {
         const target = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(profileId);
         if (!target) throw new Error('Profil bulunamadı');
 
-        // Sunucu açıksa kapat
+        // Sunucu açıksa kapat (process tree dahil)
         if (this.status === 'running' || this.process) {
             this.addLog('[Profil] Sunucu kapatılıyor (save-all)...');
-            this.sendCommand('save-all');
+            try { this.sendCommand('save-all'); } catch { /* ignore */ }
             await new Promise(r => setTimeout(r, 3000));
-            this.sendCommand('stop');
-            // Sunucu kapanmasını bekle (max 30sn)
+            try { this.sendCommand('stop'); } catch { /* ignore */ }
+            // Sunucu kapanmasını bekle (max 15sn, sonra tree kill)
             await new Promise((resolve) => {
                 const check = setInterval(() => {
                     if (!this.process) { clearInterval(check); resolve(); }
                 }, 500);
-                setTimeout(() => { clearInterval(check); resolve(); }, 30000);
+                setTimeout(() => {
+                    clearInterval(check);
+                    if (this.process) {
+                        this._killProcessTree(this.process.pid);
+                    }
+                    setTimeout(resolve, 2000);
+                }, 15000);
             });
         }
 
@@ -239,6 +245,7 @@ class MinecraftService extends EventEmitter {
         this.process = spawn(cmd, args, {
             cwd: cwd,
             stdio: ['pipe', 'pipe', 'pipe'],
+            detached: process.platform !== 'win32', // Linux'ta process group oluştur
         });
 
         this.status = 'starting';
@@ -357,15 +364,58 @@ class MinecraftService extends EventEmitter {
             throw new Error('Sunucu zaten durmuş');
         }
 
-        this.sendCommand('stop');
         this.status = 'stopping';
         this.emit('status', this.status);
+        this.addLog('[System] Sunucu kapatılıyor...');
 
+        // Önce graceful stop komutu gönder (save yapması için)
+        try {
+            this.sendCommand('stop');
+        } catch { /* stdin kapalı olabilir */ }
+
+        // 15sn sonra hâlâ kapanmamışsa tüm process ağacını öldür
+        // (Bu, run.sh/run.bat gibi wrapper script döngülerini de durdurur)
         setTimeout(() => {
             if (this.process) {
-                this.process.kill('SIGKILL');
+                this.addLog('[System] Graceful shutdown yanıt vermedi, process tree kill ediliyor...');
+                this._killProcessTree(this.process.pid);
             }
-        }, 30000);
+        }, 15000);
+    }
+
+    /**
+     * Process ağacının tamamını öldür (wrapper script + Java + child processes)
+     * Bu fonksiyon olmadan run.sh/run.bat gibi auto-restart döngüleri
+     * Java kapandıktan sonra yeni bir process başlatır.
+     */
+    _killProcessTree(pid) {
+        if (!pid) return;
+
+        try {
+            if (process.platform === 'win32') {
+                // Windows: taskkill /T (tree) /F (force)
+                const { execSync } = require('child_process');
+                execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+            } else {
+                // Linux/macOS: Negatif PID ile process group'u öldür
+                try {
+                    process.kill(-pid, 'SIGKILL');
+                } catch {
+                    // Process group yoksa tek process'i öldür
+                    try {
+                        const { execSync } = require('child_process');
+                        // pkill ile child process'leri de öldür
+                        execSync(`pkill -KILL -P ${pid}`, { stdio: 'ignore' });
+                    } catch { /* ignore */ }
+                    try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+                }
+            }
+            this.addLog('[System] Process tree sonlandırıldı');
+        } catch (err) {
+            this.addLog(`[System] Process tree kill hatası: ${err.message}`);
+            // Son çare: doğrudan process.kill
+            try { this.process?.kill('SIGKILL'); } catch { /* ignore */ }
+        }
     }
 
     restart() {
