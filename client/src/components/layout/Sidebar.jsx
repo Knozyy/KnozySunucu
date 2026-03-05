@@ -6,7 +6,7 @@ import {
     HiOutlineHome, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
-    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage,
+    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
@@ -23,7 +23,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
-    const { user, activateGoldenKey } = useAuth();
+    const { user, activateGoldenKey, logout } = useAuth();
     const { isDark, toggle } = useTheme();
     const { locale, changeLocale, t } = useI18n();
 
@@ -111,20 +111,30 @@ export default function Sidebar({ isOpen, onClose }) {
                         <HiOutlineLanguage className="w-5 h-5" />
                         {locale === 'tr' ? 'English' : 'Türkçe'}
                     </button>
-                    <div
-                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors"
-                        onDoubleClick={handleGoldenKey}
-                        title={user?.role !== 'admin' ? "Gizli yetkilendirme için çift tıklayın" : "Yetkili Kullanıcı"}
-                    >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shadow-sm ${user?.role === 'admin' ? 'bg-amber-400 text-amber-950' : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'}`}>
-                            {user?.username?.[0]?.toUpperCase() || 'K'}
+                    <div className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors group">
+                        <div
+                            className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                            onDoubleClick={handleGoldenKey}
+                            title={user?.role !== 'admin' ? "Gizli yetkilendirme için çift tıklayın" : "Yetkili Kullanıcı"}
+                        >
+                            <div className={`w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-sm font-bold shadow-sm ${user?.role === 'admin' ? 'bg-amber-400 text-amber-950' : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'}`}>
+                                {user?.username?.[0]?.toUpperCase() || 'K'}
+                            </div>
+                            <div className="flex-1 min-w-0 truncate">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.username || 'Knozy'}</p>
+                                <p className={`text-xs ${user?.role === 'admin' ? 'text-amber-500 dark:text-amber-400 font-medium' : 'text-gray-400'}`}>
+                                    {user?.role === 'admin' ? 'SuperAdmin' : 'Misafir'}
+                                </p>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.username || 'Knozy'}</p>
-                            <p className={`text-xs ${user?.role === 'admin' ? 'text-amber-500 dark:text-amber-400 font-medium' : 'text-gray-400'}`}>
-                                {user?.role === 'admin' ? 'SuperAdmin' : 'Misafir'}
-                            </p>
-                        </div>
+
+                        <button
+                            onClick={logout}
+                            title={t('common.logout') || "Çıkış Yap"}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors focus:outline-none"
+                        >
+                            <HiOutlineArrowRightOnRectangle className="w-5 h-5" />
+                        </button>
                     </div>
                 </div>
             </aside>
