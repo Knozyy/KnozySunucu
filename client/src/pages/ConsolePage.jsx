@@ -107,8 +107,8 @@ export default function ConsolePage() {
                         onChange={(e) => setCommand(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="flex-1 bg-white border-none outline-none px-2 py-3 text-gray-900 font-mono text-sm placeholder:text-gray-400"
-                        placeholder="Komut girin... (örn: list, say Merhaba, op player)"
-                        disabled={!connected || status?.status !== 'running'}
+                        placeholder="Komut girin... (örn: I agree, list, op player)"
+                        disabled={!connected || (status?.status !== 'running' && status?.status !== 'starting')}
                     />
                     <button type="submit" disabled={!command.trim() || !connected} className="px-4 text-gray-900 hover:text-gray-600 transition-colors disabled:text-gray-300">
                         <HiOutlinePaperAirplane className="w-5 h-5" />

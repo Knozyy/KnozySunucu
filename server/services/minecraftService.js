@@ -247,6 +247,17 @@ class MinecraftService extends EventEmitter {
                 this.emit('status', this.status);
             }
 
+            // ServerPackCreator, eula veya Jabba kurulumu gibi onay isteklerini yakala
+            if (line.toLowerCase().includes("type 'i agree'")) {
+                this.addLog("[System] Otomatik kurulum onayı (I agree) gönderildi.");
+                this.sendCommand('I agree');
+            }
+            if (line.toLowerCase().includes("eula=true") || line.toLowerCase().includes("accept the eula")) {
+                this.addLog("[System] Otomatik EULA onayı gönderildi.");
+                this.sendCommand('true');
+                this.sendCommand('I agree');
+            }
+
             const joinMatch = line.match(/(\w+) joined the game/);
             if (joinMatch && !this.players.includes(joinMatch[1])) {
                 this.players.push(joinMatch[1]);
