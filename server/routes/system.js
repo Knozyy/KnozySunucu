@@ -194,6 +194,9 @@ router.get('/processes', authMiddleware, async (req, res) => {
 
         if (isLinux) {
             const { execSync } = require('child_process');
+            const os = require('os');
+            const cores = os.cpus().length || 1;
+
             // ps -eo pid,ppid,%cpu,rss,user,comm,args
             const out = execSync('ps -eo pid,ppid,%cpu,rss,user,comm,args').toString();
             const lines = out.split('\n').slice(1).filter(Boolean);
@@ -216,7 +219,7 @@ router.get('/processes', authMiddleware, async (req, res) => {
                             pid: parseInt(pid),
                             parentPid: parseInt(ppid),
                             name: comm,
-                            cpu: parseFloat(cpu).toFixed(1), // htop uses per-core %
+                            cpu: (parseFloat(cpu) / cores).toFixed(1), // Normalize to 0-100% overall system
                             mem: (parseInt(rss) / 1024).toFixed(1), // RSS is in KB -> MB
                             user: user,
                             command: fullCmd,
@@ -228,8 +231,6 @@ router.get('/processes', authMiddleware, async (req, res) => {
         } else {
             const si = require('systeminformation');
             const processData = await si.processes();
-            const cpuData = await si.cpu();
-            const cores = cpuData.cores || 1;
 
             targetProcesses = processData.list.filter(p =>
                 p.name.toLowerCase().includes('java') ||
@@ -241,8 +242,8 @@ router.get('/processes', authMiddleware, async (req, res) => {
                 pid: p.pid,
                 parentPid: p.parentPid,
                 name: p.name,
-                // sistem bilgisinde CPU genel olabilir, htop gibi per-core yapmak için core sayısıyla çarpılır
-                cpu: (p.cpu * cores).toFixed(1),
+                // Windows'ta systeminformation .cpu p.cpu veriyor (zaten 0-100 arasında scale edilmiş olabilir)
+                cpu: p.cpu.toFixed(1),
                 mem: (p.memRss / 1024).toFixed(1), // MB cinsinden RAM kullanımı
                 user: p.user,
                 command: p.command,
