@@ -329,7 +329,11 @@ class CurseForgeService {
             if (!files || files.length === 0) return { hasUpdate: false };
 
             const latestFile = files[0];
-            const hasUpdate = latestFile.displayName !== installed.version;
+            const currentObj = installed.version.trim().toLowerCase();
+            const latestObj = latestFile.displayName.trim().toLowerCase();
+
+            // Eğer isimlendirmelerde küçük farklar varsa yok say
+            const hasUpdate = (currentObj !== latestObj) && (!currentObj.includes(latestObj) && !latestObj.includes(currentObj));
 
             return {
                 hasUpdate,

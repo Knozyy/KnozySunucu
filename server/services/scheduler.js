@@ -134,7 +134,15 @@ class Scheduler {
                     if (mcService.status === 'running') await mcService.restart();
                     break;
                 case 'backup':
-                    // Backup servisi çağır
+                    try {
+                        const wm = require('./worldManager');
+                        const w = new wm();
+                        // tüm dünyaları yedekle
+                        const worlds = w.list();
+                        for (const world of worlds) {
+                            if (world.exists) w.backup(world.name);
+                        }
+                    } catch (e) { console.error('Oto-Yedekleme Hatası:', e.message); }
                     break;
                 case 'announce':
                     const data = JSON.parse(task.action_data || '{}');

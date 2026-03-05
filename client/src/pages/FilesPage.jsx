@@ -9,8 +9,9 @@ import {
     HiOutlineDocumentPlus, HiOutlineArrowPath,
 } from 'react-icons/hi2';
 
-function formatSize(bytes) {
-    if (!bytes) return '-';
+function formatSize(bytes, isDirectory) {
+    if (isDirectory) return '-';
+    if (bytes === 0 || !bytes) return '0 B';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -167,7 +168,7 @@ export default function FilesPage() {
                                     : <HiOutlineDocument className="w-5 h-5 text-gray-400 flex-shrink-0" />}
                                 <span className="text-sm text-gray-900 truncate">{item.name}</span>
                             </button>
-                            <span className="text-xs text-gray-400 hidden sm:block">{formatSize(item.size)}</span>
+                            <span className="text-xs text-gray-400 hidden sm:block">{formatSize(item.size, item.isDirectory)}</span>
                             <button
                                 onClick={() => { if (confirm(`${item.name} silinecek. Emin misiniz?`)) deleteMutation.mutate(item.path); }}
                                 className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"

@@ -6,7 +6,7 @@ const path = require('path');
  */
 class WorldManager {
     constructor() {
-        this.serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        this.serverPath = require('./minecraftService').getServerPath();
     }
 
     /**

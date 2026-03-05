@@ -47,7 +47,9 @@ class FileManager {
         if (fs.statSync(fullPath).isDirectory()) throw new Error('Bu bir klasördür');
 
         const ext = path.extname(fullPath).toLowerCase();
-        const binaryExts = ['.jar', '.zip', '.gz', '.tar', '.png', '.jpg', '.dat', '.mca', '.nbt'];
+
+        // Sadece okunamayacak KESİN binary uzantılarını engelle, .toml vb tekst tabanlıdır.
+        const binaryExts = ['.jar', '.zip', '.gz', '.tar', '.png', '.jpg', '.jpeg', '.gif', '.dat', '.mca', '.nbt', '.sqlite', '.db'];
         if (binaryExts.includes(ext)) throw new Error('Binary dosya okunamaz');
 
         const maxSize = 1024 * 512; // 512KB limit

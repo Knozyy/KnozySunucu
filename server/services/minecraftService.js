@@ -474,21 +474,15 @@ class MinecraftService extends EventEmitter {
      */
     _startStatsTracking() {
         this._stopStatsTracking();
-        this._statsInterval = setInterval(() => {
+        const pidusage = require('pidusage');
+
+        this._statsInterval = setInterval(async () => {
             if (!this.process || !this.process.pid) return;
             try {
-                // /proc/<pid>/stat okuyarak CPU ve bellek bilgisi al (Linux)
-                if (process.platform === 'linux') {
-                    const statFile = `/proc/${this.process.pid}/status`;
-                    if (fs.existsSync(statFile)) {
-                        const content = fs.readFileSync(statFile, 'utf-8');
-                        const vmRss = content.match(/VmRSS:\s+(\d+)/);
-                        if (vmRss) {
-                            this.processStats.memoryMB = Math.round(parseInt(vmRss[1]) / 1024);
-                        }
-                    }
-                }
-            } catch { /* ignore */ }
+                const stats = await pidusage(this.process.pid);
+                this.processStats.cpuPercent = +(stats.cpu).toFixed(1);
+                this.processStats.memoryMB = Math.round(stats.memory / 1024 / 1024);
+            } catch { /* ignore if process exited */ }
         }, 5000);
     }
 
