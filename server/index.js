@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const express = require('express');
@@ -57,9 +58,9 @@ app.get('/api/health', (req, res) => {
 // Production: Serve frontend build files
 const publicPath = path.join(__dirname, 'public');
 app.use(express.static(publicPath));
-app.get('/{*splat}', (req, res) => {
+app.get('*', (req, res) => {
     const indexPath = path.join(publicPath, 'index.html');
-    if (require('fs').existsSync(indexPath)) {
+    if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
         res.status(404).json({ error: 'Frontend build not found. Run: cd client && npm run build' });
