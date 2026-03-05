@@ -116,6 +116,107 @@ class SystemService {
             seconds,
         };
     }
+
+    /**
+     * Çalışan işlemleri döndürür.
+     * Linux'ta htop/ps benzeri (toplam system cores oranlı 0-100%).
+     * Sadece hedef (java, ngrok, playit) veya istenirse hepsi döndürülebilir.
+     */
+    async getProcesses(filterTarget = false) {
+        const isLinux = process.platform === 'linux';
+        let processes = [];
+
+        if (isLinux) {
+            const { execSync } = require('child_process');
+            const os = require('os');
+            const cores = os.cpus().length || 1;
+
+            try {
+                // ps -eo pid,ppid,%cpu,rss,user,comm,args
+                const out = execSync('ps -eo pid,ppid,%cpu,rss,user,comm,args').toString();
+                const lines = out.split('\n').slice(1).filter(Boolean);
+
+                for (const line of lines) {
+                    const match = line.trim().match(/^(\d+)\s+(\d+)\s+([0-9.]+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/);
+                    if (match) {
+                        const [_, pid, ppid, cpu, rss, user, comm, args] = match;
+                        const fullCmd = args || comm;
+                        const memMB = (parseInt(rss) / 1024).toFixed(1);
+                        const scaledCpu = +(parseFloat(cpu) / cores).toFixed(1);
+
+                        processes.push({
+                            pid: parseInt(pid),
+                            parentPid: parseInt(ppid),
+                            name: comm,
+                            cpu: scaledCpu,
+                            mem: memMB,
+                            user: user,
+                            command: fullCmd,
+                            started: 'N/A'
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('[SystemService] ps komutu hatası:', err.message);
+            }
+        } else {
+            try {
+                const processData = await si.processes();
+                processes = processData.list.map(p => ({
+                    pid: p.pid,
+                    parentPid: p.parentPid,
+                    name: p.name,
+                    cpu: +(p.cpu.toFixed(1)),
+                    mem: (p.memRss / 1024).toFixed(1),
+                    user: p.user,
+                    command: p.command,
+                    started: p.started
+                }));
+            } catch (err) {
+                console.error('[SystemService] si.processes hatası:', err.message);
+            }
+        }
+
+        if (filterTarget) {
+            processes = processes.filter(p => {
+                const cmd = (p.command || '').toLowerCase();
+                const name = (p.name || '').toLowerCase();
+                return name.includes('java') || cmd.includes('java') ||
+                    name.includes('ngrok') || name.includes('playit');
+            });
+        }
+
+        // Parent/Child Process Tree (Süreç Ağacı) CPU/RAM toplamı için yardımcı fonksiyon eklentisi (Tree map)
+        this._buildProcessTreeData(processes);
+
+        return processes;
+    }
+
+    /**
+     * İşlemler ağacını kurar, bir process'in kendisi ve tüm child process'lerinin
+     * toplam (tree) cpu ve ram değerlerini `treeCpu` ve `treeMem` özelliklerine ekler.
+     */
+    _buildProcessTreeData(processes) {
+        const byId = new Map();
+        processes.forEach(p => {
+            p.treeCpu = p.cpu || 0;
+            p.treeMem = parseFloat(p.mem) || 0;
+            byId.set(p.pid, p);
+        });
+
+        // Her process için kendi yükünü parentlarına ekle root'a kadar
+        // (Bu MinecraftWrapper için Java'nın CPU'sunu saptamayı sağlar)
+        processes.forEach(p => {
+            let current = byId.get(p.parentPid);
+            const seen = new Set([p.pid]); // circular tree protection
+            while (current && !seen.has(current.pid)) {
+                seen.add(current.pid);
+                current.treeCpu += (p.cpu || 0);
+                current.treeMem += (parseFloat(p.mem) || 0);
+                current = byId.get(current.parentPid);
+            }
+        });
+    }
 }
 
 module.exports = new SystemService();

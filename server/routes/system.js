@@ -189,69 +189,10 @@ router.get('/connection-info', authMiddleware, async (req, res) => {
 // GET /api/system/processes - Çalışan Java (Sunucu) süreçlerini listele
 router.get('/processes', authMiddleware, async (req, res) => {
     try {
-        const isLinux = process.platform === 'linux';
-        let targetProcesses = [];
-
-        if (isLinux) {
-            const { execSync } = require('child_process');
-            const os = require('os');
-            const cores = os.cpus().length || 1;
-
-            // ps -eo pid,ppid,%cpu,rss,user,comm,args
-            const out = execSync('ps -eo pid,ppid,%cpu,rss,user,comm,args').toString();
-            const lines = out.split('\n').slice(1).filter(Boolean);
-
-            for (const line of lines) {
-                // Parse correctly knowing that args can have spaces
-                // Format: PID PPID %CPU RSS USER COMMAND ARGS
-                const match = line.trim().match(/^(\d+)\s+(\d+)\s+([0-9.]+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/);
-                if (match) {
-                    const [_, pid, ppid, cpu, rss, user, comm, args] = match;
-                    const fullCmd = args || comm;
-                    const lowerCmd = fullCmd.toLowerCase();
-                    const lowerComm = comm.toLowerCase();
-
-                    if (lowerComm.includes('java') || lowerCmd.includes('java') ||
-                        lowerComm.includes('ngrok') || lowerComm.includes('playit')) {
-
-                        targetProcesses.push({
-                            pid: parseInt(pid),
-                            parentPid: parseInt(ppid),
-                            name: comm,
-                            cpu: (parseFloat(cpu) / cores).toFixed(1), // Normalize to 0-100% overall system
-                            mem: (parseInt(rss) / 1024).toFixed(1), // RSS is in KB -> MB
-                            user: user,
-                            command: fullCmd,
-                            started: 'N/A'
-                        });
-                    }
-                }
-            }
-        } else {
-            const si = require('systeminformation');
-            const processData = await si.processes();
-
-            targetProcesses = processData.list.filter(p =>
-                p.name.toLowerCase().includes('java') ||
-                (p.command && p.command.toLowerCase().includes('java')) ||
-                p.name.toLowerCase().includes('ngrok') ||
-                p.name.toLowerCase().includes('playit')
-            ).map(p => ({
-                pid: p.pid,
-                parentPid: p.parentPid,
-                name: p.name,
-                // Windows'ta systeminformation .cpu p.cpu veriyor (zaten 0-100 arasında scale edilmiş olabilir)
-                cpu: p.cpu.toFixed(1),
-                mem: (p.memRss / 1024).toFixed(1), // MB cinsinden RAM kullanımı
-                user: p.user,
-                command: p.command,
-                started: p.started
-            }));
-        }
-
+        const targetProcesses = await systemService.getProcesses(true);
         res.json({ processes: targetProcesses });
     } catch (error) {
-        console.error('[System] Processes error:', error.message);
+        console.error('[System] Processes fetch error:', error.message);
         res.status(500).json({ error: 'İşlem listesi alınamadı' });
     }
 });

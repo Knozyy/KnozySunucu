@@ -535,15 +535,26 @@ class MinecraftService extends EventEmitter {
      */
     _startStatsTracking() {
         this._stopStatsTracking();
-        const pidusage = require('pidusage');
+        const systemService = require('./systemService');
 
         this._statsInterval = setInterval(async () => {
             if (!this.process || !this.process.pid) return;
             try {
-                const stats = await pidusage(this.process.pid);
-                this.processStats.cpuPercent = +(stats.cpu).toFixed(1);
-                this.processStats.memoryMB = Math.round(stats.memory / 1024 / 1024);
-            } catch { /* ignore if process exited */ }
+                // Merkezi, ortak fonksiyon olan getProcesses kullan (tüm listeyi getir)
+                // pidusage linux tarafında wrapper scriptin pidini okuyup java'yı es geçiyor (cpu:0, ram:0)
+                const processes = await systemService.getProcesses();
+                const matchedProc = processes.find(p => p.pid === this.process.pid);
+
+                if (matchedProc) {
+                    // Tree values (Parent + Child alt java işlemi gibi) toplam RAM & CPU sunar.
+                    this.processStats.cpuPercent = +(matchedProc.treeCpu).toFixed(1);
+                    this.processStats.memoryMB = Math.round(matchedProc.treeMem);
+                } else {
+                    // Bulunamadıysa mevcutı koru veya kapatma durumunu hisset
+                }
+            } catch (err) {
+                this.addLog(`[System] Process stats okunamadı: ${err.message}`);
+            }
         }, 5000);
     }
 
