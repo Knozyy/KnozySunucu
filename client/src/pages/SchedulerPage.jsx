@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -7,6 +7,50 @@ import {
     HiOutlineClock, HiOutlineTrash, HiOutlinePlus,
     HiOutlinePlay, HiOutlinePause,
 } from 'react-icons/hi2';
+
+function formatCountdown(ms) {
+    if (ms <= 0) return "Çalışıyor / Bekliyor...";
+    const totalSeconds = Math.floor(ms / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+
+    if (h > 0) return `${h}s ${m}d ${s}sn`;
+    return `${m}d ${s}sn`;
+}
+
+// Lokal Geri Sayım Bileşeni
+function CountdownTimer({ nextRunStr, enabled }) {
+    const [timeLeft, setTimeLeft] = useState(0);
+
+    useEffect(() => {
+        if (!enabled || !nextRunStr) {
+            setTimeLeft(0);
+            return;
+        }
+
+        const nextRun = parseInt(nextRunStr, 10);
+
+        const updateTimer = () => {
+            const now = Date.now();
+            const diff = nextRun - now;
+            setTimeLeft(Math.max(0, diff));
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [nextRunStr, enabled]);
+
+    if (!enabled) return <span className="text-gray-400">Görev durduruldu</span>;
+    if (!nextRunStr) return <span className="text-amber-500">Planlanıyor...</span>;
+
+    return (
+        <span className={`font-mono ${timeLeft < 60000 && timeLeft > 0 ? 'text-amber-600 font-bold' : 'text-blue-600'}`}>
+            {formatCountdown(timeLeft)}
+        </span>
+    );
+}
 
 export default function SchedulerPage() {
     const [showForm, setShowForm] = useState(false);
@@ -110,7 +154,12 @@ export default function SchedulerPage() {
                             <p className="text-sm text-gray-500">
                                 {actionLabels[task.action] || task.action} • Her {task.interval_minutes} dakikada
                             </p>
-                            {task.last_run && <p className="text-xs text-gray-400 mt-1">Son çalışma: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
+                            <div className="flex items-center gap-4 mt-1.5">
+                                {task.last_run && <p className="text-xs text-gray-400">Son: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
+                                <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100 dark:bg-gray-800 dark:border-gray-700">
+                                    Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled} />
+                                </p>
+                            </div>
                         </div>
                         <button onClick={() => toggleMutation.mutate(task.id)}
                             className={`p-2 rounded-lg transition-colors ${task.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}

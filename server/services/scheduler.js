@@ -46,11 +46,12 @@ class Scheduler {
 
     create(data) {
         const db = getDb();
+        const nextRun = Date.now() + (data.intervalMinutes * 60 * 1000);
         const stmt = db.prepare(`
-            INSERT INTO scheduled_tasks (name, type, interval_minutes, action, action_data, enabled)
-            VALUES (?, ?, ?, ?, ?, 1)
+            INSERT INTO scheduled_tasks (name, type, interval_minutes, action, action_data, enabled, next_run)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
         `);
-        const result = stmt.run(data.name, data.type, data.intervalMinutes, data.action, JSON.stringify(data.actionData || {}));
+        const result = stmt.run(data.name, data.type, data.intervalMinutes, data.action, JSON.stringify(data.actionData || {}), nextRun.toString());
         const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(result.lastInsertRowid);
         this._scheduleTask(task);
         return task;
@@ -83,17 +84,38 @@ class Scheduler {
         if (!task.enabled || !task.interval_minutes) return;
         this._clearTimer(task.id);
 
+        let nextRun = parseInt(task.next_run || '0', 10);
+        const now = Date.now();
         const intervalMs = task.interval_minutes * 60 * 1000;
-        const timer = setInterval(() => {
+
+        // Geçmişte kalmışsa hemen çalıştıracak şekilde süreyi ayarla
+        if (!nextRun || nextRun < now) {
+            nextRun = now + intervalMs;
+            const db = getDb();
+            db.prepare('UPDATE scheduled_tasks SET next_run = ? WHERE id = ?').run(nextRun.toString(), task.id);
+        }
+
+        const timeUntilFirstRun = nextRun - now;
+
+        const timer = setTimeout(() => {
             this._executeTask(task);
-        }, intervalMs);
+
+            // İlk çalışmadan sonra regular interval
+            const intervalTimer = setInterval(() => {
+                this._executeTask(task);
+            }, intervalMs);
+
+            this.timers.set(task.id, intervalTimer);
+        }, Math.max(0, timeUntilFirstRun));
 
         this.timers.set(task.id, timer);
     }
 
     _clearTimer(id) {
         if (this.timers.has(id)) {
-            clearInterval(this.timers.get(id));
+            const timer = this.timers.get(id);
+            clearTimeout(timer);
+            clearInterval(timer);
             this.timers.delete(id);
         }
     }
@@ -101,7 +123,10 @@ class Scheduler {
     async _executeTask(task) {
         try {
             const db = getDb();
-            db.prepare('UPDATE scheduled_tasks SET last_run = datetime("now") WHERE id = ?').run(task.id);
+            const now = Date.now();
+            const nextRun = now + (task.interval_minutes * 60 * 1000);
+
+            db.prepare('UPDATE scheduled_tasks SET last_run = datetime("now"), next_run = ? WHERE id = ?').run(nextRun.toString(), task.id);
 
             switch (task.action) {
                 case 'restart':
