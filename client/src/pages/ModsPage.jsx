@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -7,7 +7,7 @@ import {
     HiOutlinePuzzlePiece, HiOutlineTrash, HiOutlineCheck,
     HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineArrowDownTray,
     HiOutlineDocumentText, HiOutlinePencil, HiOutlineCloudArrowUp,
-    HiOutlineArrowPath,
+    HiOutlineArrowPath, HiOutlineFire, HiOutlineCheckCircle,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
@@ -28,12 +28,20 @@ export default function ModsPage() {
     const [editingConfig, setEditingConfig] = useState(null);
     const [configContent, setConfigContent] = useState('');
     const [isDragging, setIsDragging] = useState(false);
-    const [updateModal, setUpdateModal] = useState(null); // { modName, loading, mod, files }
+    const [updateModal, setUpdateModal] = useState(null);
     const queryClient = useQueryClient();
 
     const { data, isLoading } = useQuery({
         queryKey: ['mods'],
         queryFn: () => api.get('/mods').then(r => r.data),
+    });
+
+    // Popüler modlar (arama sekmesi açıldığında otomatik)
+    const { data: popularData, isFetching: loadingPopular } = useQuery({
+        queryKey: ['modPopular'],
+        queryFn: () => api.get('/mods/search').then(r => r.data),
+        enabled: activeTab === 'search',
+        staleTime: 300000,
     });
 
     const { data: searchData, isFetching: searching, refetch: doSearch } = useQuery({
@@ -65,6 +73,8 @@ export default function ModsPage() {
         onSuccess: (res) => {
             toast.success(res.data.message);
             queryClient.invalidateQueries({ queryKey: ['mods'] });
+            queryClient.invalidateQueries({ queryKey: ['modSearch'] });
+            queryClient.invalidateQueries({ queryKey: ['modPopular'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'İndirilemedi'),
     });
@@ -169,6 +179,9 @@ export default function ModsPage() {
         });
     };
 
+    // Arama sekmesinde gösterilecek mod: arama yapılmışsa arama, yapılmamışsa popüler
+    const modsToShow = searchData?.mods || (searchQuery ? [] : popularData?.mods) || [];
+
     const mods = data?.mods || [];
     const count = data?.count || { active: 0, disabled: 0, total: 0 };
 
@@ -212,13 +225,33 @@ export default function ModsPage() {
                         </div>
                     </form>
 
-                    {searchData?.mods?.length > 0 && (
+                    {/* Başlık */}
+                    {!searchData && !searchQuery && (
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 fade-in">
+                            <HiOutlineFire className="w-5 h-5 text-amber-500" />
+                            Popüler Modlar
+                        </h3>
+                    )}
+
+                    {(loadingPopular || searching) ? (
+                        <div className="glass-card p-8 text-center text-gray-400">
+                            <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                            Yükleniyor...
+                        </div>
+                    ) : modsToShow.length > 0 ? (
                         <div className="glass-card overflow-hidden fade-in">
-                            {searchData.mods.map(mod => (
+                            {modsToShow.map(mod => (
                                 <div key={mod.id} className="flex items-center gap-4 px-5 py-4 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
                                     {mod.logo && <img src={mod.logo} alt={mod.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />}
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-gray-900 truncate">{mod.name}</p>
+                                        <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                                            {mod.name}
+                                            {mod.isInstalled && (
+                                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                                    <HiOutlineCheckCircle className="w-3 h-3" /> Yüklü
+                                                </span>
+                                            )}
+                                        </p>
                                         <p className="text-xs text-gray-500 truncate">{mod.summary}</p>
                                         <div className="flex items-center gap-3 mt-1">
                                             <span className="text-xs text-gray-400">{(mod.downloadCount / 1000000).toFixed(1)}M indirme</span>
@@ -227,22 +260,30 @@ export default function ModsPage() {
                                             ))}
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => downloadMutation.mutate({ modId: mod.id, fileId: mod.latestFile?.id, fileName: mod.latestFile?.fileName })}
-                                        disabled={!mod.latestFile || downloadMutation.isPending}
-                                        className="btn-primary text-xs"
-                                    >
-                                        <HiOutlineArrowDownTray className="w-4 h-4" />
-                                        {downloadMutation.isPending ? 'İndiriliyor...' : 'İndir'}
-                                    </button>
+                                    {mod.isInstalled ? (
+                                        <button
+                                            onClick={() => openUpdateModal(mod.latestFile?.fileName || mod.name)}
+                                            className="btn-secondary text-xs"
+                                        >
+                                            <HiOutlineArrowPath className="w-4 h-4" />
+                                            Sürüm Değiştir
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => downloadMutation.mutate({ modId: mod.id, fileId: mod.latestFile?.id, fileName: mod.latestFile?.fileName })}
+                                            disabled={!mod.latestFile || downloadMutation.isPending}
+                                            className="btn-primary text-xs"
+                                        >
+                                            <HiOutlineArrowDownTray className="w-4 h-4" />
+                                            {downloadMutation.isPending ? 'İndiriliyor...' : 'İndir'}
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
-                    )}
-
-                    {searchData?.mods?.length === 0 && (
+                    ) : searchData?.mods?.length === 0 ? (
                         <div className="text-center py-8 text-gray-400">Sonuç bulunamadı</div>
-                    )}
+                    ) : null}
                 </>
             )}
 

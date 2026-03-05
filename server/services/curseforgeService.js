@@ -243,7 +243,7 @@ class CurseForgeService {
 
             // 4. İndir
             this._updateProgress('İndiriliyor', 20, 'Modpack indiriliyor...');
-            const destPath = path.join(profilePath, selectedFile.fileName); // Direkt profile path'e indir
+            const destPath = path.join(profilePath, selectedFile.fileName);
             await this.downloadFile(downloadUrl, destPath, (pct, downloaded, total) => {
                 const overallPct = 20 + Math.floor(pct * 0.5);
                 const dlMB = (downloaded / 1024 / 1024).toFixed(1);
@@ -256,16 +256,12 @@ class CurseForgeService {
                 this._updateProgress('Çıkartılıyor', 75, 'Sunucu dosyaları çıkartılıyor...');
                 try {
                     const { execSync } = require('child_process');
-                    // Windows uyumluluğu için basit bir kontrol ama genel olarak Ubuntu/Linux'ta çalışacak.
                     if (process.platform === 'win32') {
                         execSync(`tar -xf "${destPath}" -C "${profilePath}"`);
                     } else {
                         execSync(`unzip -o "${destPath}" -d "${profilePath}"`);
                     }
-                    fs.unlinkSync(destPath); // Çıkarttıktan sonra zip'i sil
-
-                    // Eğer zip içinde tek bir klasör varsa (örn: "ServerPack/"), içindeki dosyaları dışarı almamız gerekebilir.
-                    // Şimdilik sadece extract yapıyoruz, CurseForge Server Pack'leri genellikle direkt dizine oturur.
+                    fs.unlinkSync(destPath);
                 } catch (err) {
                     console.error('Arşiv çıkartma hatası:', err);
                     throw new Error('Dosyalar çıkartılamadı ("unzip" hatası).');
@@ -276,11 +272,11 @@ class CurseForgeService {
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
             const isFirstInstall = !existingActive;
 
-            // 7. Veritabanını güncelle
+            // 7. Veritabanını güncelle (curseforge_file_id ve file_display_name dahil)
             this._updateProgress('Kayıt', 90, 'Veritabanı güncelleniyor...');
             const stmt = db.prepare(`
-                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed')
+                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status, curseforge_file_id, file_display_name) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed', ?, ?)
             `);
 
             stmt.run(
@@ -291,9 +287,11 @@ class CurseForgeService {
                 modDetails.logo?.url || null,
                 profilePath,
                 isFirstInstall ? 1 : 0,
+                selectedFile.id,
+                selectedFile.displayName,
             );
 
-            // 7. Tamamlandı
+            // 8. Tamamlandı
             installStatus = {
                 isInstalling: false,
                 progress: 100,
@@ -317,7 +315,7 @@ class CurseForgeService {
     }
 
     /**
-     * Güncelleme kontrolü
+     * Güncelleme kontrolü — curseforge_file_id karşılaştırmasıyla daha güvenilir
      */
     async checkUpdate(modpackId) {
         const db = getDb();
@@ -329,10 +327,23 @@ class CurseForgeService {
             if (!files || files.length === 0) return { hasUpdate: false };
 
             const latestFile = files[0];
-            const currentObj = installed.version.trim().toLowerCase();
-            const latestObj = latestFile.displayName.trim().toLowerCase();
 
-            // Eğer isimlendirmelerde küçük farklar varsa yok say
+            // curseforge_file_id varsa ona göre karşılaştır (en güvenilir yol)
+            if (installed.curseforge_file_id) {
+                const hasUpdate = latestFile.id !== installed.curseforge_file_id;
+                return {
+                    hasUpdate,
+                    currentVersion: installed.file_display_name || installed.version,
+                    latestVersion: latestFile.displayName,
+                    latestFileId: latestFile.id,
+                    dbId: installed.id,
+                    modId: modpackId,
+                };
+            }
+
+            // Fallback: isim karşılaştırması
+            const currentObj = (installed.version || '').trim().toLowerCase();
+            const latestObj = latestFile.displayName.trim().toLowerCase();
             const hasUpdate = (currentObj !== latestObj) && (!currentObj.includes(latestObj) && !latestObj.includes(currentObj));
 
             return {
@@ -340,6 +351,8 @@ class CurseForgeService {
                 currentVersion: installed.version,
                 latestVersion: latestFile.displayName,
                 latestFileId: latestFile.id,
+                dbId: installed.id,
+                modId: modpackId,
             };
         } catch {
             return { hasUpdate: false };
@@ -351,7 +364,8 @@ class CurseForgeService {
      */
     async updateModpack(dbId, modId, fileId) {
         const db = getDb();
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const existing = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(dbId);
+        const serverPath = existing?.install_path || (process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server');
 
         // Korunacak dosyalar
         const preserveDirs = ['world', 'world_nether', 'world_the_end', 'backups'];
@@ -377,12 +391,41 @@ class CurseForgeService {
             }
         }
 
-        // Eski modpack'i kaldır
+        // Eski modpack'i kaldır (sadece DB - dosyalar zaten üzerine yazılacak)
         this._updateProgress('Temizlik', 15, 'Eski modpack temizleniyor...');
+        const wasActive = existing?.is_active === 1;
         db.prepare('DELETE FROM installed_modpacks WHERE id = ?').run(dbId);
+
+        // Eski dosyaları temizle (mods, config vs - dünyalar hariç)
+        try {
+            const items = fs.readdirSync(serverPath);
+            for (const item of items) {
+                if (preserveDirs.includes(item)) continue;
+                if (preserveFiles.includes(item)) continue;
+                if (item === '..') continue;
+                const itemPath = path.join(serverPath, item);
+                try {
+                    const stat = fs.lstatSync(itemPath);
+                    if (stat.isDirectory()) {
+                        fs.rmSync(itemPath, { recursive: true, force: true });
+                    } else {
+                        fs.unlinkSync(itemPath);
+                    }
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
 
         // Yeni modpack'i kur
         await this.installModpack(modId, fileId);
+
+        // Yeni kurulan profili aktif yap (eskisi aktifse)
+        if (wasActive) {
+            const newProfile = db.prepare('SELECT id FROM installed_modpacks WHERE curseforge_id = ? ORDER BY id DESC LIMIT 1').get(modId);
+            if (newProfile) {
+                db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
+                db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(newProfile.id);
+            }
+        }
 
         // Korunan dosyaları geri yükle
         this._updateProgress('Geri Yükleme', 95, 'Korunan dosyalar geri yükleniyor...');
@@ -412,12 +455,26 @@ class CurseForgeService {
         return { message: 'Modpack güncellendi' };
     }
 
+    /**
+     * Modpack kaldırma — dosyaları da siler
+     */
     async uninstallModpack(dbId) {
         const db = getDb();
         const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(dbId);
         if (!modpack) throw new Error('Modpack bulunamadı');
+
+        // Dosyaları sil
+        if (modpack.install_path && fs.existsSync(modpack.install_path)) {
+            try {
+                fs.rmSync(modpack.install_path, { recursive: true, force: true });
+            } catch (err) {
+                console.error(`[Modpacks] Dosya silme hatası: ${err.message}`);
+            }
+        }
+
+        // DB kaydını sil
         db.prepare('DELETE FROM installed_modpacks WHERE id = ?').run(dbId);
-        return { message: `${modpack.name} kaldırıldı` };
+        return { message: `${modpack.name} kaldırıldı (dosyalar silindi)` };
     }
 
     getInstalledModpacks() {

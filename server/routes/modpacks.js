@@ -1,184 +1,157 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
-const curseforgeService = require('../services/curseforgeService');
+const curseForge = require('../services/curseforgeService');
+const { getDb } = require('../db/database');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
 
-// Lazy-load minecraft service (singleton)
-let _mcService = null;
-function getMcService() {
-    if (!_mcService) {
-        _mcService = require('../services/minecraftService');
-    }
-    return _mcService;
-}
-
-// GET /api/modpacks/search?query=
-router.get('/search', authMiddleware, async (req, res) => {
-    try {
-        const { query } = req.query;
-        if (!query) return res.status(400).json({ error: 'Arama sorgusu gerekli' });
-        const results = await curseforgeService.searchModpacks(query);
-        res.json({ modpacks: results });
-    } catch (error) {
-        console.error('[Modpacks] Search error:', error.message);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// GET /api/modpacks/popular
+// Popüler modpackler
 router.get('/popular', authMiddleware, async (req, res) => {
     try {
-        const results = await curseforgeService.getPopularModpacks();
-        res.json({ modpacks: results });
-    } catch (error) {
-        console.error('[Modpacks] Popular error:', error.message);
-        res.status(500).json({ error: error.message });
+        const modpacks = await curseForge.getPopularModpacks(20);
+        res.json({ modpacks });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// GET /api/modpacks/installed
+// Arama
+router.get('/search', authMiddleware, async (req, res) => {
+    try {
+        const modpacks = await curseForge.searchModpacks(req.query.query || '');
+        res.json({ modpacks });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Yüklü modpackler
 router.get('/installed', authMiddleware, (req, res) => {
     try {
-        const installed = curseforgeService.getInstalledModpacks();
-        res.json({ modpacks: installed });
-    } catch (error) {
-        console.error('[Modpacks] Installed error:', error.message);
-        res.status(500).json({ error: error.message });
+        const modpacks = curseForge.getInstalledModpacks();
+        res.json({ modpacks });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// GET /api/modpacks/install-status
-router.get('/install-status', authMiddleware, (req, res) => {
-    res.json(curseforgeService.getInstallStatus());
+// Aktif profil bilgisi
+router.get('/active', authMiddleware, (req, res) => {
+    try {
+        const mcService = require('../services/minecraftService');
+        const profile = mcService.getActiveProfile();
+        res.json({
+            profile,
+            serverStatus: mcService.status,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// POST /api/modpacks/install-status/reset
-router.post('/install-status/reset', authMiddleware, (req, res) => {
-    curseforgeService.resetInstallStatus();
-    res.json({ message: 'Kurulum durumu sıfırlandı' });
-});
-
-// GET /api/modpacks/:modId/files
+// Modpack dosyaları (sürüm listesi)
 router.get('/:modId/files', authMiddleware, async (req, res) => {
     try {
-        const files = await curseforgeService.getModpackFiles(parseInt(req.params.modId));
+        const files = await curseForge.getModpackFiles(req.params.modId);
         res.json({ files });
-    } catch (error) {
-        console.error('[Modpacks] Files error:', error.message);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// POST /api/modpacks/install
+// Güncelleme kontrolü
+router.get('/:modId/check-update', authMiddleware, async (req, res) => {
+    try {
+        const result = await curseForge.checkUpdate(parseInt(req.params.modId));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Kurulum durumu
+router.get('/install-status', authMiddleware, (req, res) => {
+    res.json(curseForge.getInstallStatus());
+});
+
+// Modpack yükle
 router.post('/install', authMiddleware, async (req, res) => {
     try {
         const { modId, fileId } = req.body;
-        if (!modId) return res.status(400).json({ error: 'Mod ID gerekli' });
+        if (!modId) return res.status(400).json({ error: 'modId gerekli' });
 
-        // Async başlat, hemen cevap dön
-        curseforgeService.installModpack(modId, fileId).catch(err => {
-            console.error('[Modpacks] Install async error:', err.message);
-        });
-
-        res.json({ message: 'Kurulum başlatıldı. İlerlemeyi takip edebilirsiniz.' });
-    } catch (error) {
-        console.error('[Modpacks] Install error:', error.message);
-        res.status(500).json({ error: error.message });
+        const result = await curseForge.installModpack(modId, fileId);
+        res.json({ message: `${result.name} yüklendi!`, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// POST /api/modpacks/update
+// Modpack güncelle (sürüm değiştir)
 router.post('/update', authMiddleware, async (req, res) => {
     try {
         const { dbId, modId, fileId } = req.body;
         if (!dbId || !modId || !fileId) {
             return res.status(400).json({ error: 'dbId, modId ve fileId gerekli' });
         }
-
-        curseforgeService.updateModpack(dbId, modId, fileId).catch(err => {
-            console.error('[Modpacks] Update async error:', err.message);
-        });
-
-        res.json({ message: 'Güncelleme başlatıldı.' });
-    } catch (error) {
-        console.error('[Modpacks] Update error:', error.message);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// POST /api/modpacks/check-update
-router.post('/check-update', authMiddleware, async (req, res) => {
-    try {
-        const { modpackId } = req.body;
-        if (!modpackId) {
-            // Yüklü ilk modpack'i kontrol et
-            const installed = curseforgeService.getInstalledModpacks();
-            if (installed.length === 0) return res.json({ hasUpdate: false });
-            const result = await curseforgeService.checkUpdate(installed[0].curseforge_id);
-            return res.json(result);
-        }
-        const result = await curseforgeService.checkUpdate(modpackId);
+        const result = await curseForge.updateModpack(dbId, modId, fileId);
         res.json(result);
-    } catch (error) {
-        console.error('[Modpacks] Check update error:', error.message);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// DELETE /api/modpacks/:id
+// Modpack kaldır (dosyaları da siler)
 router.delete('/:id', authMiddleware, async (req, res) => {
     try {
-        const result = await curseforgeService.uninstallModpack(parseInt(req.params.id));
+        const result = await curseForge.uninstallModpack(parseInt(req.params.id));
         res.json(result);
-    } catch (error) {
-        console.error('[Modpacks] Uninstall error:', error.message);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// PUT /api/modpacks/:id/settings
-router.put('/:id/settings', authMiddleware, (req, res) => {
-    try {
-        const { name, version } = req.body;
-        const db = require('../db/database').getDb();
-        const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(req.params.id);
-        if (!modpack) return res.status(404).json({ error: 'Modpack bulunamadı' });
-
-        db.prepare(`
-            UPDATE installed_modpacks 
-            SET name = COALESCE(?, name), version = COALESCE(?, version)
-            WHERE id = ?
-        `).run(name || null, version || null, req.params.id);
-
-        res.json({ message: 'Modpack ayarları güncellendi' });
-    } catch (error) {
-        console.error('[Modpacks] Settings update error:', error.message);
-        res.status(500).json({ error: 'Ayarlar güncellenemedi' });
-    }
-});
-
-// GET /api/modpacks/active - Aktif profil bilgisi
-router.get('/active', authMiddleware, (req, res) => {
-    try {
-        const mcService = getMcService();
-        const profile = mcService.getActiveProfile();
-        const serverStatus = mcService.getStatus().status;
-        res.json({ profile, serverStatus });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// POST /api/modpacks/activate/:id - Profil geçişi
+// Profil aktif et
 router.post('/activate/:id', authMiddleware, async (req, res) => {
     try {
-        const mcService = getMcService();
+        const mcService = require('../services/minecraftService');
         const result = await mcService.switchProfile(parseInt(req.params.id));
         res.json(result);
-    } catch (error) {
-        console.error('[Modpacks] Activate error:', error.message);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Modpack ayarları güncelle (port dahil)
+router.put('/:id/settings', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const id = parseInt(req.params.id);
+        const { name, version, maxRam, minRam, jvmArgs, server_port } = req.body;
+
+        const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(id);
+        if (!modpack) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        // DB güncelle
+        if (name) db.prepare('UPDATE installed_modpacks SET name = ? WHERE id = ?').run(name, id);
+        if (version) db.prepare('UPDATE installed_modpacks SET version = ? WHERE id = ?').run(version, id);
+        if (server_port) db.prepare('UPDATE installed_modpacks SET server_port = ? WHERE id = ?').run(server_port, id);
+
+        // Aktif modpack'se server.properties port ayarla
+        if (server_port && modpack.is_active === 1 && modpack.install_path) {
+            const propsPath = path.join(modpack.install_path, 'server.properties');
+            if (fs.existsSync(propsPath)) {
+                let content = fs.readFileSync(propsPath, 'utf-8');
+                content = content.replace(/^server-port=.*/m, `server-port=${server_port}`);
+                fs.writeFileSync(propsPath, content, 'utf-8');
+            }
+        }
+
+        res.json({ message: 'Ayarlar güncellendi' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

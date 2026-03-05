@@ -1,9 +1,8 @@
 const si = require('systeminformation');
-const path = require('path');
-const fs = require('fs');
 
 /**
  * RAM Optimizer - Mod sayısına göre RAM önerisi ve JVM args üretimi
+ * Tutarlı kademeli hesaplama kullanır
  */
 class RAMOptimizer {
     /**
@@ -14,7 +13,7 @@ class RAMOptimizer {
         return {
             totalGB: +(mem.total / (1024 ** 3)).toFixed(2),
             availableGB: +(mem.available / (1024 ** 3)).toFixed(2),
-            usedGB: +(mem.used / (1024 ** 3)).toFixed(2),
+            usedGB: +(mem.active / (1024 ** 3)).toFixed(2),
             totalMB: Math.floor(mem.total / (1024 ** 2)),
             availableMB: Math.floor(mem.available / (1024 ** 2)),
         };
@@ -22,29 +21,29 @@ class RAMOptimizer {
 
     /**
      * Mod sayısına göre optimal RAM hesapla
+     * Formül: base(2GB) + lineer mod etkisi (her 10 mod için ~0.3GB)
+     * Sistem limiti: OS için %20 veya min 2GB bırak
      */
     static calculateOptimalRAM(modCount = 0, systemRAMGB = 16) {
-        // Baz RAM
-        let baseGB = 2.0;
+        // Baz RAM (vanilla server)
+        const baseGB = 2.0;
 
-        // Mod etkisi
-        let modImpact = 0;
-        if (modCount > 300) modImpact = 7.0;
-        else if (modCount > 150) modImpact = 5.0;
-        else if (modCount > 100) modImpact = 3.0;
-        else if (modCount > 50) modImpact = 2.0;
-        else if (modCount > 0) modImpact = 1.0;
+        // Lineer mod etkisi: her 10 mod ~0.3GB
+        const modImpactGB = Math.ceil(modCount * 0.03 * 10) / 10;
 
-        const totalNeeded = baseGB + modImpact;
+        const totalNeeded = baseGB + modImpactGB;
 
-        // Sistem sınırları (OS için 2GB bırak)
-        const maxAllocatable = Math.max(2, systemRAMGB - 2);
-        const maxRAMGB = Math.min(totalNeeded, maxAllocatable);
+        // Sistem sınırları: OS için %20 veya min 2GB bırak
+        const osReserve = Math.max(2, Math.ceil(systemRAMGB * 0.2));
+        const maxAllocatable = Math.max(2, systemRAMGB - osReserve);
+
+        // Gerçekçi üst sınır
+        const maxRAMGB = Math.min(totalNeeded, maxAllocatable, 16);
         const minRAMGB = Math.max(1, Math.floor(maxRAMGB * 0.6));
 
         return {
             minMB: Math.max(1024, minRAMGB * 1024),
-            maxMB: Math.max(1024, Math.min(maxRAMGB * 1024, 32768)),
+            maxMB: Math.max(1024, Math.min(maxRAMGB * 1024, 16384)),
             minGB: minRAMGB,
             maxGB: +maxRAMGB.toFixed(1),
         };

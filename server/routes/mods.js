@@ -60,28 +60,53 @@ router.post('/upload', authMiddleware, upload.array('mods', 20), (req, res) => {
     res.json({ message: `${names.length} mod yüklendi`, files: names });
 });
 
-// CurseForge mod arama
+// CurseForge mod arama (q boşsa popüler modları döndür)
 router.get('/search', authMiddleware, async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const query = req.query.q;
-        if (!query) return res.status(400).json({ error: 'Arama sorgusu gerekli' });
 
-        const url = `${CF_API}/v1/mods/search?gameId=432&classId=6&searchFilter=${encodeURIComponent(query)}&pageSize=20&sortField=2&sortOrder=desc`;
+        let url;
+        if (query) {
+            url = `${CF_API}/v1/mods/search?gameId=432&classId=6&searchFilter=${encodeURIComponent(query)}&pageSize=20&sortField=2&sortOrder=desc`;
+        } else {
+            // Popüler modlar (query olmadan)
+            url = `${CF_API}/v1/mods/search?gameId=432&classId=6&pageSize=20&sortField=2&sortOrder=desc`;
+        }
+
         const data = await cfRequest(url);
-        const mods = (data.data || []).map(m => ({
-            id: m.id,
-            name: m.name,
-            summary: m.summary,
-            downloadCount: m.downloadCount,
-            logo: m.logo?.thumbnailUrl,
-            latestFile: m.latestFiles?.[0] ? {
-                id: m.latestFiles[0].id,
-                fileName: m.latestFiles[0].fileName,
-                downloadUrl: m.latestFiles[0].downloadUrl,
-                gameVersions: m.latestFiles[0].gameVersions,
-            } : null,
-        }));
+
+        // Yüklü modları al (dosya isimleriyle karşılaştırma için)
+        const mm = new ModManager();
+        const installedMods = mm.listAll();
+        const installedNames = installedMods.map(m => m.name.toLowerCase().replace(/\.jar$/, '').replace(/-[\d.]+.*$/, '').replace(/[_-]/g, ''));
+
+        const mods = (data.data || []).map(m => {
+            // Yüklü kontrol: slug veya isim karşılaştırması
+            const slug = (m.slug || '').toLowerCase();
+            const modName = (m.name || '').toLowerCase().replace(/\s+/g, '');
+            const isInstalled = installedNames.some(iName => {
+                const cleanInstalled = iName.toLowerCase().replace(/\s+/g, '');
+                return cleanInstalled.includes(slug) || slug.includes(cleanInstalled) ||
+                    cleanInstalled.includes(modName) || modName.includes(cleanInstalled);
+            });
+
+            return {
+                id: m.id,
+                name: m.name,
+                slug: m.slug,
+                summary: m.summary,
+                downloadCount: m.downloadCount,
+                logo: m.logo?.thumbnailUrl,
+                isInstalled,
+                latestFile: m.latestFiles?.[0] ? {
+                    id: m.latestFiles[0].id,
+                    fileName: m.latestFiles[0].fileName,
+                    downloadUrl: m.latestFiles[0].downloadUrl,
+                    gameVersions: m.latestFiles[0].gameVersions,
+                } : null,
+            };
+        });
         res.json({ mods });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

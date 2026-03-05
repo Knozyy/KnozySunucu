@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
@@ -15,6 +15,7 @@ import {
     HiOutlineCheckCircle,
     HiOutlineXMark,
     HiOutlineChevronDown,
+    HiOutlineArrowPath,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
@@ -34,7 +35,8 @@ export default function ModpacksPage() {
     const [activeTab, setActiveTab] = useState('search');
     const [editingModpack, setEditingModpack] = useState(null);
     const [confirmSwitch, setConfirmSwitch] = useState(null);
-    const [versionModal, setVersionModal] = useState(null); // { modpack, files, loading }
+    const [versionModal, setVersionModal] = useState(null);
+    const [updateVersionModal, setUpdateVersionModal] = useState(null); // Yüklü modpack sürüm değiştirme
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
@@ -63,7 +65,7 @@ export default function ModpacksPage() {
     const installMutation = useMutation({
         mutationFn: ({ modId, fileId }) => api.post('/modpacks/install', { modId, fileId }),
         onSuccess: () => {
-            toast.success('Kurulum başlatıldı! İlerlemeyi takip edebilirsiniz.');
+            toast.success('Kurulum başlatıldı!');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
             setVersionModal(null);
         },
@@ -85,7 +87,7 @@ export default function ModpacksPage() {
     const uninstallMutation = useMutation({
         mutationFn: (id) => api.delete(`/modpacks/${id}`),
         onSuccess: () => {
-            toast.success('Modpack kaldırıldı');
+            toast.success('Modpack kaldırıldı (dosyalar silindi)');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
             queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
         },
@@ -101,6 +103,17 @@ export default function ModpacksPage() {
             queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Profil değişimi başarısız'),
+    });
+
+    const updateModpackMutation = useMutation({
+        mutationFn: ({ dbId, modId, fileId }) => api.post('/modpacks/update', { dbId, modId, fileId }),
+        onSuccess: () => {
+            toast.success('Modpack güncellendi!');
+            setUpdateVersionModal(null);
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Güncelleme başarısız'),
     });
 
     const updateSettingsMutation = useMutation({
@@ -130,8 +143,32 @@ export default function ModpacksPage() {
         }
     };
 
+    // Yüklü modpack sürüm değiştirme
+    const openUpdateVersionModal = async (modpack) => {
+        if (!modpack.curseforge_id) {
+            toast.error('Bu modpack CurseForge kaydı bulunamadı');
+            return;
+        }
+        setUpdateVersionModal({ modpack, files: [], loading: true });
+        try {
+            const res = await api.get(`/modpacks/${modpack.curseforge_id}/files`);
+            setUpdateVersionModal({ modpack, files: res.data.files || [], loading: false });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Sürümler alınamadı');
+            setUpdateVersionModal(null);
+        }
+    };
+
     const handleInstallVersion = (modpack, fileId) => {
         installMutation.mutate({ modId: modpack.id, fileId });
+    };
+
+    const handleUpdateVersion = (modpack, fileId) => {
+        updateModpackMutation.mutate({
+            dbId: modpack.id,
+            modId: modpack.curseforge_id,
+            fileId,
+        });
     };
 
     const handleActivate = (modpack) => {
@@ -163,6 +200,9 @@ export default function ModpacksPage() {
                         <div className="flex-1">
                             <p className="text-sm font-semibold text-gray-900">
                                 Aktif Profil: <span className="text-green-600">{activeProfileData.profile.name}</span>
+                                {activeProfileData.profile.server_port && activeProfileData.profile.server_port !== 25565 && (
+                                    <span className="text-xs text-gray-400 ml-2">Port: {activeProfileData.profile.server_port}</span>
+                                )}
                             </p>
                             <p className="text-xs text-gray-400">{activeProfileData.profile.install_path}</p>
                         </div>
@@ -276,66 +316,31 @@ export default function ModpacksPage() {
                 </div>
             )}
 
-            {/* Sürüm Seçim Modalı */}
+            {/* Yeni Kurulum Sürüm Seçim Modalı */}
             {versionModal && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setVersionModal(null)}>
-                    <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                                <HiOutlineChevronDown className="w-5 h-5 text-blue-600" />
-                                Sürüm Seç — {versionModal.modpack.name}
-                            </h2>
-                            <button onClick={() => setVersionModal(null)} className="text-gray-400 hover:text-gray-600 p-1">
-                                <HiOutlineXMark className="w-5 h-5" />
-                            </button>
-                        </div>
+                <VersionSelectModal
+                    title={`Sürüm Seç — ${versionModal.modpack.name}`}
+                    files={versionModal.files}
+                    loading={versionModal.loading}
+                    onClose={() => setVersionModal(null)}
+                    onSelect={(fileId) => handleInstallVersion(versionModal.modpack, fileId)}
+                    isPending={installMutation.isPending}
+                    buttonLabel="Yükle"
+                />
+            )}
 
-                        {versionModal.loading ? (
-                            <div className="flex items-center justify-center py-12">
-                                <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
-                                <span className="ml-3 text-sm text-gray-600">Sürümler yükleniyor...</span>
-                            </div>
-                        ) : (
-                            <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-                                {versionModal.files.length > 0 ? versionModal.files.map(file => (
-                                    <div key={file.id} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
-                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                <span className="text-xs text-gray-400">{formatSize(file.fileLength)}</span>
-                                                <span className="text-xs text-gray-400">{formatFileDate(file.fileDate)}</span>
-                                                {file.gameVersions?.slice(0, 3).map((v, i) => (
-                                                    <span key={i} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full text-gray-500">{v}</span>
-                                                ))}
-                                                {file.serverPackFileId && (
-                                                    <span className="text-xs bg-green-100 px-2 py-0.5 rounded-full text-green-700 font-medium">Server Pack</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => handleInstallVersion(versionModal.modpack, file.id)}
-                                            disabled={installMutation.isPending}
-                                            className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
-                                        >
-                                            {installMutation.isPending ? (
-                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            ) : (
-                                                <>
-                                                    <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
-                                                    Yükle
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                )) : (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <p>Sürüm bulunamadı</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
+            {/* Yüklü Modpack Sürüm Değiştirme Modalı */}
+            {updateVersionModal && (
+                <VersionSelectModal
+                    title={`Sürüm Değiştir — ${updateVersionModal.modpack.name}`}
+                    subtitle={`Mevcut: ${updateVersionModal.modpack.file_display_name || updateVersionModal.modpack.version}`}
+                    files={updateVersionModal.files}
+                    loading={updateVersionModal.loading}
+                    onClose={() => setUpdateVersionModal(null)}
+                    onSelect={(fileId) => handleUpdateVersion(updateVersionModal.modpack, fileId)}
+                    isPending={updateModpackMutation.isPending}
+                    buttonLabel="Güncelle"
+                />
             )}
 
             {activeTab === 'search' && !searchResults && !searching && (
@@ -369,9 +374,14 @@ export default function ModpacksPage() {
                             isInstalled={activeTab === 'installed'}
                             isActive={modpack.is_active === 1}
                             onInstall={() => openVersionModal(modpack)}
-                            onUninstall={() => uninstallMutation.mutate(modpack.id)}
+                            onUninstall={() => {
+                                if (confirm(`${modpack.name} kalıcı olarak kaldırılacak ve tüm dosyaları silinecek. Emin misiniz?`)) {
+                                    uninstallMutation.mutate(modpack.id);
+                                }
+                            }}
                             onSettings={() => setEditingModpack(modpack)}
                             onActivate={() => handleActivate(modpack)}
+                            onChangeVersion={() => openUpdateVersionModal(modpack)}
                             installing={installMutation.isPending}
                             uninstalling={uninstallMutation.isPending}
                             activating={activateMutation.isPending}
@@ -390,7 +400,74 @@ export default function ModpacksPage() {
     );
 }
 
-function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, installing, uninstalling, activating }) {
+// Reusable Version Select Modal
+function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect, isPending, buttonLabel }) {
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <HiOutlineChevronDown className="w-5 h-5 text-blue-600" />
+                            {title}
+                        </h2>
+                        {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+                        <HiOutlineXMark className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                        <span className="ml-3 text-sm text-gray-600">Sürümler yükleniyor...</span>
+                    </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                        {files.length > 0 ? files.map(file => (
+                            <div key={file.id} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                        <span className="text-xs text-gray-400">{formatSize(file.fileLength)}</span>
+                                        <span className="text-xs text-gray-400">{formatFileDate(file.fileDate)}</span>
+                                        {file.gameVersions?.slice(0, 3).map((v, i) => (
+                                            <span key={i} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full text-gray-500">{v}</span>
+                                        ))}
+                                        {file.serverPackFileId && (
+                                            <span className="text-xs bg-green-100 px-2 py-0.5 rounded-full text-green-700 font-medium">Server Pack</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => onSelect(file.id)}
+                                    disabled={isPending}
+                                    className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
+                                >
+                                    {isPending ? (
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        <>
+                                            <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
+                                            {buttonLabel}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )) : (
+                            <div className="text-center py-8 text-gray-400">
+                                <p>Sürüm bulunamadı</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, installing, uninstalling, activating }) {
     return (
         <div className={`glass-card p-4 fade-in group relative ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
             {/* Aktif Badge */}
@@ -424,6 +501,10 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                         <p className="text-xs text-gray-300 mt-1 truncate">📁 {modpack.install_path}</p>
                     )}
 
+                    {modpack.server_port && modpack.server_port !== 25565 && (
+                        <p className="text-xs text-blue-400 mt-1">🔌 Port: {modpack.server_port}</p>
+                    )}
+
                     {modpack.latestFiles?.[0]?.gameVersions && (
                         <div className="flex gap-1 mt-2 flex-wrap">
                             {modpack.latestFiles[0].gameVersions.slice(0, 3).map((v, i) => (
@@ -434,7 +515,7 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                 </div>
             </div>
 
-            <div className="mt-4 flex gap-2 justify-end">
+            <div className="mt-4 flex gap-2 justify-end flex-wrap">
                 {isInstalled ? (
                     <>
                         {!isActive && (
@@ -442,6 +523,9 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                                 <HiOutlinePlay className="w-4 h-4" /> Aktif Yap
                             </button>
                         )}
+                        <button onClick={onChangeVersion} className="btn-secondary text-xs py-1.5 px-3">
+                            <HiOutlineArrowPath className="w-4 h-4" /> Sürüm Değiştir
+                        </button>
                         <button onClick={onSettings} className="btn-secondary text-xs py-1.5 px-3">
                             <HiOutlineCog6Tooth className="w-4 h-4" /> Ayarlar
                         </button>
@@ -464,10 +548,7 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
     const [settings, setSettings] = useState({
         name: modpack.name || '',
         version: modpack.version || '',
-        maxRam: '4G',
-        minRam: '2G',
-        jvmArgs: '',
-        autoRestart: false,
+        server_port: modpack.server_port || 25565,
     });
 
     const handleChange = (key, value) => {
@@ -491,19 +572,20 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Versiyon</label>
                         <input type="text" value={settings.version} onChange={e => handleChange('version', e.target.value)} className="input-field" />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM</label>
-                            <input type="text" value={settings.maxRam} onChange={e => handleChange('maxRam', e.target.value)} className="input-field" placeholder="4G" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Min RAM</label>
-                            <input type="text" value={settings.minRam} onChange={e => handleChange('minRam', e.target.value)} className="input-field" placeholder="2G" />
-                        </div>
-                    </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">JVM Argümanları</label>
-                        <input type="text" value={settings.jvmArgs} onChange={e => handleChange('jvmArgs', e.target.value)} className="input-field" placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sunucu Portu</label>
+                        <input
+                            type="number"
+                            value={settings.server_port}
+                            onChange={e => handleChange('server_port', parseInt(e.target.value) || 25565)}
+                            className="input-field"
+                            placeholder="25565"
+                            min={1024}
+                            max={65535}
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Farklı port kullanarak aynı makinede birden fazla sunucu çalıştırabilirsiniz (varsayılan: 25565)
+                        </p>
                     </div>
                 </div>
 

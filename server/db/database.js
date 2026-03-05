@@ -55,6 +55,15 @@ function initDatabase() {
     if (!colNames.includes('is_active')) {
       database.exec("ALTER TABLE installed_modpacks ADD COLUMN is_active INTEGER DEFAULT 0");
     }
+    if (!colNames.includes('server_port')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN server_port INTEGER DEFAULT 25565");
+    }
+    if (!colNames.includes('curseforge_file_id')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN curseforge_file_id INTEGER");
+    }
+    if (!colNames.includes('file_display_name')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN file_display_name TEXT");
+    }
   } catch { /* columns already exist */ }
 
   console.error('[DB] Database initialized successfully');

@@ -101,21 +101,25 @@ class WorldManager {
             const items = fs.readdirSync(dirPath);
             for (const item of items) {
                 const itemPath = path.join(dirPath, item);
-                const stat = fs.statSync(itemPath);
-                if (stat.isDirectory()) {
-                    size += this._getDirSize(itemPath);
-                } else {
-                    size += stat.size;
-                }
+                try {
+                    const stat = fs.lstatSync(itemPath);
+                    if (stat.isSymbolicLink()) continue;
+                    if (stat.isDirectory()) {
+                        size += this._getDirSize(itemPath);
+                    } else {
+                        size += stat.size;
+                    }
+                } catch { /* erişilemeyen dosya, atla */ }
             }
         } catch { /* ignore */ }
         return size;
     }
 
     _formatSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB'];
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        if (i < 0 || i >= units.length) return '0 B';
         return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
     }
 }

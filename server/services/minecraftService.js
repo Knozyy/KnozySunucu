@@ -59,6 +59,17 @@ class MinecraftService extends EventEmitter {
         db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
         db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(profileId);
 
+        // Port ayarını uygula
+        if (target.server_port && target.install_path) {
+            const propsPath = path.join(target.install_path, 'server.properties');
+            if (fs.existsSync(propsPath)) {
+                let content = fs.readFileSync(propsPath, 'utf-8');
+                content = content.replace(/^server-port=.*/m, `server-port=${target.server_port}`);
+                fs.writeFileSync(propsPath, content, 'utf-8');
+                this.addLog(`[Profil] Port ayarlandı: ${target.server_port}`);
+            }
+        }
+
         this.addLog(`[Profil] "${target.name}" profili aktif edildi`);
         return { message: `"${target.name}" profili aktif edildi`, profile: target };
     }
