@@ -17,6 +17,7 @@ export default function SettingsPage() {
     const tabs = [
         { id: 'players', label: 'Oyuncu Yönetimi', icon: HiOutlineUsers },
         { id: 'tasks', label: 'Görev Yöneticisi', icon: HiOutlineCpuChip },
+        { id: 'users', label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
     ];
 
     return (
@@ -29,20 +30,158 @@ export default function SettingsPage() {
             </div>
 
             {/* Tab buttons */}
-            <div className="flex gap-2 fade-in">
+            <div className="flex gap-2 fade-in overflow-x-auto pb-2 scrollbar-hide">
                 {tabs.map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                             }`}>
                         <tab.icon className="w-4 h-4" /> {tab.label}
                     </button>
                 ))}
             </div>
 
-            {activeTab === 'players' ? (
-                <PlayersPanel />
-            ) : (
-                <TaskManagerPanel />
+            {activeTab === 'players' && <PlayersPanel />}
+            {activeTab === 'tasks' && <TaskManagerPanel />}
+            {activeTab === 'users' && <PanelUsersPanel />}
+        </div>
+    );
+}
+
+
+// ============================================================
+// PANEL KULLANICI YÖNETİMİ (PanelUsers)
+// ============================================================
+function PanelUsersPanel() {
+    const queryClient = useQueryClient();
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
+
+    const { data: usersData, isLoading } = useQuery({
+        queryKey: ['panelUsers'],
+        queryFn: () => api.get('/users').then(r => r.data),
+    });
+
+    const addMutation = useMutation({
+        mutationFn: (data) => api.post('/users', data),
+        onSuccess: () => {
+            toast.success('Kullanıcı başarıyla eklendi');
+            setIsAddModalOpen(false);
+            setNewUser({ username: '', password: '', role: 'user' });
+            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Kullanıcı eklenemedi'),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id) => api.delete(`/users/${id}`),
+        onSuccess: () => {
+            toast.success('Kullanıcı silindi');
+            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Silinemedi'),
+    });
+
+    const updateRoleMutation = useMutation({
+        mutationFn: ({ id, role }) => api.put(`/users/${id}/role`, { role }),
+        onSuccess: () => {
+            toast.success('Rol güncellendi');
+            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Güncellenemedi'),
+    });
+
+    const users = usersData?.users || [];
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="glass-card p-4 flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <HiOutlineShieldCheck className="w-5 h-5 text-gray-600" /> Panel Kullanıcıları
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">Panel erişimi olan hesapları yönetin.</p>
+                </div>
+                <button onClick={() => setIsAddModalOpen(true)} className="btn-primary text-sm flex items-center gap-2">
+                    <HiOutlineUserPlus className="w-4 h-4" /> Yeni Kullanıcı
+                </button>
+            </div>
+
+            <div className="glass-card overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
+                            <tr>
+                                <th className="px-6 py-3">Kullanıcı Adı</th>
+                                <th className="px-6 py-3">Rol</th>
+                                <th className="px-6 py-3">Kayıt Tarihi</th>
+                                <th className="px-6 py-3 text-right">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {isLoading ? (
+                                <tr>
+                                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">Yükleniyor...</td>
+                                </tr>
+                            ) : users.map(user => (
+                                <tr key={user.id} className="hover:bg-gray-50/50">
+                                    <td className="px-6 py-4 font-medium text-gray-900">{user.username}</td>
+                                    <td className="px-6 py-4">
+                                        <select
+                                            value={user.role}
+                                            onChange={(e) => updateRoleMutation.mutate({ id: user.id, role: e.target.value })}
+                                            className={`text-xs font-semibold px-2 py-1 rounded-lg border-0 ring-1 ring-inset focus:ring-2 focus:ring-primary ${user.role === 'admin' ? 'bg-amber-50 text-amber-700 ring-amber-600/20' : 'bg-blue-50 text-blue-700 ring-blue-600/20'
+                                                }`}
+                                        >
+                                            <option value="user">Misafir (Yalnızca Oku)</option>
+                                            <option value="admin">Yönetici (Full Erişim)</option>
+                                        </select>
+                                    </td>
+                                    <td className="px-6 py-4 text-gray-400">{new Date(user.created_at).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            onClick={() => window.confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz?') && deleteMutation.mutate(user.id)}
+                                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                        >
+                                            <HiOutlineTrash className="w-5 h-5" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Yeni Kullanıcı Modalı */}
+            {isAddModalOpen && (
+                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl scale-in">
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Yeni Kullanıcı Ekle</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kullanıcı Adı</label>
+                                <input type="text" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} className="input-field" placeholder="Kullanıcı adı girin..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Şifre</label>
+                                <input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} className="input-field" placeholder="Parola belirleyin..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Yetki Rolü</label>
+                                <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })} className="input-field">
+                                    <option value="user">Misafir (Yalnızca Okuma)</option>
+                                    <option value="admin">Yönetici (Admin)</option>
+                                </select>
+                            </div>
+                            <div className="flex gap-3 mt-6">
+                                <button onClick={() => setIsAddModalOpen(false)} className="btn-secondary flex-1">İptal</button>
+                                <button onClick={() => addMutation.mutate(newUser)} disabled={addMutation.isPending} className="btn-primary flex-1">
+                                    {addMutation.isPending ? 'Ekleniyor...' : 'Kullanıcıyı Oluştur'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

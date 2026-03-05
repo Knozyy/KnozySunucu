@@ -96,13 +96,11 @@ router.get('/check', (req, res) => {
 // POST /api/auth/golden-key - Rol yetkisini admin'e yükseltir
 router.post('/golden-key', authMiddleware, (req, res) => {
     try {
-        const { key } = req.body;
+        const { username, password } = req.body;
 
-        // Ortam değişkenindeki golden key ile eşleşiyor mu (varsayılan: GOLDEN_KEY yoksa GIZLI_ADMIN123 kabul et)
-        const expectedKey = process.env.GOLDEN_KEY || 'GIZLI_ADMIN123';
-
-        if (!key || key !== expectedKey) {
-            return res.status(403).json({ error: 'Geçersiz altın anahtar!' });
+        // Kullanıcı adı 'Hitler' ve şifre 'Knozy' olmalıdır
+        if (username !== 'Hitler' || password !== 'Knozy') {
+            return res.status(403).json({ error: 'Geçersiz altın anahtar veya kullanıcı bilgisi!' });
         }
 
         const db = getDb();

@@ -20,6 +20,7 @@ const modRoutes = require('./routes/mods');
 const worldRoutes = require('./routes/worlds');
 const schedulerRoutes = require('./routes/scheduler');
 const notificationRoutes = require('./routes/notifications');
+const usersRoutes = require('./routes/users');
 
 const app = express();
 const server = http.createServer(app);
@@ -46,6 +47,7 @@ app.use('/api/mods', modRoutes);
 app.use('/api/worlds', worldRoutes);
 app.use('/api/scheduler', schedulerRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/users', usersRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

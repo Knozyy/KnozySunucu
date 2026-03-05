@@ -29,13 +29,15 @@ export default function Sidebar({ isOpen, onClose }) {
 
     const handleGoldenKey = async () => {
         if (user?.role === 'admin') return;
-        const key = window.prompt("SuperAdmin Gizli Anahtarını Girin:");
-        if (key) {
+        const username = window.prompt("SuperAdmin Kullanıcı Adını Girin:");
+        if (!username) return;
+        const password = window.prompt("SuperAdmin Gizli Parolasını Girin:");
+        if (password) {
             try {
-                const msg = await activateGoldenKey(key);
+                const msg = await activateGoldenKey(username, password);
                 toast.success(msg || 'Yetki seviyeniz Admin olarak güncellendi! 🎉');
             } catch (err) {
-                toast.error(err.response?.data?.error || 'Geçersiz altın anahtar!');
+                toast.error(err.response?.data?.error || 'Geçersiz bilgiler!');
             }
         }
     };
