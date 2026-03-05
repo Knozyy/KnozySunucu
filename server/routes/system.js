@@ -212,8 +212,7 @@ router.get('/processes', authMiddleware, async (req, res) => {
                     const lowerComm = comm.toLowerCase();
 
                     if (lowerComm.includes('java') || lowerCmd.includes('java') ||
-                        lowerComm.includes('ngrok') || lowerComm.includes('playit') ||
-                        lowerComm.includes('bash')) {
+                        lowerComm.includes('ngrok') || lowerComm.includes('playit')) {
 
                         targetProcesses.push({
                             pid: parseInt(pid),
@@ -236,8 +235,7 @@ router.get('/processes', authMiddleware, async (req, res) => {
                 p.name.toLowerCase().includes('java') ||
                 (p.command && p.command.toLowerCase().includes('java')) ||
                 p.name.toLowerCase().includes('ngrok') ||
-                p.name.toLowerCase().includes('playit') ||
-                p.name.toLowerCase().includes('cmd.exe')
+                p.name.toLowerCase().includes('playit')
             ).map(p => ({
                 pid: p.pid,
                 parentPid: p.parentPid,
