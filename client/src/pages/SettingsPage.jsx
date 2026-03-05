@@ -82,6 +82,7 @@ export default function SettingsPage() {
     const tabs = [
         { id: 'general', label: 'Genel Ayarlar', icon: HiOutlineCog6Tooth },
         { id: 'players', label: 'Oyuncu Yönetimi', icon: HiOutlineUsers },
+        { id: 'tasks', label: 'Görev Yöneticisi', icon: HiOutlineCpuChip },
     ];
 
     return (
@@ -202,9 +203,120 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 </>
-            ) : (
+            ) : activeTab === 'players' ? (
                 <PlayersPanel />
+            ) : (
+                <TaskManagerPanel />
             )}
+        </div>
+    );
+}
+
+// ============================================================
+// GÖREV YÖNETİCİSİ (TaskManager)
+// ============================================================
+function TaskManagerPanel() {
+    const queryClient = useQueryClient();
+    const { data: processesData, isLoading } = useQuery({
+        queryKey: ['systemProcesses'],
+        queryFn: () => api.get('/system/processes').then(r => r.data),
+        refetchInterval: 5000, // 5 saniyede bir otomatik yenile
+    });
+
+    const killMutation = useMutation({
+        mutationFn: (pid) => api.post('/system/processes/kill', { pid }),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            queryClient.invalidateQueries({ queryKey: ['systemProcesses'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'İşlem sonlandırılamadı'),
+    });
+
+    const handleKill = (pid, name) => {
+        if (window.confirm(`${name} (PID: ${pid}) sürecini sonlandırmak istediğinize emin misiniz? Sunucu anında kapanacaktır.`)) {
+            killMutation.mutate(pid);
+        }
+    };
+
+    const processes = processesData?.processes || [];
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="glass-card p-4 flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <HiOutlineCpuChip className="w-5 h-5 text-gray-600" /> Aktif İşlemler
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">Sistemdeki Java ve ilgili ağ servisleri. Veriler 5 saniyede bir yenilenir.</p>
+                </div>
+                <button onClick={() => queryClient.invalidateQueries({ queryKey: ['systemProcesses'] })}
+                    className="btn-secondary text-xs py-1.5">
+                    <HiOutlineArrowPath className="w-4 h-4" /> Yenile
+                </button>
+            </div>
+
+            <div className="glass-card overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
+                            <tr>
+                                <th className="px-6 py-3">PID</th>
+                                <th className="px-6 py-3">İşlem Adı</th>
+                                <th className="px-6 py-3 text-right">CPU</th>
+                                <th className="px-6 py-3 text-right">RAM (MB)</th>
+                                <th className="px-6 py-3 text-right">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {isLoading ? (
+                                <tr>
+                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                        <div className="flex justify-center mb-3">
+                                            <div className="w-6 h-6 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
+                                        </div>
+                                        İşlemler yükleniyor...
+                                    </td>
+                                </tr>
+                            ) : processes.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-400">
+                                        <HiOutlineCpuChip className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                        <p>Çalışan aktif Java veya ağ işlemi bulunamadı.</p>
+                                    </td>
+                                </tr>
+                            ) : (
+                                processes.map((proc) => (
+                                    <tr key={proc.pid} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-mono text-xs">{proc.pid}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="font-medium text-gray-900">{proc.name}</div>
+                                            <div className="text-xs text-gray-400 mt-0.5 max-w-xs truncate" title={proc.command}>
+                                                {proc.command}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <span className={`px-2 py-1 flex-inline justify-center min-w-[3rem] rounded font-medium text-xs ${proc.cpu > 50 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                                %{proc.cpu}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-medium">
+                                            {proc.mem} MB
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => handleKill(proc.pid, proc.name)}
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 hover:border-red-500 rounded transition-all focus:ring-2 focus:ring-red-500/20 outline-none"
+                                            >
+                                                Kapat (Kill)
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 }

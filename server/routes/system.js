@@ -186,5 +186,62 @@ router.get('/connection-info', authMiddleware, async (req, res) => {
         res.status(500).json({ error: 'Bağlantı bilgisi alınamadı' });
     }
 });
+// GET /api/system/processes - Çalışan Java (Sunucu) süreçlerini listele
+router.get('/processes', authMiddleware, async (req, res) => {
+    try {
+        const si = require('systeminformation');
+        const processData = await si.processes();
+
+        // Sadece java veya tünel uygulamalarını filtrele
+        const targetProcesses = processData.list.filter(p =>
+            p.name.toLowerCase().includes('java') ||
+            (p.command && p.command.toLowerCase().includes('java')) ||
+            p.name.toLowerCase().includes('ngrok') ||
+            p.name.toLowerCase().includes('playit') ||
+            p.name.toLowerCase().includes('cmd.exe') || // Windows bat scriptleri için
+            p.name.toLowerCase().includes('bash') // Linux sh scriptleri için
+        ).map(p => ({
+            pid: p.pid,
+            parentPid: p.parentPid,
+            name: p.name,
+            cpu: p.cpu.toFixed(1),
+            mem: (p.memRss / 1024).toFixed(1), // MB cinsinden RAM kullanımı
+            user: p.user,
+            command: p.command,
+            started: p.started
+        }));
+
+        res.json({ processes: targetProcesses });
+    } catch (error) {
+        console.error('[System] Processes error:', error.message);
+        res.status(500).json({ error: 'İşlem listesi alınamadı' });
+    }
+});
+
+// POST /api/system/processes/kill - Bir süreci sonlandır
+router.post('/processes/kill', authMiddleware, async (req, res) => {
+    try {
+        const { pid } = req.body;
+        if (!pid) return res.status(400).json({ error: 'PID gerekli' });
+
+        const isWindows = process.platform === 'win32';
+        const { spawnSync } = require('child_process');
+
+        if (isWindows) {
+            spawnSync('taskkill', ['/PID', pid, '/F', '/T']);
+        } else {
+            try {
+                process.kill(pid, 'SIGKILL');
+            } catch (e) {
+                // Ignore if process already dead
+            }
+        }
+
+        res.json({ message: 'İşlem başarıyla sonlandırıldı' });
+    } catch (error) {
+        console.error('[System] Kill error:', error.message);
+        res.status(500).json({ error: 'İşlem sonlandırılamadı' });
+    }
+});
 
 module.exports = router;
