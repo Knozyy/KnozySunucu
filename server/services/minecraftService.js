@@ -236,46 +236,67 @@ class MinecraftService extends EventEmitter {
         // Process stats takibi başlat
         this._startStatsTracking();
 
+        let stdoutBuffer = '';
         this.process.stdout.on('data', (data) => {
-            const line = data.toString().trim();
-            if (!line) return;
-            this.addLog(line);
-            this.emit('log', line);
+            stdoutBuffer += data.toString();
+            let lines = stdoutBuffer.split('\n');
+            stdoutBuffer = lines.pop(); // Son elemanı buffer'da tut (tamamlanmamış satır olabilir)
 
-            if (line.includes('Done (') && line.includes(')!')) {
-                this.status = 'running';
-                this.emit('status', this.status);
-            }
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                this.addLog(line);
+                this.emit('log', line);
 
-            // ServerPackCreator, eula veya Jabba kurulumu gibi onay isteklerini yakala
-            if (line.toLowerCase().includes("type 'i agree'")) {
-                this.addLog("[System] Otomatik kurulum onayı (I agree) gönderildi.");
-                this.sendCommand('I agree');
-            }
-            if (line.toLowerCase().includes("eula=true") || line.toLowerCase().includes("accept the eula")) {
-                this.addLog("[System] Otomatik EULA onayı gönderildi.");
-                this.sendCommand('true');
-                this.sendCommand('I agree');
-            }
+                const lowerLine = line.toLowerCase();
 
-            const joinMatch = line.match(/(\w+) joined the game/);
-            if (joinMatch && !this.players.includes(joinMatch[1])) {
-                this.players.push(joinMatch[1]);
-                this.emit('players', this.players);
-            }
+                // Başarılı başlatma tespiti
+                if ((line.includes('Done (') && line.includes(')!')) ||
+                    lowerLine.includes('server started') ||
+                    lowerLine.includes('started in ') ||
+                    lowerLine.includes('thread/info]: done')) {
+                    if (this.status !== 'running') {
+                        this.status = 'running';
+                        this.emit('status', this.status);
+                    }
+                }
 
-            const leaveMatch = line.match(/(\w+) left the game/);
-            if (leaveMatch) {
-                this.players = this.players.filter(p => p !== leaveMatch[1]);
-                this.emit('players', this.players);
+                // ServerPackCreator, eula veya Jabba kurulumu gibi onay isteklerini yakala
+                if (lowerLine.includes("type 'i agree'")) {
+                    this.addLog("[System] Otomatik kurulum onayı (I agree) gönderildi.");
+                    this.sendCommand('I agree');
+                }
+                if (lowerLine.includes("eula=true") || lowerLine.includes("accept the eula")) {
+                    this.addLog("[System] Otomatik EULA onayı gönderildi.");
+                    this.sendCommand('true');
+                    this.sendCommand('I agree');
+                }
+
+                const joinMatch = line.match(/(\w+) joined the game/);
+                if (joinMatch && !this.players.includes(joinMatch[1])) {
+                    this.players.push(joinMatch[1]);
+                    this.emit('players', this.players);
+                }
+
+                const leaveMatch = line.match(/(\w+) left the game/);
+                if (leaveMatch) {
+                    this.players = this.players.filter(p => p !== leaveMatch[1]);
+                    this.emit('players', this.players);
+                }
             }
         });
 
+        let stderrBuffer = '';
         this.process.stderr.on('data', (data) => {
-            const line = data.toString().trim();
-            if (!line) return;
-            this.addLog(`[STDERR] ${line}`);
-            this.emit('log', `[STDERR] ${line}`);
+            stderrBuffer += data.toString();
+            let lines = stderrBuffer.split('\n');
+            stderrBuffer = lines.pop(); // tamamlanmamış satır
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                this.addLog(`[STDERR] ${line}`);
+                this.emit('log', `[STDERR] ${line}`);
+            }
         });
 
         this.process.on('close', (code) => {
