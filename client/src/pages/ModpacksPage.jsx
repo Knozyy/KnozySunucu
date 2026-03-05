@@ -13,13 +13,28 @@ import {
     HiOutlineCog6Tooth,
     HiOutlinePlay,
     HiOutlineCheckCircle,
+    HiOutlineXMark,
+    HiOutlineChevronDown,
 } from 'react-icons/hi2';
+
+function formatSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatFileDate(dateStr) {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('tr-TR');
+}
 
 export default function ModpacksPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('search');
     const [editingModpack, setEditingModpack] = useState(null);
     const [confirmSwitch, setConfirmSwitch] = useState(null);
+    const [versionModal, setVersionModal] = useState(null); // { modpack, files, loading }
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
@@ -50,6 +65,7 @@ export default function ModpacksPage() {
         onSuccess: () => {
             toast.success('Kurulum başlatıldı! İlerlemeyi takip edebilirsiniz.');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            setVersionModal(null);
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
     });
@@ -103,14 +119,22 @@ export default function ModpacksPage() {
         doSearch();
     };
 
-    const handleInstall = (modpack) => {
-        const latestFile = modpack.latestFiles?.[0];
-        if (!latestFile) { toast.error('İndirilebilir dosya bulunamadı'); return; }
-        installMutation.mutate({ modId: modpack.id, fileId: latestFile.id });
+    const openVersionModal = async (modpack) => {
+        setVersionModal({ modpack, files: [], loading: true });
+        try {
+            const res = await api.get(`/modpacks/${modpack.id}/files`);
+            setVersionModal({ modpack, files: res.data.files || [], loading: false });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Sürümler alınamadı');
+            setVersionModal(null);
+        }
+    };
+
+    const handleInstallVersion = (modpack, fileId) => {
+        installMutation.mutate({ modId: modpack.id, fileId });
     };
 
     const handleActivate = (modpack) => {
-        // Sunucu açıksa onay iste
         if (activeProfileData?.serverStatus === 'running') {
             setConfirmSwitch(modpack);
         } else {
@@ -252,6 +276,68 @@ export default function ModpacksPage() {
                 </div>
             )}
 
+            {/* Sürüm Seçim Modalı */}
+            {versionModal && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setVersionModal(null)}>
+                    <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <HiOutlineChevronDown className="w-5 h-5 text-blue-600" />
+                                Sürüm Seç — {versionModal.modpack.name}
+                            </h2>
+                            <button onClick={() => setVersionModal(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                                <HiOutlineXMark className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {versionModal.loading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                                <span className="ml-3 text-sm text-gray-600">Sürümler yükleniyor...</span>
+                            </div>
+                        ) : (
+                            <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                                {versionModal.files.length > 0 ? versionModal.files.map(file => (
+                                    <div key={file.id} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
+                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                <span className="text-xs text-gray-400">{formatSize(file.fileLength)}</span>
+                                                <span className="text-xs text-gray-400">{formatFileDate(file.fileDate)}</span>
+                                                {file.gameVersions?.slice(0, 3).map((v, i) => (
+                                                    <span key={i} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full text-gray-500">{v}</span>
+                                                ))}
+                                                {file.serverPackFileId && (
+                                                    <span className="text-xs bg-green-100 px-2 py-0.5 rounded-full text-green-700 font-medium">Server Pack</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleInstallVersion(versionModal.modpack, file.id)}
+                                            disabled={installMutation.isPending}
+                                            className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
+                                        >
+                                            {installMutation.isPending ? (
+                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
+                                                    Yükle
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )) : (
+                                    <div className="text-center py-8 text-gray-400">
+                                        <p>Sürüm bulunamadı</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {activeTab === 'search' && !searchResults && !searching && (
                 <div className="fade-in">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -282,7 +368,7 @@ export default function ModpacksPage() {
                             modpack={modpack}
                             isInstalled={activeTab === 'installed'}
                             isActive={modpack.is_active === 1}
-                            onInstall={() => handleInstall(modpack)}
+                            onInstall={() => openVersionModal(modpack)}
                             onUninstall={() => uninstallMutation.mutate(modpack.id)}
                             onSettings={() => setEditingModpack(modpack)}
                             onActivate={() => handleActivate(modpack)}
@@ -365,7 +451,8 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                     </>
                 ) : (
                     <button onClick={onInstall} disabled={installing} className="btn-primary text-xs py-1.5 px-3">
-                        <HiOutlineArrowDownTray className="w-4 h-4" /> Yükle
+                        <HiOutlineChevronDown className="w-4 h-4" />
+                        Sürüm Seç & Yükle
                     </button>
                 )}
             </div>

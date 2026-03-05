@@ -73,10 +73,11 @@ class SystemService {
             },
             memory: {
                 total: mem.total,
-                used: mem.used,
-                free: mem.free,
+                used: mem.active,
+                free: mem.available,
                 active: mem.active,
-                usagePercent: ((mem.used / mem.total) * 100),
+                available: mem.available,
+                usagePercent: ((mem.active / mem.total) * 100),
             },
             disk: disk.map(d => ({
                 mount: d.mount,

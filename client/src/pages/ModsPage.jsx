@@ -7,6 +7,7 @@ import {
     HiOutlinePuzzlePiece, HiOutlineTrash, HiOutlineCheck,
     HiOutlineXMark, HiOutlineMagnifyingGlass, HiOutlineArrowDownTray,
     HiOutlineDocumentText, HiOutlinePencil, HiOutlineCloudArrowUp,
+    HiOutlineArrowPath,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
@@ -16,12 +17,18 @@ function formatSize(bytes) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('tr-TR');
+}
+
 export default function ModsPage() {
     const [activeTab, setActiveTab] = useState('installed');
     const [searchQuery, setSearchQuery] = useState('');
     const [editingConfig, setEditingConfig] = useState(null);
     const [configContent, setConfigContent] = useState('');
     const [isDragging, setIsDragging] = useState(false);
+    const [updateModal, setUpdateModal] = useState(null); // { modName, loading, mod, files }
     const queryClient = useQueryClient();
 
     const { data, isLoading } = useQuery({
@@ -81,6 +88,17 @@ export default function ModsPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
     });
 
+    const updateModMutation = useMutation({
+        mutationFn: ({ oldFileName, modId, fileId, newFileName }) =>
+            api.post('/mods/update', { oldFileName, modId, fileId, newFileName }),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            setUpdateModal(null);
+            queryClient.invalidateQueries({ queryKey: ['mods'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Güncelleme başarısız'),
+    });
+
     const handleSearch = (e) => {
         e.preventDefault();
         if (!searchQuery.trim()) return;
@@ -118,6 +136,37 @@ export default function ModsPage() {
         } catch (err) {
             toast.error(err.response?.data?.error || 'Dosya okunamadı');
         }
+    };
+
+    const openUpdateModal = async (modName) => {
+        setUpdateModal({ modName, loading: true, mod: null, files: [] });
+        try {
+            const res = await api.get(`/mods/versions/${encodeURIComponent(modName)}`);
+            if (!res.data.mod) {
+                toast.error('CurseForge\'da eşleşen mod bulunamadı');
+                setUpdateModal(null);
+                return;
+            }
+            setUpdateModal({
+                modName,
+                loading: false,
+                mod: res.data.mod,
+                files: res.data.files,
+            });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Sürümler alınamadı');
+            setUpdateModal(null);
+        }
+    };
+
+    const handleUpdateMod = (file) => {
+        if (!updateModal) return;
+        updateModMutation.mutate({
+            oldFileName: updateModal.modName,
+            modId: updateModal.mod.id,
+            fileId: file.id,
+            newFileName: file.fileName,
+        });
     };
 
     const mods = data?.mods || [];
@@ -246,6 +295,13 @@ export default function ModsPage() {
                                     {mod.enabled ? <HiOutlineCheck className="w-4 h-4" /> : <HiOutlineXMark className="w-4 h-4" />}
                                 </button>
                                 <button
+                                    onClick={() => openUpdateModal(mod.name)}
+                                    title="Sürüm Güncelle"
+                                    className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-600 transition-all p-2 rounded-lg hover:bg-blue-50"
+                                >
+                                    <HiOutlineArrowPath className="w-4 h-4" />
+                                </button>
+                                <button
                                     onClick={() => { if (confirm(`${mod.name} kalıcı olarak silinecek. Emin misiniz?`)) deleteMutation.mutate(mod.name); }}
                                     className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-2"
                                 >
@@ -304,6 +360,83 @@ export default function ModsPage() {
                         </div>
                     )}
                 </>
+            )}
+
+            {/* Sürüm Güncelleme Modalı */}
+            {updateModal && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setUpdateModal(null)}>
+                    <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <HiOutlineArrowPath className="w-5 h-5 text-blue-600" />
+                                Sürüm Güncelle
+                            </h2>
+                            <button onClick={() => setUpdateModal(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                                <HiOutlineXMark className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {updateModal.loading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                                <span className="ml-3 text-sm text-gray-600">CurseForge'dan sürümler aranıyor...</span>
+                            </div>
+                        ) : (
+                            <>
+                                {updateModal.mod && (
+                                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                                        {updateModal.mod.logo && (
+                                            <img src={updateModal.mod.logo} alt={updateModal.mod.name} className="w-10 h-10 rounded-lg object-cover" />
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-gray-900 truncate">{updateModal.mod.name}</p>
+                                            <p className="text-xs text-gray-500 truncate">{updateModal.mod.summary}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <p className="text-xs text-gray-500 mb-2">
+                                    Mevcut dosya: <span className="font-mono text-gray-700">{updateModal.modName}</span>
+                                </p>
+
+                                <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                                    {updateModal.files.length > 0 ? updateModal.files.map(file => (
+                                        <div key={file.id} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-xs text-gray-400">{formatSize(file.fileLength)}</span>
+                                                    <span className="text-xs text-gray-400">{formatDate(file.fileDate)}</span>
+                                                    {file.gameVersions?.slice(0, 2).map(v => (
+                                                        <span key={v} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full text-gray-500">{v}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleUpdateMod(file)}
+                                                disabled={updateModMutation.isPending}
+                                                className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
+                                            >
+                                                {updateModMutation.isPending ? (
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                ) : (
+                                                    <>
+                                                        <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
+                                                        Güncelle
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )) : (
+                                        <div className="text-center py-8 text-gray-400">
+                                            <p>Kullanılabilir sürüm bulunamadı</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
             )}
         </div>
     );

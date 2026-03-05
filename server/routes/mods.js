@@ -126,6 +126,96 @@ router.post('/download', authMiddleware, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// CurseForge'dan mod sürümlerini getir (mod adıyla arama)
+router.get('/versions/:modName', authMiddleware, async (req, res) => {
+    try {
+        if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
+        const modName = req.params.modName.replace(/\.jar$/, '').replace(/-[\d.]+.*$/, '').replace(/[_-]/g, ' ');
+
+        // CurseForge'dan mod ara
+        const searchUrl = `${CF_API}/v1/mods/search?gameId=432&classId=6&searchFilter=${encodeURIComponent(modName)}&pageSize=5&sortField=2&sortOrder=desc`;
+        const searchData = await cfRequest(searchUrl);
+        const mods = searchData.data || [];
+
+        if (mods.length === 0) return res.json({ mod: null, files: [] });
+
+        // En iyi eşleşmeyi bul
+        const bestMatch = mods[0];
+
+        // Dosyaları getir
+        const filesUrl = `${CF_API}/v1/mods/${bestMatch.id}/files?pageSize=20`;
+        const filesData = await cfRequest(filesUrl);
+        const files = (filesData.data || []).map(f => ({
+            id: f.id,
+            displayName: f.displayName,
+            fileName: f.fileName,
+            gameVersions: f.gameVersions,
+            downloadUrl: f.downloadUrl,
+            fileDate: f.fileDate,
+            fileLength: f.fileLength,
+        }));
+
+        res.json({
+            mod: {
+                id: bestMatch.id,
+                name: bestMatch.name,
+                logo: bestMatch.logo?.thumbnailUrl,
+                summary: bestMatch.summary,
+            },
+            files,
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Mod güncelleme (eski sil, yeni indir)
+router.post('/update', authMiddleware, async (req, res) => {
+    try {
+        if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
+        const { oldFileName, modId, fileId, newFileName } = req.body;
+        if (!modId || !fileId) return res.status(400).json({ error: 'modId ve fileId gerekli' });
+
+        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const modsDir = path.join(serverPath, 'mods');
+
+        // Eski dosyayı sil (varsa)
+        if (oldFileName) {
+            const oldPath = path.join(modsDir, oldFileName);
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+            // Disabled'da da kontrol et
+            const disabledDir = path.join(serverPath, 'mods_disabled');
+            const oldDisabledPath = path.join(disabledDir, oldFileName);
+            if (fs.existsSync(oldDisabledPath)) fs.unlinkSync(oldDisabledPath);
+        }
+
+        // Yeni sürümü indir
+        const url = `${CF_API}/v1/mods/${modId}/files/${fileId}/download-url`;
+        const data = await cfRequest(url);
+        const downloadUrl = data.data;
+        if (!downloadUrl) return res.status(400).json({ error: 'İndirme URL bulunamadı' });
+
+        if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
+        const filePath = path.join(modsDir, newFileName || `mod-${modId}-${fileId}.jar`);
+
+        await new Promise((resolve, reject) => {
+            const download = (u) => {
+                https.get(u, { headers: { 'x-api-key': CF_KEY } }, (response) => {
+                    if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                        download(response.headers.location);
+                        return;
+                    }
+                    const file = fs.createWriteStream(filePath);
+                    response.pipe(file);
+                    file.on('finish', () => { file.close(); resolve(); });
+                    file.on('error', reject);
+                }).on('error', reject);
+            };
+            download(downloadUrl);
+        });
+
+        res.json({ message: `Mod güncellendi: ${newFileName || 'mod'}`, oldFileName, newFileName });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Config editorü - config/ klasöründeki dosyaları listele
 router.get('/configs', authMiddleware, (req, res) => {
     try {
