@@ -4,17 +4,18 @@ const http = require('http');
 
 /**
  * Zamanlanmış Görevler - Otomatik restart, backup, duyuru
+ * Görev çalıştırıldığında minecraftService'e doğrudan komut gönderir
  */
 class Scheduler {
     constructor() {
         this.timers = new Map();
+        this.executionLog = []; // Son çalışma logları
         this._loadAndStart();
     }
 
     _loadAndStart() {
         try {
             const db = getDb();
-            // Tablo oluştur
             db.exec(`
                 CREATE TABLE IF NOT EXISTS scheduled_tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,12 +32,32 @@ class Scheduler {
                 )
             `);
 
-            // Aktif görevleri başlat
             const tasks = db.prepare('SELECT * FROM scheduled_tasks WHERE enabled = 1').all();
             for (const task of tasks) {
                 this._scheduleTask(task);
             }
-        } catch { /* DB henüz hazır değilse ignore */ }
+            this._addLog('system', `Scheduler başlatıldı. ${tasks.length} görev yüklendi.`);
+        } catch (err) {
+            console.error('[Scheduler] Init error:', err.message);
+        }
+    }
+
+    _addLog(taskName, message) {
+        const entry = {
+            time: new Date().toISOString(),
+            task: taskName,
+            message,
+        };
+        this.executionLog.push(entry);
+        // Son 100 log'u tut
+        if (this.executionLog.length > 100) {
+            this.executionLog = this.executionLog.slice(-100);
+        }
+        console.error(`[Scheduler] [${taskName}] ${message}`);
+    }
+
+    getExecutionLog() {
+        return this.executionLog.slice(-50);
     }
 
     list() {
@@ -54,13 +75,16 @@ class Scheduler {
         const result = stmt.run(data.name, data.type, data.intervalMinutes, data.action, JSON.stringify(data.actionData || {}), nextRun.toString());
         const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(result.lastInsertRowid);
         this._scheduleTask(task);
+        this._addLog(task.name, `Görev oluşturuldu (${task.action}, her ${task.interval_minutes} dk)`);
         return task;
     }
 
     remove(id) {
         const db = getDb();
+        const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(id);
         this._clearTimer(id);
         db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+        if (task) this._addLog(task.name, 'Görev silindi');
     }
 
     toggle(id) {
@@ -72,9 +96,14 @@ class Scheduler {
         db.prepare('UPDATE scheduled_tasks SET enabled = ? WHERE id = ?').run(newEnabled, id);
 
         if (newEnabled) {
-            this._scheduleTask({ ...task, enabled: 1 });
+            // next_run'ı şimdiden itibaren tekrar başlat
+            const nextRun = Date.now() + (task.interval_minutes * 60 * 1000);
+            db.prepare('UPDATE scheduled_tasks SET next_run = ? WHERE id = ?').run(nextRun.toString(), id);
+            this._scheduleTask({ ...task, enabled: 1, next_run: nextRun.toString() });
+            this._addLog(task.name, 'Görev aktif edildi');
         } else {
             this._clearTimer(id);
+            this._addLog(task.name, 'Görev durduruldu');
         }
 
         return { enabled: !!newEnabled };
@@ -88,7 +117,6 @@ class Scheduler {
         const now = Date.now();
         const intervalMs = task.interval_minutes * 60 * 1000;
 
-        // Geçmişte kalmışsa hemen çalıştıracak şekilde süreyi ayarla
         if (!nextRun || nextRun < now) {
             nextRun = now + intervalMs;
             const db = getDb();
@@ -100,9 +128,19 @@ class Scheduler {
         const timer = setTimeout(() => {
             this._executeTask(task);
 
-            // İlk çalışmadan sonra regular interval
             const intervalTimer = setInterval(() => {
-                this._executeTask(task);
+                // Güncel task bilgisini DB'den oku (devre dışı bırakılmış olabilir)
+                try {
+                    const db = getDb();
+                    const freshTask = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(task.id);
+                    if (!freshTask || !freshTask.enabled) {
+                        this._clearTimer(task.id);
+                        return;
+                    }
+                    this._executeTask(freshTask);
+                } catch (err) {
+                    console.error(`[Scheduler] Interval check error:`, err.message);
+                }
             }, intervalMs);
 
             this.timers.set(task.id, intervalTimer);
@@ -121,6 +159,8 @@ class Scheduler {
     }
 
     async _executeTask(task) {
+        this._addLog(task.name, `Görev çalıştırılıyor... (aksiyon: ${task.action})`);
+
         try {
             const db = getDb();
             const now = Date.now();
@@ -128,50 +168,122 @@ class Scheduler {
 
             db.prepare('UPDATE scheduled_tasks SET last_run = datetime("now"), next_run = ? WHERE id = ?').run(nextRun.toString(), task.id);
 
+            // minecraftService singleton'ını al
+            const mcService = require('./minecraftService');
+
             switch (task.action) {
-                case 'restart':
-                    const mcService = require('./minecraftService');
-                    if (mcService.status === 'running') await mcService.restart();
+                case 'restart': {
+                    if (mcService.status === 'running') {
+                        this._addLog(task.name, 'Sunucu yeniden başlatılıyor...');
+                        // Önce uyarı gönder
+                        try {
+                            mcService.sendCommand('say §c[Otomatik] Sunucu 10 saniye içinde yeniden başlatılacak!');
+                        } catch { /* sunucu komut kabul etmeyebilir */ }
+                        await new Promise(r => setTimeout(r, 10000));
+                        await mcService.restart();
+                        this._addLog(task.name, 'Sunucu başarıyla yeniden başlatıldı');
+                    } else {
+                        this._addLog(task.name, `Sunucu çalışmıyor (durum: ${mcService.status}), restart atlandı`);
+                    }
                     break;
-                case 'backup':
+                }
+
+                case 'backup': {
+                    this._addLog(task.name, 'Yedekleme başlatılıyor...');
                     try {
-                        const wm = require('./worldManager');
-                        const w = new wm();
-                        // tüm dünyaları yedekle
-                        const worlds = w.list();
-                        for (const world of worlds) {
-                            if (world.exists) w.backup(world.name);
+                        // Sunucu çalışıyorsa save-all gönder
+                        if (mcService.status === 'running') {
+                            try {
+                                mcService.sendCommand('save-all');
+                                mcService.sendCommand('say §e[Otomatik] Dünya kaydediliyor, yedek alınıyor...');
+                            } catch { /* ignore */ }
+                            await new Promise(r => setTimeout(r, 5000));
                         }
-                    } catch (e) { console.error('Oto-Yedekleme Hatası:', e.message); }
+
+                        const WorldManager = require('./worldManager');
+                        const wm = new WorldManager();
+                        const worlds = wm.list();
+                        let backedUp = 0;
+                        for (const world of worlds) {
+                            if (world.exists) {
+                                wm.backup(world.name);
+                                backedUp++;
+                            }
+                        }
+                        this._addLog(task.name, `${backedUp} dünya yedeklendi`);
+
+                        if (mcService.status === 'running') {
+                            try { mcService.sendCommand('say §a[Otomatik] Yedekleme tamamlandı!'); } catch { /* ignore */ }
+                        }
+                    } catch (e) {
+                        this._addLog(task.name, `Yedekleme hatası: ${e.message}`);
+                    }
                     break;
-                case 'announce':
+                }
+
+                case 'announce': {
                     const data = JSON.parse(task.action_data || '{}');
-                    const mc = require('./minecraftService');
-                    if (mc.status === 'running') mc.sendCommand(`say ${data.message || 'Sunucu duyurusu'}`);
+                    const message = data.message || 'Sunucu duyurusu';
+                    if (mcService.status === 'running') {
+                        try {
+                            mcService.sendCommand(`say §b[Duyuru] ${message}`);
+                            this._addLog(task.name, `Duyuru gönderildi: "${message}"`);
+                        } catch (e) {
+                            this._addLog(task.name, `Duyuru gönderilemedi: ${e.message}`);
+                        }
+                    } else {
+                        this._addLog(task.name, `Sunucu çalışmıyor, duyuru atlandı`);
+                    }
                     break;
-                case 'webhook':
+                }
+
+                case 'webhook': {
                     const webhookData = JSON.parse(task.action_data || '{}');
-                    if (webhookData.url) await this._sendWebhook(webhookData.url, webhookData.message || 'Zamanlanmış görev çalıştı');
+                    if (webhookData.url) {
+                        await this._sendWebhook(webhookData.url, webhookData.message || `Zamanlanmış görev çalıştı: ${task.name}`);
+                        this._addLog(task.name, 'Webhook gönderildi');
+                    } else {
+                        this._addLog(task.name, 'Webhook URL tanımlanmamış');
+                    }
                     break;
+                }
+
+                default:
+                    this._addLog(task.name, `Bilinmeyen aksiyon: ${task.action}`);
             }
         } catch (err) {
-            console.error(`[Scheduler] Task ${task.id} error:`, err.message);
+            this._addLog(task.name, `HATA: ${err.message}`);
+            console.error(`[Scheduler] Task ${task.id} (${task.name}) error:`, err.message);
         }
     }
 
-    _sendWebhook(url, message) {
+    async _sendWebhook(url, message) {
         return new Promise((resolve, reject) => {
-            const body = JSON.stringify({ content: message });
-            const parsedUrl = new URL(url);
-            const protocol = parsedUrl.protocol === 'https:' ? https : http;
+            try {
+                const urlObj = new URL(url);
+                const postData = JSON.stringify({ content: message });
+                const protocol = urlObj.protocol === 'https:' ? https : http;
+                const options = {
+                    hostname: urlObj.hostname,
+                    port: urlObj.port,
+                    path: urlObj.pathname + urlObj.search,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData),
+                    },
+                };
 
-            const req = protocol.request(parsedUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
-                res.on('data', () => { });
-                res.on('end', resolve);
-            });
-            req.on('error', reject);
-            req.write(body);
-            req.end();
+                const req = protocol.request(options, (res) => {
+                    res.on('data', () => { });
+                    res.on('end', () => resolve());
+                });
+                req.on('error', reject);
+                req.write(postData);
+                req.end();
+            } catch (err) {
+                reject(err);
+            }
         });
     }
 }

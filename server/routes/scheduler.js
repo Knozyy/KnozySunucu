@@ -6,6 +6,9 @@ const router = express.Router();
 
 router.get('/', authMiddleware, (req, res) => { res.json({ tasks: scheduler.list() }); });
 
+// Execution log — görevlerin çalışma geçmişi
+router.get('/log', authMiddleware, (req, res) => { res.json({ log: scheduler.getExecutionLog() }); });
+
 router.post('/', authMiddleware, (req, res) => {
     try {
         const task = scheduler.create(req.body);

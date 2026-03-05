@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineClock, HiOutlineTrash, HiOutlinePlus,
-    HiOutlinePlay, HiOutlinePause,
+    HiOutlinePlay, HiOutlinePause, HiOutlineDocumentText,
 } from 'react-icons/hi2';
 
 function formatCountdown(ms) {
@@ -19,24 +19,16 @@ function formatCountdown(ms) {
     return `${m}d ${s}sn`;
 }
 
-// Lokal Geri Sayım Bileşeni
 function CountdownTimer({ nextRunStr, enabled }) {
     const [timeLeft, setTimeLeft] = useState(0);
 
     useEffect(() => {
-        if (!enabled || !nextRunStr) {
-            setTimeLeft(0);
-            return;
-        }
-
+        if (!enabled || !nextRunStr) { setTimeLeft(0); return; }
         const nextRun = parseInt(nextRunStr, 10);
-
         const updateTimer = () => {
-            const now = Date.now();
-            const diff = nextRun - now;
+            const diff = nextRun - Date.now();
             setTimeLeft(Math.max(0, diff));
         };
-
         updateTimer();
         const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
@@ -54,14 +46,32 @@ function CountdownTimer({ nextRunStr, enabled }) {
 
 export default function SchedulerPage() {
     const [showForm, setShowForm] = useState(false);
+    const [showLog, setShowLog] = useState(false);
     const [form, setForm] = useState({ name: '', action: 'restart', intervalMinutes: 360, type: 'interval', actionData: {} });
     const queryClient = useQueryClient();
+    const { t } = useI18n();
 
-    const { data } = useQuery({ queryKey: ['scheduler'], queryFn: () => api.get('/scheduler').then(r => r.data) });
+    const { data } = useQuery({
+        queryKey: ['scheduler'],
+        queryFn: () => api.get('/scheduler').then(r => r.data),
+        refetchInterval: 30000,
+    });
+
+    const { data: logData } = useQuery({
+        queryKey: ['schedulerLog'],
+        queryFn: () => api.get('/scheduler/log').then(r => r.data),
+        enabled: showLog,
+        refetchInterval: showLog ? 5000 : false,
+    });
 
     const createMutation = useMutation({
         mutationFn: (data) => api.post('/scheduler', data),
-        onSuccess: () => { toast.success('Görev oluşturuldu'); setShowForm(false); setForm({ name: '', action: 'restart', intervalMinutes: 360, type: 'interval', actionData: {} }); queryClient.invalidateQueries({ queryKey: ['scheduler'] }); },
+        onSuccess: () => {
+            toast.success('Görev oluşturuldu');
+            setShowForm(false);
+            setForm({ name: '', action: 'restart', intervalMinutes: 360, type: 'interval', actionData: {} });
+            queryClient.invalidateQueries({ queryKey: ['scheduler'] });
+        },
         onError: (err) => toast.error(err.response?.data?.error || 'Oluşturulamadı'),
     });
 
@@ -84,8 +94,6 @@ export default function SchedulerPage() {
         webhook: '🔔 Webhook Gönder',
     };
 
-    const { t } = useI18n();
-
     return (
         <div className="space-y-6">
             <div className="fade-in flex items-center justify-between">
@@ -93,10 +101,50 @@ export default function SchedulerPage() {
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('scheduler.title')}</h1>
                     <p className="text-gray-500">{t('scheduler.subtitle')}</p>
                 </div>
-                <button onClick={() => setShowForm(!showForm)} className="btn-primary">
-                    <HiOutlinePlus className="w-5 h-5" /> Yeni Görev
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setShowLog(!showLog)}
+                        className={`btn-secondary text-sm ${showLog ? 'ring-2 ring-blue-400' : ''}`}
+                    >
+                        <HiOutlineDocumentText className="w-4 h-4" /> Log
+                    </button>
+                    <button onClick={() => setShowForm(!showForm)} className="btn-primary">
+                        <HiOutlinePlus className="w-5 h-5" /> Yeni Görev
+                    </button>
+                </div>
             </div>
+
+            {/* Execution Log */}
+            {showLog && (
+                <div className="glass-card p-4 fade-in">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <HiOutlineDocumentText className="w-4 h-4 text-blue-600" />
+                        Görev Çalışma Geçmişi
+                    </h3>
+                    <div className="max-h-60 overflow-y-auto bg-gray-900 rounded-xl p-3 text-xs font-mono space-y-1">
+                        {logData?.log?.length > 0 ? (
+                            [...logData.log].reverse().map((entry, i) => (
+                                <div key={i} className={`px-2 py-0.5 rounded ${entry.message.includes('HATA') ? 'text-red-400 bg-red-900/10' :
+                                        entry.message.includes('hatası') ? 'text-red-300' :
+                                            entry.message.includes('başарı') || entry.message.includes('tamamlandı') ? 'text-green-400' :
+                                                entry.message.includes('atlandı') ? 'text-amber-400' :
+                                                    'text-gray-400'
+                                    }`}>
+                                    <span className="text-gray-600">{new Date(entry.time).toLocaleString('tr-TR')}</span>
+                                    {' '}
+                                    <span className="text-cyan-400">[{entry.task}]</span>
+                                    {' '}
+                                    {entry.message}
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-gray-500 text-center py-4">
+                                Henüz çalışma kaydı yok. Görev çalıştığında burada gözükecek.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {showForm && (
                 <div className="glass-card p-6 fade-in">
@@ -156,7 +204,7 @@ export default function SchedulerPage() {
                             </p>
                             <div className="flex items-center gap-4 mt-1.5">
                                 {task.last_run && <p className="text-xs text-gray-400">Son: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
-                                <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100 dark:bg-gray-800 dark:border-gray-700">
+                                <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
                                     Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled} />
                                 </p>
                             </div>

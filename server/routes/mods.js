@@ -9,6 +9,21 @@ const router = express.Router();
 const CF_API = 'https://api.curseforge.com';
 const CF_KEY = process.env.CURSEFORGE_API_KEY;
 
+/**
+ * Aktif profil varsa onun yolunu, yoksa env'deki yolu döner
+ */
+function getActiveServerPath() {
+    try {
+        const { getDb } = require('../db/database');
+        const db = getDb();
+        const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
+        if (active?.install_path && fs.existsSync(active.install_path)) {
+            return active.install_path;
+        }
+    } catch { /* fallback */ }
+    return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+}
+
 router.get('/', authMiddleware, (req, res) => {
     const mm = new ModManager();
     res.json({ mods: mm.listAll(), count: mm.count() });
@@ -244,7 +259,7 @@ router.post('/update', authMiddleware, async (req, res) => {
 // Config editorü - config/ klasöründeki dosyaları listele
 router.get('/configs', authMiddleware, (req, res) => {
     try {
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const serverPath = getActiveServerPath();
         const configDir = path.join(serverPath, 'config');
         if (!fs.existsSync(configDir)) return res.json({ files: [] });
 
@@ -256,7 +271,7 @@ router.get('/configs', authMiddleware, (req, res) => {
 // Config dosyası okuma
 router.get('/configs/read', authMiddleware, (req, res) => {
     try {
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const serverPath = getActiveServerPath();
         const filePath = path.join(serverPath, 'config', req.query.path || '');
         if (!filePath.startsWith(path.join(serverPath, 'config'))) return res.status(403).json({ error: 'Geçersiz yol' });
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Dosya bulunamadı' });
@@ -272,7 +287,7 @@ router.get('/configs/read', authMiddleware, (req, res) => {
 // Config dosyası yazma
 router.put('/configs/write', authMiddleware, (req, res) => {
     try {
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const serverPath = getActiveServerPath();
         const filePath = path.join(serverPath, 'config', req.body.path || '');
         if (!filePath.startsWith(path.join(serverPath, 'config'))) return res.status(403).json({ error: 'Geçersiz yol' });
 
