@@ -15,8 +15,8 @@ router.post('/register', (req, res) => {
             return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
         }
 
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
+        if (password.length < 5) {
+            return res.status(400).json({ error: 'Şifre en az 5 karakter olmalı' });
         }
 
         const db = getDb();

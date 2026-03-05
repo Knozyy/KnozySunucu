@@ -121,7 +121,7 @@ export default function LoginPage() {
                                 className="input-field"
                                 placeholder="••••••••"
                                 required
-                                minLength={6}
+                                minLength={5}
                             />
                         </div>
 

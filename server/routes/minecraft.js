@@ -17,7 +17,7 @@ router.get('/status', authMiddleware, (req, res) => {
 });
 
 // POST /api/minecraft/start
-router.post('/start', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/start', authMiddleware, requireRole(['admin', 'user']), (req, res) => {
     try {
         minecraftService.start();
         res.json({ message: 'Sunucu başlatılıyor...' });
@@ -28,7 +28,7 @@ router.post('/start', authMiddleware, requireRole('admin'), (req, res) => {
 });
 
 // POST /api/minecraft/stop
-router.post('/stop', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/stop', authMiddleware, requireRole(['admin', 'user']), (req, res) => {
     try {
         minecraftService.stop();
         res.json({ message: 'Sunucu durduruluyor...' });
@@ -39,7 +39,7 @@ router.post('/stop', authMiddleware, requireRole('admin'), (req, res) => {
 });
 
 // POST /api/minecraft/restart
-router.post('/restart', authMiddleware, requireRole('admin'), async (req, res) => {
+router.post('/restart', authMiddleware, requireRole(['admin', 'user']), async (req, res) => {
     try {
         await minecraftService.restart();
         res.json({ message: 'Sunucu yeniden başlatılıyor...' });
@@ -61,7 +61,7 @@ router.post('/repair', authMiddleware, requireRole('admin'), (req, res) => {
 });
 
 // POST /api/minecraft/command
-router.post('/command', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/command', authMiddleware, requireRole(['admin', 'user']), (req, res) => {
     try {
         const { command } = req.body;
         if (!command) return res.status(400).json({ error: 'Komut gerekli' });

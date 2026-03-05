@@ -246,22 +246,19 @@ export default function DashboardPage() {
                         {/* Kontrol Butonları */}
                         <div className="flex gap-2 flex-wrap mt-4">
                             {isStopped ? (
-                                <button onClick={() => startMutation.mutate()} disabled={user?.role !== 'admin' || isBusy}
-                                    title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
+                                <button onClick={() => startMutation.mutate()} disabled={isBusy}
                                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-green-600 hover:bg-green-700 active:scale-95 disabled:opacity-50">
                                     <HiOutlinePlay className="w-5 h-5" />
                                     {startMutation.isPending ? 'Başlatılıyor...' : 'Sunucuyu Başlat'}
                                 </button>
                             ) : (
                                 <>
-                                    <button onClick={() => stopMutation.mutate()} disabled={user?.role !== 'admin' || !isRunning || isBusy}
-                                        title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
+                                    <button onClick={() => stopMutation.mutate()} disabled={!isRunning || isBusy}
                                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-red-500 hover:bg-red-600 active:scale-95 disabled:opacity-50">
                                         <HiOutlineStop className="w-4 h-4" />
                                         {stopMutation.isPending ? 'Durduruluyor...' : 'Durdur'}
                                     </button>
-                                    <button onClick={() => restartMutation.mutate()} disabled={user?.role !== 'admin' || isBusy}
-                                        title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
+                                    <button onClick={() => restartMutation.mutate()} disabled={isBusy}
                                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 disabled:opacity-50">
                                         <HiOutlineArrowPath className="w-4 h-4" />
                                         {restartMutation.isPending ? 'Başlatılıyor...' : 'Yeniden Başlat'}
