@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const { getDb } = require('../db/database');
 
 const router = express.Router();
@@ -28,7 +29,7 @@ router.get('/list', authMiddleware, (req, res) => {
 });
 
 // POST /api/backup/create
-router.post('/create', authMiddleware, (req, res) => {
+router.post('/create', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const backupDir = getBackupPath();
         const serverDir = getServerPath();
@@ -93,7 +94,7 @@ router.post('/create', authMiddleware, (req, res) => {
 });
 
 // DELETE /api/backup/:id
-router.delete('/:id', authMiddleware, (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
         const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id);
@@ -116,7 +117,7 @@ router.delete('/:id', authMiddleware, (req, res) => {
 });
 
 // POST /api/backup/restore/:id
-router.post('/restore/:id', authMiddleware, (req, res) => {
+router.post('/restore/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
         const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id);

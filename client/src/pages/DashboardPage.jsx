@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { useAuth } from '@/context/AuthContext';
 import { useI18n } from '@/context/I18nContext';
 import { formatBytes, formatUptime } from '@/utils/formatters';
 import {
@@ -62,6 +63,7 @@ export default function DashboardPage() {
     const [usageHistory, setUsageHistory] = useState([]);
     const historyRef = useRef([]);
     const queryClient = useQueryClient();
+    const { user } = useAuth();
     const { t } = useI18n();
 
     const { data: systemInfo, isLoading: infoLoading } = useQuery({
@@ -215,7 +217,7 @@ export default function DashboardPage() {
                                                     if (isRunning && !window.confirm('Açık olan sunucu kapatılıp yeni profil ile başlatılacak. Emin misiniz?')) return;
                                                     activateMutation.mutate(profileId);
                                                 }}
-                                                disabled={activateMutation.isPending || isStarting || isStopping}
+                                                disabled={user?.role !== 'admin' || activateMutation.isPending || isStarting || isStopping}
                                             >
                                                 <option value="" disabled>Profil Seçin</option>
                                                 {installedData.modpacks.map(mp => (
@@ -227,9 +229,9 @@ export default function DashboardPage() {
                                 </div>
                                 <div className="flex items-center gap-2 mt-1.5">
                                     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${isRunning ? 'bg-green-100 text-green-700' :
-                                            isStarting ? 'bg-amber-100 text-amber-700 animate-pulse' :
-                                                isStopping ? 'bg-red-100 text-red-700 animate-pulse' :
-                                                    'bg-gray-100 text-gray-500'
+                                        isStarting ? 'bg-amber-100 text-amber-700 animate-pulse' :
+                                            isStopping ? 'bg-red-100 text-red-700 animate-pulse' :
+                                                'bg-gray-100 text-gray-500'
                                         }`}>
                                         <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500' : isStarting ? 'bg-amber-500' : isStopping ? 'bg-red-500' : 'bg-gray-400'}`} />
                                         {isRunning ? 'Çalışıyor' : isStarting ? 'Başlatılıyor...' : isStopping ? 'Durduruluyor...' : 'Kapalı'}
@@ -242,21 +244,24 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Kontrol Butonları */}
-                        <div className="flex gap-2 flex-wrap">
+                        <div className="flex gap-2 flex-wrap mt-4">
                             {isStopped ? (
-                                <button onClick={() => startMutation.mutate()} disabled={isBusy}
+                                <button onClick={() => startMutation.mutate()} disabled={user?.role !== 'admin' || isBusy}
+                                    title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
                                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-green-600 hover:bg-green-700 active:scale-95 disabled:opacity-50">
                                     <HiOutlinePlay className="w-5 h-5" />
                                     {startMutation.isPending ? 'Başlatılıyor...' : 'Sunucuyu Başlat'}
                                 </button>
                             ) : (
                                 <>
-                                    <button onClick={() => stopMutation.mutate()} disabled={!isRunning || isBusy}
+                                    <button onClick={() => stopMutation.mutate()} disabled={user?.role !== 'admin' || !isRunning || isBusy}
+                                        title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
                                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-red-500 hover:bg-red-600 active:scale-95 disabled:opacity-50">
                                         <HiOutlineStop className="w-4 h-4" />
                                         {stopMutation.isPending ? 'Durduruluyor...' : 'Durdur'}
                                     </button>
-                                    <button onClick={() => restartMutation.mutate()} disabled={isBusy}
+                                    <button onClick={() => restartMutation.mutate()} disabled={user?.role !== 'admin' || isBusy}
+                                        title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
                                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 disabled:opacity-50">
                                         <HiOutlineArrowPath className="w-4 h-4" />
                                         {restartMutation.isPending ? 'Başlatılıyor...' : 'Yeniden Başlat'}
@@ -265,7 +270,8 @@ export default function DashboardPage() {
                             )}
                             <button
                                 onClick={() => { if (confirm('Sunucu kurulum dosyaları silinecek ve tekrar başlatılınca yeniden indirilecek. Emin misiniz?')) repairMutation.mutate(); }}
-                                disabled={isRunning || isBusy || repairMutation.isPending}
+                                disabled={user?.role !== 'admin' || isRunning || isBusy || repairMutation.isPending}
+                                title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
                                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 disabled:opacity-50"
                             >
                                 <HiOutlineWrenchScrewdriver className="w-4 h-4" />

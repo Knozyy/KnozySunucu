@@ -59,8 +59,20 @@ export function AuthProvider({ children }) {
         return response.data.hasAdmin;
     };
 
+    const activateGoldenKey = async (key) => {
+        const response = await api.post('/auth/golden-key', { key });
+        const { token: newToken, user: userData } = response.data;
+
+        localStorage.setItem('knozy_token', newToken);
+        localStorage.setItem('knozy_user', JSON.stringify(userData));
+        setToken(newToken);
+        setUser(userData);
+
+        return response.data.message;
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, loading, login, register, logout, checkAdmin }}>
+        <AuthContext.Provider value={{ user, token, loading, login, register, logout, checkAdmin, activateGoldenKey }}>
             {children}
         </AuthContext.Provider>
     );

@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const systemService = require('../services/systemService');
 
 const router = express.Router();
@@ -72,7 +73,7 @@ router.get('/ram-settings', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/system/ram-settings - RAM ayarlarını kaydet
-router.put('/ram-settings', authMiddleware, (req, res) => {
+router.put('/ram-settings', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const { minRam, maxRam, jvmArgs } = req.body;
         const fs = require('fs');
@@ -198,7 +199,7 @@ router.get('/processes', authMiddleware, async (req, res) => {
 });
 
 // POST /api/system/processes/kill - Bir süreci sonlandır
-router.post('/processes/kill', authMiddleware, async (req, res) => {
+router.post('/processes/kill', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const { pid } = req.body;
         if (!pid) return res.status(400).json({ error: 'PID gerekli' });

@@ -8,23 +8,37 @@ import {
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage,
 } from 'react-icons/hi2';
+import { toast } from 'react-hot-toast';
 
 const navItems = [
     { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
-    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece },
-    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube },
     { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
-    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder },
     { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
-    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock },
-    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox },
-    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth },
+    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, adminOnly: true },
+    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, adminOnly: true },
+    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, adminOnly: true },
+    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, adminOnly: true },
+    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, adminOnly: true },
+    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
-    const { user } = useAuth();
+    const { user, activateGoldenKey } = useAuth();
     const { isDark, toggle } = useTheme();
     const { locale, changeLocale, t } = useI18n();
+
+    const handleGoldenKey = async () => {
+        if (user?.role === 'admin') return;
+        const key = window.prompt("SuperAdmin Gizli Anahtarını Girin:");
+        if (key) {
+            try {
+                const msg = await activateGoldenKey(key);
+                toast.success(msg || 'Yetki seviyeniz Admin olarak güncellendi! 🎉');
+            } catch (err) {
+                toast.error(err.response?.data?.error || 'Geçersiz altın anahtar!');
+            }
+        }
+    };
 
     return (
         <>
@@ -54,26 +68,30 @@ export default function Sidebar({ isOpen, onClose }) {
                 {/* Navigation */}
                 <nav className="flex-1 py-4 px-3 overflow-y-auto">
                     <ul className="space-y-1">
-                        {navItems.map((item) => (
-                            <li key={item.path}>
-                                <NavLink
-                                    to={item.path}
-                                    onClick={onClose}
-                                    className={({ isActive }) => `
-                                        flex items-center gap-3 px-4 py-2.5 rounded-xl
-                                        text-sm font-medium transition-all duration-200
-                                        ${isActive
-                                            ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
-                                        }
-                                    `}
-                                    end={item.path === '/'}
-                                >
-                                    <item.icon className="w-5 h-5 flex-shrink-0" />
-                                    <span>{t(item.i18nKey)}</span>
-                                </NavLink>
-                            </li>
-                        ))}
+                        {navItems.map((item) => {
+                            if (item.adminOnly && user?.role !== 'admin') return null;
+
+                            return (
+                                <li key={item.path}>
+                                    <NavLink
+                                        to={item.path}
+                                        onClick={onClose}
+                                        className={({ isActive }) => `
+                                            flex items-center gap-3 px-4 py-2.5 rounded-xl
+                                            text-sm font-medium transition-all duration-200
+                                            ${isActive
+                                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
+                                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
+                                            }
+                                        `}
+                                        end={item.path === '/'}
+                                    >
+                                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                                        <span>{t(item.i18nKey)}</span>
+                                    </NavLink>
+                                </li>
+                            );
+                        })}
                     </ul>
                 </nav>
 
@@ -93,13 +111,19 @@ export default function Sidebar({ isOpen, onClose }) {
                         <HiOutlineLanguage className="w-5 h-5" />
                         {locale === 'tr' ? 'English' : 'Türkçe'}
                     </button>
-                    <div className="flex items-center gap-3 px-3 py-2">
-                        <div className="w-8 h-8 rounded-lg bg-gray-900 dark:bg-white flex items-center justify-center text-white dark:text-gray-900 text-sm font-bold">
+                    <div
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors"
+                        onDoubleClick={handleGoldenKey}
+                        title={user?.role !== 'admin' ? "Gizli yetkilendirme için çift tıklayın" : "Yetkili Kullanıcı"}
+                    >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shadow-sm ${user?.role === 'admin' ? 'bg-amber-400 text-amber-950' : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'}`}>
                             {user?.username?.[0]?.toUpperCase() || 'K'}
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.username || 'Knozy'}</p>
-                            <p className="text-xs text-gray-400">Yönetici</p>
+                            <p className={`text-xs ${user?.role === 'admin' ? 'text-amber-500 dark:text-amber-400 font-medium' : 'text-gray-400'}`}>
+                                {user?.role === 'admin' ? 'SuperAdmin' : 'Misafir'}
+                            </p>
                         </div>
                     </div>
                 </div>

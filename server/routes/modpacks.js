@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const curseForge = require('../services/curseforgeService');
 const { getDb } = require('../db/database');
 const path = require('path');
@@ -77,7 +78,7 @@ router.get('/install-status', authMiddleware, (req, res) => {
 });
 
 // Modpack yükle
-router.post('/install', authMiddleware, async (req, res) => {
+router.post('/install', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const { modId, fileId } = req.body;
         if (!modId) return res.status(400).json({ error: 'modId gerekli' });
@@ -90,7 +91,7 @@ router.post('/install', authMiddleware, async (req, res) => {
 });
 
 // Modpack güncelle (sürüm değiştir)
-router.post('/update', authMiddleware, async (req, res) => {
+router.post('/update', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const { dbId, modId, fileId } = req.body;
         if (!dbId || !modId || !fileId) {
@@ -104,7 +105,7 @@ router.post('/update', authMiddleware, async (req, res) => {
 });
 
 // Modpack kaldır (dosyaları da siler)
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const result = await curseForge.uninstallModpack(parseInt(req.params.id));
         res.json(result);
@@ -114,7 +115,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 // Profil aktif et
-router.post('/activate/:id', authMiddleware, async (req, res) => {
+router.post('/activate/:id', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const mcService = require('../services/minecraftService');
         const result = await mcService.switchProfile(parseInt(req.params.id));
@@ -169,7 +170,7 @@ router.get('/:id/settings', authMiddleware, (req, res) => {
 });
 
 // Modpack ayarları güncelle (Port, RAM ve Properties)
-router.put('/:id/settings', authMiddleware, (req, res) => {
+router.put('/:id/settings', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
         const id = parseInt(req.params.id);

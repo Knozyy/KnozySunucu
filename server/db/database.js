@@ -20,6 +20,7 @@ function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
+      role TEXT DEFAULT 'user',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -73,7 +74,15 @@ function initDatabase() {
     if (!colNames.includes('jvm_args')) {
       database.exec("ALTER TABLE installed_modpacks ADD COLUMN jvm_args TEXT");
     }
-  } catch { /* columns already exist */ }
+
+    const userCols = database.prepare("PRAGMA table_info(users)").all();
+    const userColNames = userCols.map(c => c.name);
+    if (!userColNames.includes('role')) {
+      database.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+      // İlk admin varsa onu admin yap
+      database.exec("UPDATE users SET role = 'admin' WHERE id = 1");
+    }
+  } catch (err) { console.error('Migration error:', err.message) }
 
   console.error('[DB] Database initialized successfully');
 }

@@ -21,17 +21,21 @@ router.post('/register', (req, res) => {
 
         const db = getDb();
 
-        // Sadece 1 admin izni
+        // İlk kayıt olan kişiyi otomatik admin, diğerlerini user yap
         const existingUser = db.prepare('SELECT COUNT(*) as count FROM users').get();
-        if (existingUser.count > 0) {
-            return res.status(403).json({ error: 'Kayıt devre dışı. Zaten bir admin mevcut.' });
+        const role = existingUser.count === 0 ? 'admin' : 'user';
+
+        // Username kontrolü
+        const checkUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+        if (checkUser) {
+            return res.status(409).json({ error: 'Bu kullanıcı adı zaten alınmış' });
         }
 
         const hashedPassword = bcrypt.hashSync(password, 12);
-        const stmt = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)');
-        stmt.run(username, hashedPassword);
+        const stmt = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)');
+        stmt.run(username, hashedPassword, role);
 
-        res.status(201).json({ message: 'Admin hesabı oluşturuldu' });
+        res.status(201).json({ message: 'Hesap başarıyla oluşturuldu' });
     } catch (error) {
         console.error('[Auth] Register error:', error.message);
         res.status(500).json({ error: 'Kayıt işlemi başarısız' });
@@ -60,12 +64,12 @@ router.post('/login', (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user.id, username: user.username },
+            { id: user.id, username: user.username, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '12h' }
         );
 
-        res.json({ token, user: { id: user.id, username: user.username } });
+        res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
     } catch (error) {
         console.error('[Auth] Login error:', error.message);
         res.status(500).json({ error: 'Giriş işlemi başarısız' });
@@ -82,10 +86,42 @@ router.get('/check', (req, res) => {
     try {
         const db = getDb();
         const result = db.prepare('SELECT COUNT(*) as count FROM users').get();
-        res.json({ hasAdmin: result.count > 0 });
+        res.json({ hasAdmin: result.count > 0 }); // Frontend hala hasAdmin property'sini bekliyor (ilk kayıt ekranı için)
     } catch (error) {
         console.error('[Auth] Check error:', error.message);
         res.status(500).json({ error: 'Kontrol başarısız' });
+    }
+});
+
+// POST /api/auth/golden-key - Rol yetkisini admin'e yükseltir
+router.post('/golden-key', authMiddleware, (req, res) => {
+    try {
+        const { key } = req.body;
+
+        // Ortam değişkenindeki golden key ile eşleşiyor mu (varsayılan: GOLDEN_KEY yoksa GIZLI_ADMIN123 kabul et)
+        const expectedKey = process.env.GOLDEN_KEY || 'GIZLI_ADMIN123';
+
+        if (!key || key !== expectedKey) {
+            return res.status(403).json({ error: 'Geçersiz altın anahtar!' });
+        }
+
+        const db = getDb();
+        const userId = req.user.id;
+
+        // Veritabanında güncelle
+        db.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', userId);
+
+        // Yeni yetkiyle yeni token oluştur
+        const token = jwt.sign(
+            { id: userId, username: req.user.username, role: 'admin' },
+            process.env.JWT_SECRET,
+            { expiresIn: '12h' }
+        );
+
+        res.json({ message: 'Yetkiler başarıyla yükseltildi!', token, user: { id: userId, username: req.user.username, role: 'admin' } });
+    } catch (error) {
+        console.error('[Auth] Golden Key error:', error.message);
+        res.status(500).json({ error: 'Yetki yükseltme başarısız' });
     }
 });
 

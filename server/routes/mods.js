@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const ModManager = require('../services/modManager');
 const https = require('https');
 const fs = require('fs');
@@ -29,17 +30,17 @@ router.get('/', authMiddleware, (req, res) => {
     res.json({ mods: mm.listAll(), count: mm.count() });
 });
 
-router.post('/disable', authMiddleware, (req, res) => {
+router.post('/disable', authMiddleware, requireRole('admin'), (req, res) => {
     try { const mm = new ModManager(); mm.disable(req.body.name); res.json({ message: 'Mod devre dışı bırakıldı' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/enable', authMiddleware, (req, res) => {
+router.post('/enable', authMiddleware, requireRole('admin'), (req, res) => {
     try { const mm = new ModManager(); mm.enable(req.body.name); res.json({ message: 'Mod aktif edildi' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.delete('/:name', authMiddleware, (req, res) => {
+router.delete('/:name', authMiddleware, requireRole('admin'), (req, res) => {
     try { const mm = new ModManager(); mm.remove(req.params.name); res.json({ message: 'Mod silindi' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -67,7 +68,7 @@ const upload = multer({
     },
 });
 
-router.post('/upload', authMiddleware, upload.array('mods', 20), (req, res) => {
+router.post('/upload', authMiddleware, requireRole('admin'), upload.array('mods', 20), (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'Dosya yüklenmedi' });
     }
@@ -127,7 +128,7 @@ router.get('/search', authMiddleware, async (req, res) => {
 });
 
 // CurseForge mod indirme
-router.post('/download', authMiddleware, async (req, res) => {
+router.post('/download', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const { modId, fileId, fileName } = req.body;
@@ -208,7 +209,7 @@ router.get('/versions/:modName', authMiddleware, async (req, res) => {
 });
 
 // Mod güncelleme (eski sil, yeni indir)
-router.post('/update', authMiddleware, async (req, res) => {
+router.post('/update', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const { oldFileName, modId, fileId, newFileName } = req.body;
@@ -285,7 +286,7 @@ router.get('/configs/read', authMiddleware, (req, res) => {
 });
 
 // Config dosyası yazma
-router.put('/configs/write', authMiddleware, (req, res) => {
+router.put('/configs/write', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const serverPath = getActiveServerPath();
         const filePath = path.join(serverPath, 'config', req.body.path || '');

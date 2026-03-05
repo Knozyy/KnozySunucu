@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const minecraftService = require('../services/minecraftService');
 
 const router = express.Router();
@@ -16,7 +17,7 @@ router.get('/status', authMiddleware, (req, res) => {
 });
 
 // POST /api/minecraft/start
-router.post('/start', authMiddleware, (req, res) => {
+router.post('/start', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         minecraftService.start();
         res.json({ message: 'Sunucu başlatılıyor...' });
@@ -27,7 +28,7 @@ router.post('/start', authMiddleware, (req, res) => {
 });
 
 // POST /api/minecraft/stop
-router.post('/stop', authMiddleware, (req, res) => {
+router.post('/stop', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         minecraftService.stop();
         res.json({ message: 'Sunucu durduruluyor...' });
@@ -38,7 +39,7 @@ router.post('/stop', authMiddleware, (req, res) => {
 });
 
 // POST /api/minecraft/restart
-router.post('/restart', authMiddleware, async (req, res) => {
+router.post('/restart', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         await minecraftService.restart();
         res.json({ message: 'Sunucu yeniden başlatılıyor...' });
@@ -49,7 +50,7 @@ router.post('/restart', authMiddleware, async (req, res) => {
 });
 
 // POST /api/minecraft/repair
-router.post('/repair', authMiddleware, (req, res) => {
+router.post('/repair', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const result = minecraftService.repair();
         res.json(result);
@@ -60,7 +61,7 @@ router.post('/repair', authMiddleware, (req, res) => {
 });
 
 // POST /api/minecraft/command
-router.post('/command', authMiddleware, (req, res) => {
+router.post('/command', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const { command } = req.body;
         if (!command) return res.status(400).json({ error: 'Komut gerekli' });
@@ -94,7 +95,7 @@ router.get('/properties', authMiddleware, (req, res) => {
 });
 
 // PUT /api/minecraft/properties
-router.put('/properties', authMiddleware, (req, res) => {
+router.put('/properties', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         minecraftService.setProperties(req.body);
         res.json({ message: 'Ayarlar güncellendi' });
