@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useI18n } from '@/context/I18nContext';
@@ -151,7 +151,6 @@ function LogFilesPanel() {
     const [selectedFile, setSelectedFile] = useState('latest.log');
     const [search, setSearch] = useState('');
     const [levelFilter, setLevelFilter] = useState('all');
-    const queryClient = useQueryClient();
 
     const { data: logFiles } = useQuery({
         queryKey: ['logFiles'],
@@ -160,16 +159,18 @@ function LogFilesPanel() {
 
     const { data: logContent, isLoading } = useQuery({
         queryKey: ['logContent', selectedFile],
-        queryFn: () => api.get(`/logs/read?file=${encodeURIComponent(selectedFile)}`).then(r => r.data),
+        queryFn: () => api.get(`/logs/file/${encodeURIComponent(selectedFile)}`).then(r => r.data),
         enabled: !!selectedFile,
     });
 
-    const lines = (logContent?.lines || []).filter(line => {
+    const allLines = (logContent?.content || '').split('\n').filter(l => l.trim());
+
+    const lines = allLines.filter(line => {
         if (levelFilter !== 'all') {
-            const l = line.toLowerCase();
-            if (levelFilter === 'error' && !l.includes('error') && !l.includes('fatal')) return false;
-            if (levelFilter === 'warn' && !l.includes('warn')) return false;
-            if (levelFilter === 'info' && !l.includes('info')) return false;
+            const lower = line.toLowerCase();
+            if (levelFilter === 'error' && !lower.includes('error') && !lower.includes('fatal')) return false;
+            if (levelFilter === 'warn' && !lower.includes('warn')) return false;
+            if (levelFilter === 'info' && !lower.includes('info')) return false;
         }
         if (search && !line.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
@@ -185,7 +186,6 @@ function LogFilesPanel() {
 
     return (
         <div className="space-y-4 fade-in">
-            {/* Kontroller */}
             <div className="glass-card p-4 flex flex-col sm:flex-row gap-3">
                 <select value={selectedFile} onChange={e => setSelectedFile(e.target.value)}
                     className="input-field text-sm flex-1">
@@ -207,7 +207,6 @@ function LogFilesPanel() {
                 </div>
             </div>
 
-            {/* Log İçeriği */}
             <div className="glass-card overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
                     <span className="text-xs text-gray-500 font-mono">{selectedFile}</span>
@@ -233,3 +232,4 @@ function LogFilesPanel() {
         </div>
     );
 }
+
