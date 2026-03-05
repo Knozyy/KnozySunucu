@@ -8,7 +8,6 @@ import {
     HiOutlineArrowPath,
     HiOutlineCpuChip,
     HiOutlineCircleStack,
-    HiOutlineSparkles,
 } from 'react-icons/hi2';
 
 const PROPERTY_LABELS = {
@@ -34,8 +33,10 @@ const PROPERTY_LABELS = {
 
 export default function SettingsPage() {
     const [editedProps, setEditedProps] = useState({});
-    const [ramSettings, setRamSettings] = useState({ minRam: '2G', maxRam: '4G', jvmArgs: '' });
+    const [ramSettings, setRamSettings] = useState({ minRam: '', maxRam: '', jvmArgs: '' });
+    const [ramSystem, setRamSystem] = useState(null);
     const queryClient = useQueryClient();
+    const { t } = useI18n();
 
     // server.properties
     const { data: properties, isLoading } = useQuery({
@@ -44,20 +45,16 @@ export default function SettingsPage() {
         onSuccess: (data) => setEditedProps(data),
     });
 
-    // RAM ayarları
+    // RAM ayarları (tek endpoint — akıllı varsayılanlar dahil)
     const { data: currentRam } = useQuery({
         queryKey: ['ramSettings'],
         queryFn: () => api.get('/system/ram-settings').then(r => r.data),
-        onSuccess: (data) => setRamSettings(data),
+        onSuccess: (data) => {
+            setRamSettings({ minRam: data.minRam, maxRam: data.maxRam, jvmArgs: data.jvmArgs });
+            setRamSystem(data.system);
+        },
     });
 
-    // RAM önerisi
-    const { data: ramRecommendation } = useQuery({
-        queryKey: ['ramRecommendation'],
-        queryFn: () => api.get('/system/ram-recommendation').then(r => r.data),
-    });
-
-    // Kaydetme
     const savePropertiesMutation = useMutation({
         mutationFn: (props) => api.put('/minecraft/properties', props),
         onSuccess: () => {
@@ -84,17 +81,6 @@ export default function SettingsPage() {
         setRamSettings(prev => ({ ...prev, [key]: value }));
     };
 
-    const applyRecommendation = () => {
-        if (!ramRecommendation) return;
-        const rec = ramRecommendation.recommended;
-        setRamSettings({
-            minRam: `${rec.minGB}G`,
-            maxRam: `${rec.maxGB}G`,
-            jvmArgs: ramRecommendation.jvmArgs,
-        });
-        toast.success('Önerilen RAM ayarları uygulandı');
-    };
-
     const handleSaveAll = () => {
         savePropertiesMutation.mutate(editedProps);
         saveRamMutation.mutate(ramSettings);
@@ -102,10 +88,8 @@ export default function SettingsPage() {
 
     const currentProps = { ...properties, ...editedProps };
     const hasChanges = JSON.stringify(properties) !== JSON.stringify(editedProps)
-        || JSON.stringify(currentRam) !== JSON.stringify(ramSettings);
+        || JSON.stringify({ minRam: currentRam?.minRam, maxRam: currentRam?.maxRam, jvmArgs: currentRam?.jvmArgs }) !== JSON.stringify(ramSettings);
     const isSaving = savePropertiesMutation.isPending || saveRamMutation.isPending;
-
-    const { t } = useI18n();
 
     return (
         <div className="space-y-6">
@@ -131,45 +115,22 @@ export default function SettingsPage() {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Sol: RAM & JVM Ayarları */}
+                {/* Sol: RAM & JVM */}
                 <div className="space-y-6 fade-in">
-                    {/* RAM Ayarları */}
+                    {/* RAM Ayarları — tek yer */}
                     <div className="glass-card p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                             <HiOutlineCircleStack className="w-5 h-5 text-blue-600" />
                             RAM Ayarları
                         </h2>
 
-                        {/* Öneri kutusu */}
-                        {ramRecommendation && (
-                            <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-blue-700 font-medium text-sm flex items-center gap-1">
-                                        <HiOutlineSparkles className="w-4 h-4" />
-                                        Sistem RAM Bilgisi
-                                    </span>
-                                    <button onClick={applyRecommendation} className="text-xs text-blue-600 hover:text-blue-800 font-medium px-3 py-1 bg-blue-100 rounded-lg transition-colors">
-                                        Önerileni Uygula
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                        <span className="text-gray-500">Toplam:</span>
-                                        <span className="ml-1 font-semibold text-gray-900">{ramRecommendation.system.totalGB} GB</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Boş:</span>
-                                        <span className="ml-1 font-semibold text-gray-900">{ramRecommendation.system.availableGB} GB</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Önerilen Min:</span>
-                                        <span className="ml-1 font-bold text-blue-700">{ramRecommendation.recommended.minGB} GB</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">Önerilen Max:</span>
-                                        <span className="ml-1 font-bold text-blue-700">{ramRecommendation.recommended.maxGB} GB</span>
-                                    </div>
-                                </div>
+                        {/* Sistem bilgisi (sadece bilgilendirme) */}
+                        {ramSystem && (
+                            <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl text-sm text-gray-500">
+                                Sistem RAM: <span className="font-semibold text-gray-900">{ramSystem.totalGB} GB</span>
+                                <span className="mx-2">•</span>
+                                Max verilebilir: <span className="font-semibold text-gray-900">{ramSystem.maxAllocatable} GB</span>
+                                <span className="text-xs ml-1 text-gray-400">(toplam - 2GB OS)</span>
                             </div>
                         )}
 
@@ -195,9 +156,12 @@ export default function SettingsPage() {
                                 />
                             </div>
                         </div>
+                        <p className="text-xs text-gray-400 mt-3">
+                            Örn: 4G, 8G, 12G. Max RAM = toplam sistem RAM - 2GB (OS için) olarak önerilir.
+                        </p>
                     </div>
 
-                    {/* JVM Ayarları */}
+                    {/* JVM Argümanları */}
                     <div className="glass-card p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                             <HiOutlineCpuChip className="w-5 h-5 text-gray-600" />
@@ -210,7 +174,7 @@ export default function SettingsPage() {
                             placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
                         />
                         <p className="text-xs text-gray-400 mt-2">
-                            Boş bırakırsanız varsayılan JVM ayarları kullanılır. "Önerileni Uygula" ile optimize edilmiş ayarlar otomatik doldurulur.
+                            Boş bırakırsanız varsayılan JVM ayarları kullanılır.
                         </p>
                     </div>
                 </div>

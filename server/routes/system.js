@@ -37,20 +37,41 @@ router.get('/uptime', authMiddleware, (req, res) => {
     }
 });
 
-// GET /api/system/ram-recommendation - RAM önerisi
-router.get('/ram-recommendation', authMiddleware, async (req, res) => {
+// GET /api/system/ram-settings - Mevcut RAM ayarlarını getir (akıllı varsayılan)
+router.get('/ram-settings', authMiddleware, async (req, res) => {
     try {
-        const RAMOptimizer = require('../services/ramOptimizer');
-        const modCount = parseInt(req.query.modCount) || 0;
-        const recommendation = await RAMOptimizer.getRecommendation(modCount);
-        res.json(recommendation);
+        const si = require('systeminformation');
+        const mem = await si.mem();
+        const totalGB = +(mem.total / (1024 ** 3)).toFixed(1);
+
+        // .env'de kullanıcı bir kere ayarlamışsa onu döndür
+        const currentMin = process.env.MINECRAFT_MIN_RAM;
+        const currentMax = process.env.MINECRAFT_MAX_RAM;
+        const jvmArgs = process.env.JVM_ARGS || '';
+        // RAM_CONFIGURED flag'i — kullanıcı en az 1 kere ayarladıysa true
+        const isConfigured = process.env.RAM_CONFIGURED === 'true';
+
+        // Akıllı varsayılan: max = total - 2GB, min = max'in %60'ı
+        const smartMaxGB = Math.max(2, Math.floor(totalGB - 2));
+        const smartMinGB = Math.max(1, Math.floor(smartMaxGB * 0.6));
+
+        res.json({
+            minRam: currentMin || `${smartMinGB}G`,
+            maxRam: currentMax || `${smartMaxGB}G`,
+            jvmArgs,
+            isConfigured,
+            system: {
+                totalGB,
+                maxAllocatable: smartMaxGB,
+            },
+        });
     } catch (error) {
-        console.error('[System] RAM recommendation error:', error.message);
-        res.status(500).json({ error: 'RAM önerisi alınamadı' });
+        console.error('[System] RAM settings error:', error.message);
+        res.status(500).json({ error: 'RAM ayarları alınamadı' });
     }
 });
 
-// PUT /api/system/ram-settings - RAM ayarlarını .env dosyasına kaydet
+// PUT /api/system/ram-settings - RAM ayarlarını kaydet
 router.put('/ram-settings', authMiddleware, (req, res) => {
     try {
         const { minRam, maxRam, jvmArgs } = req.body;
@@ -67,7 +88,7 @@ router.put('/ram-settings', authMiddleware, (req, res) => {
             envContent = envContent.replace(/MINECRAFT_MAX_RAM=.*/g, `MINECRAFT_MAX_RAM=${maxRam}`);
         }
 
-        // JVM_ARGS satırı yoksa ekle, varsa güncelle
+        // JVM_ARGS
         if (jvmArgs !== undefined) {
             if (envContent.includes('JVM_ARGS=')) {
                 envContent = envContent.replace(/JVM_ARGS=.*/g, `JVM_ARGS=${jvmArgs}`);
@@ -76,15 +97,23 @@ router.put('/ram-settings', authMiddleware, (req, res) => {
             }
         }
 
+        // RAM_CONFIGURED flag'i — kullanıcı artık RAM ayarladı
+        if (envContent.includes('RAM_CONFIGURED=')) {
+            envContent = envContent.replace(/RAM_CONFIGURED=.*/g, 'RAM_CONFIGURED=true');
+        } else {
+            envContent += '\nRAM_CONFIGURED=true';
+        }
+
         fs.writeFileSync(envPath, envContent);
 
-        // Env'yi runtime'da da güncelle
+        // Runtime'da güncelle
         if (minRam) process.env.MINECRAFT_MIN_RAM = minRam;
         if (maxRam) process.env.MINECRAFT_MAX_RAM = maxRam;
         if (jvmArgs !== undefined) process.env.JVM_ARGS = jvmArgs;
+        process.env.RAM_CONFIGURED = 'true';
 
         res.json({
-            message: 'RAM ayarları güncellendi. Değişikliklerin etkili olması için sunucuyu yeniden başlatın.',
+            message: 'RAM ayarları güncellendi. Sunucuyu yeniden başlatın.',
             current: {
                 minRam: process.env.MINECRAFT_MIN_RAM,
                 maxRam: process.env.MINECRAFT_MAX_RAM,
@@ -95,15 +124,6 @@ router.put('/ram-settings', authMiddleware, (req, res) => {
         console.error('[System] RAM settings error:', error.message);
         res.status(500).json({ error: 'RAM ayarları güncellenemedi' });
     }
-});
-
-// GET /api/system/ram-settings - Mevcut RAM ayarlarını getir
-router.get('/ram-settings', authMiddleware, (req, res) => {
-    res.json({
-        minRam: process.env.MINECRAFT_MIN_RAM || '2G',
-        maxRam: process.env.MINECRAFT_MAX_RAM || '4G',
-        jvmArgs: process.env.JVM_ARGS || '',
-    });
 });
 
 // GET /api/system/connection-info - Sunucu bağlantı bilgisi
