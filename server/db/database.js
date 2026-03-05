@@ -64,6 +64,15 @@ function initDatabase() {
     if (!colNames.includes('file_display_name')) {
       database.exec("ALTER TABLE installed_modpacks ADD COLUMN file_display_name TEXT");
     }
+    if (!colNames.includes('min_ram')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN min_ram TEXT");
+    }
+    if (!colNames.includes('max_ram')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN max_ram TEXT");
+    }
+    if (!colNames.includes('jvm_args')) {
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN jvm_args TEXT");
+    }
   } catch { /* columns already exist */ }
 
   console.error('[DB] Database initialized successfully');

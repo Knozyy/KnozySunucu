@@ -224,9 +224,12 @@ class MinecraftService extends EventEmitter {
                 }
             }
 
-            const maxRam = process.env.MINECRAFT_MAX_RAM || '4G';
-            const minRam = process.env.MINECRAFT_MIN_RAM || '2G';
-            const jvmArgs = process.env.JVM_ARGS || '';
+            const db = require('./db').getDb();
+            const activePack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+
+            const maxRam = (activePack && activePack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
+            const minRam = (activePack && activePack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
+            const jvmArgs = (activePack && activePack.jvm_args) || process.env.JVM_ARGS || '';
 
             cmd = 'java';
             args = [];

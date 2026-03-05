@@ -18,6 +18,27 @@ import {
     HiOutlineArrowPath,
 } from 'react-icons/hi2';
 
+const PROPERTY_LABELS = {
+    'server-port': { label: 'Sunucu Portu', type: 'number' },
+    'max-players': { label: 'Maksimum Oyuncu', type: 'number' },
+    'motd': { label: 'Sunucu Mesajı (MOTD)', type: 'text' },
+    'difficulty': { label: 'Zorluk', type: 'select', options: ['peaceful', 'easy', 'normal', 'hard'] },
+    'gamemode': { label: 'Oyun Modu', type: 'select', options: ['survival', 'creative', 'adventure', 'spectator'] },
+    'white-list': { label: 'Whitelist', type: 'boolean' },
+    'online-mode': { label: 'Online Mod', type: 'boolean' },
+    'pvp': { label: 'PvP', type: 'boolean' },
+    'spawn-monsters': { label: 'Canavar Doğması', type: 'boolean' },
+    'spawn-animals': { label: 'Hayvan Doğması', type: 'boolean' },
+    'level-name': { label: 'Dünya Adı', type: 'text' },
+    'level-seed': { label: 'Dünya Seed', type: 'text' },
+    'view-distance': { label: 'Görüş Mesafesi', type: 'number' },
+    'simulation-distance': { label: 'Simülasyon Mesafesi', type: 'number' },
+    'server-ip': { label: 'Sunucu IP', type: 'text' },
+    'enable-command-block': { label: 'Komut Bloğu', type: 'boolean' },
+    'allow-flight': { label: 'Uçuşa İzin', type: 'boolean' },
+    'allow-nether': { label: 'Nether', type: 'boolean' },
+};
+
 function formatSize(bytes) {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -545,53 +566,150 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
 }
 
 function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
+    const [activeTab, setActiveTab] = useState('general');
     const [settings, setSettings] = useState({
         name: modpack.name || '',
         version: modpack.version || '',
         server_port: modpack.server_port || 25565,
+        minRam: '',
+        maxRam: '',
+        jvmArgs: '',
+        properties: {}
+    });
+
+    const { isLoading } = useQuery({
+        queryKey: ['modpackSettings', modpack.id],
+        queryFn: () => api.get(`/modpacks/${modpack.id}/settings`).then(r => r.data),
+        onSuccess: (data) => {
+            setSettings(prev => ({
+                ...prev,
+                minRam: data.minRam || '',
+                maxRam: data.maxRam || '',
+                jvmArgs: data.jvmArgs || '',
+                properties: data.properties || {}
+            }));
+        }
     });
 
     const handleChange = (key, value) => {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
+    const handlePropChange = (key, value) => {
+        setSettings(prev => ({ ...prev, properties: { ...prev.properties, [key]: value } }));
+    };
+
     return (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="glass-card p-6 w-full max-w-lg fade-in" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <div className="glass-card p-6 w-full max-w-2xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2 flex-shrink-0">
                     <HiOutlineCog6Tooth className="w-6 h-6" />
                     {modpack.name} - Ayarlar
                 </h2>
 
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Modpack Adı</label>
-                        <input type="text" value={settings.name} onChange={e => handleChange('name', e.target.value)} className="input-field" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Versiyon</label>
-                        <input type="text" value={settings.version} onChange={e => handleChange('version', e.target.value)} className="input-field" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Sunucu Portu</label>
-                        <input
-                            type="number"
-                            value={settings.server_port}
-                            onChange={e => handleChange('server_port', parseInt(e.target.value) || 25565)}
-                            className="input-field"
-                            placeholder="25565"
-                            min={1024}
-                            max={65535}
-                        />
-                        <p className="text-xs text-gray-400 mt-1">
-                            Farklı port kullanarak aynı makinede birden fazla sunucu çalıştırabilirsiniz (varsayılan: 25565)
-                        </p>
-                    </div>
+                <div className="flex gap-2 mb-6 border-b border-gray-100 pb-2 flex-shrink-0">
+                    <button onClick={() => setActiveTab('general')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'general' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Genel</button>
+                    <button onClick={() => setActiveTab('ram')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'ram' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>RAM & JVM</button>
+                    <button onClick={() => setActiveTab('properties')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'properties' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Oyun Ayarları</button>
                 </div>
 
-                <div className="flex gap-3 mt-6 justify-end">
+                <div className="flex-1 overflow-y-auto min-h-0 pr-2 pb-2">
+                    {isLoading ? (
+                        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" /></div>
+                    ) : (
+                        <>
+                            {activeTab === 'general' && (
+                                <div className="space-y-4 fade-in">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Modpack Adı</label>
+                                        <input type="text" value={settings.name} onChange={e => handleChange('name', e.target.value)} className="input-field" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Versiyon</label>
+                                        <input type="text" value={settings.version} onChange={e => handleChange('version', e.target.value)} className="input-field" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Sunucu Portu</label>
+                                        <input
+                                            type="number"
+                                            value={settings.server_port}
+                                            onChange={e => handleChange('server_port', parseInt(e.target.value) || 25565)}
+                                            className="input-field"
+                                            placeholder="25565"
+                                            min={1024}
+                                            max={65535}
+                                        />
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Farklı port kullanarak aynı makinede birden fazla sunucu çalıştırabilirsiniz (varsayılan: 25565)
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'ram' && (
+                                <div className="space-y-4 fade-in">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Min RAM <span className="text-gray-400 font-normal">(Örn: 2G)</span></label>
+                                            <input type="text" value={settings.minRam} onChange={e => handleChange('minRam', e.target.value)} className="input-field" placeholder="2G" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM <span className="text-gray-400 font-normal">(Örn: 4G, 8G)</span></label>
+                                            <input type="text" value={settings.maxRam} onChange={e => handleChange('maxRam', e.target.value)} className="input-field" placeholder="4G" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">JVM Argümanları</label>
+                                        <textarea value={settings.jvmArgs} onChange={e => handleChange('jvmArgs', e.target.value)}
+                                            className="input-field h-24 font-mono text-xs resize-none"
+                                            placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..." />
+                                        <p className="text-xs text-gray-400 mt-1">Boş bırakırsanız varsayılan JVM ayarları kullanılır.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'properties' && (
+                                <div className="space-y-3 fade-in">
+                                    {Object.keys(settings.properties || {}).length === 0 ? (
+                                        <div className="text-center py-8 text-gray-400">
+                                            <p>server.properties dosyası bulunamadı.</p>
+                                            <p className="text-xs mt-1">Modpack yüklemesi yeni tamamlandıysa, sunucuyu bir kez başlatmanız gerekebilir.</p>
+                                        </div>
+                                    ) : (
+                                        Object.entries(settings.properties).map(([key, value]) => {
+                                            const meta = PROPERTY_LABELS[key];
+                                            const label = meta?.label || key;
+                                            const type = meta?.type || 'text';
+                                            return (
+                                                <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
+                                                    <label className="text-sm text-gray-700 flex-shrink-0">{label}</label>
+                                                    <div className="flex-shrink-0">
+                                                        {type === 'boolean' ? (
+                                                            <button onClick={() => handlePropChange(key, value === 'true' ? 'false' : 'true')}
+                                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === 'true' ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-50 text-gray-400 border border-gray-200'}`}>
+                                                                {value === 'true' ? 'Aktif' : 'Kapalı'}
+                                                            </button>
+                                                        ) : type === 'select' ? (
+                                                            <select value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-32">
+                                                                {meta.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <input type={type} value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-40" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+
+                <div className="flex gap-3 mt-6 justify-end flex-shrink-0">
                     <button onClick={onClose} className="btn-secondary">İptal</button>
-                    <button onClick={() => onSave(settings)} disabled={saving} className="btn-primary">
+                    <button onClick={() => onSave(settings)} disabled={saving || isLoading} className="btn-primary">
                         {saving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Kaydet'}
                     </button>
                 </div>

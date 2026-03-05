@@ -124,23 +124,104 @@ router.post('/activate/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// Modpack ayarları güncelle (port dahil)
+// Modpack ayarları (RAM ve Properties) getir
+router.get('/:id/settings', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const id = parseInt(req.params.id);
+        const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(id);
+
+        if (!modpack) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        const settings = {
+            id: modpack.id,
+            name: modpack.name,
+            version: modpack.version,
+            server_port: modpack.server_port,
+            minRam: modpack.min_ram || '',
+            maxRam: modpack.max_ram || '',
+            jvmArgs: modpack.jvm_args || '',
+            properties: {}
+        };
+
+        // Eğer kuruluysa server.properties oku
+        if (modpack.install_path) {
+            const fs = require('fs');
+            const path = require('path');
+            const propsPath = path.join(modpack.install_path, 'server.properties');
+
+            if (fs.existsSync(propsPath)) {
+                const content = fs.readFileSync(propsPath, 'utf-8');
+                content.split('\n').forEach(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith('#')) return;
+                    const eqIndex = trimmed.indexOf('=');
+                    if (eqIndex === -1) return;
+                    settings.properties[trimmed.substring(0, eqIndex).trim()] = trimmed.substring(eqIndex + 1).trim();
+                });
+            }
+        }
+
+        res.json(settings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Modpack ayarları güncelle (Port, RAM ve Properties)
 router.put('/:id/settings', authMiddleware, (req, res) => {
     try {
         const db = getDb();
         const id = parseInt(req.params.id);
-        const { name, version, maxRam, minRam, jvmArgs, server_port } = req.body;
+        const { name, version, server_port, minRam, maxRam, jvmArgs, properties } = req.body;
 
         const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(id);
         if (!modpack) return res.status(404).json({ error: 'Modpack bulunamadı' });
 
         // DB güncelle
         if (name) db.prepare('UPDATE installed_modpacks SET name = ? WHERE id = ?').run(name, id);
-        if (version) db.prepare('UPDATE installed_modpacks SET version = ? WHERE id = ?').run(version, id);
+        if (version !== undefined) db.prepare('UPDATE installed_modpacks SET version = ? WHERE id = ?').run(version, id);
         if (server_port) db.prepare('UPDATE installed_modpacks SET server_port = ? WHERE id = ?').run(server_port, id);
 
-        // Aktif modpack'se server.properties port ayarla
-        if (server_port && modpack.is_active === 1 && modpack.install_path) {
+        // RAM ayarlarını DB'ye yaz (boş bırakılabilir)
+        db.prepare('UPDATE installed_modpacks SET min_ram = ?, max_ram = ?, jvm_args = ? WHERE id = ?')
+            .run(minRam || '', maxRam || '', jvmArgs || '', id);
+
+        // Properties (Oyun Ayarları) güncelle
+        if (properties && typeof properties === 'object' && modpack.install_path) {
+            const fs = require('fs');
+            const path = require('path');
+            const propsPath = path.join(modpack.install_path, 'server.properties');
+
+            // Port'u properties nesnesine de ekle ki dosyaya yazılsın
+            if (server_port) {
+                properties['server-port'] = server_port;
+            }
+
+            if (fs.existsSync(propsPath)) {
+                let content = fs.readFileSync(propsPath, 'utf-8');
+                const lines = content.split('\n');
+
+                for (const [key, value] of Object.entries(properties)) {
+                    let found = false;
+                    for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].startsWith(key + '=')) {
+                            lines[i] = `${key}=${value}`;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        lines.push(`${key}=${value}`);
+                    }
+                }
+
+                fs.writeFileSync(propsPath, lines.join('\n'), 'utf-8');
+            }
+        } else if (server_port && modpack.install_path) {
+            // Sadece port değiştiyse ve eski formatta properties gelmediyse port'u uygula
+            const fs = require('fs');
+            const path = require('path');
             const propsPath = path.join(modpack.install_path, 'server.properties');
             if (fs.existsSync(propsPath)) {
                 let content = fs.readFileSync(propsPath, 'utf-8');
