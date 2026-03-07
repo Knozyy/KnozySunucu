@@ -241,7 +241,6 @@ class FtbService {
             this._updateProgress('Düzenleniyor', 90, 'Klasör yapısı düzenleniyor...');
             const curseforgeService = require('./curseforgeService');
             curseforgeService._normalizeExtractedFiles(profilePath);
-            curseforgeService._generateStartupScripts(profilePath);
 
             // 5. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();

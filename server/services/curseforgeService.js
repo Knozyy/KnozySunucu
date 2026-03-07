@@ -338,47 +338,6 @@ class CurseForgeService {
     }
 
     /**
-     * Başlatma scriptleri yoksa otomatik oluştur (user.jar varsayımıyla)
-     */
-    _generateStartupScripts(profilePath) {
-        const markerScripts = ['run.sh', 'run.bat', 'startserver.sh', 'ServerStart.sh', 'start.sh', 'start.bat'];
-        let hasScript = false;
-
-        try {
-            const items = fs.readdirSync(profilePath);
-            for (const item of items) {
-                if (markerScripts.includes(item.toLowerCase())) {
-                    hasScript = true;
-                    break;
-                }
-            }
-        } catch (err) {
-            console.error(`[Modpacks] Dizin okuma hatası: ${err.message}`);
-            return;
-        }
-
-        if (!hasScript) {
-            console.log(`[Modpacks] Başlatma scripti bulunamadı. Otomatik oluşturuluyor...`);
-            const shPath = path.join(profilePath, 'start.sh');
-            const batPath = path.join(profilePath, 'start.bat');
-            const javaCmd = 'java -Xmx4G -Xms1G -jar user.jar nogui';
-
-            const shContent = `#!/bin/bash\n${javaCmd}\n`;
-            const batContent = `@echo off\n${javaCmd}\npause\n`;
-
-            try {
-                fs.writeFileSync(shPath, shContent, { mode: 0o755 });
-                fs.writeFileSync(batPath, batContent);
-                console.log(`[Modpacks] start.sh ve start.bat (user.jar referanslı) başarıyla oluşturuldu.`);
-            } catch (err) {
-                console.error(`[Modpacks] Script oluşturma hatası: ${err.message}`);
-            }
-        } else {
-            console.log(`[Modpacks] Başlatma scripti zaten mevcut.`);
-        }
-    }
-
-    /**
      * Modpack yükleme - ilerleme takipli
      */
     async installModpack(modId, fileId) {
@@ -462,10 +421,6 @@ class CurseForgeService {
             // 5.5 Klasör yapısını normalize et (iç içe klasör durumu)
             this._updateProgress('Düzenleniyor', 78, 'Klasör yapısı düzenleniyor...');
             this._normalizeExtractedFiles(profilePath);
-
-            // 5.6 Başlatma scriptlerini kontrol et/oluştur
-            this._updateProgress('Script Kontrolü', 80, 'Başlatma scriptleri kontrol ediliyor...');
-            this._generateStartupScripts(profilePath);
 
             // 6. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
