@@ -188,6 +188,156 @@ class CurseForgeService {
     }
 
     /**
+     * Zip çıkartıldıktan sonra iç içe klasör yapısını düzleştir.
+     * Bazı modpack'ler zip içinde ek bir klasör açar (ör: slug/ModpackAdi-1.0/mods/...)
+     * Bu metot, sunucu dosyalarını içeren alt klasörü tespit edip
+     * tüm içeriği profilePath köküne taşır.
+     */
+    _normalizeExtractedFiles(profilePath) {
+        const markerDirs = ['mods', 'config'];
+        const markerFiles = ['server.properties'];
+        const markerScripts = ['run.sh', 'run.bat', 'startserver.sh', 'ServerStart.sh', 'start.sh', 'start.bat'];
+
+        const countMarkers = (dirPath) => {
+            let score = 0;
+            try {
+                const items = fs.readdirSync(dirPath);
+                for (const marker of markerDirs) {
+                    if (items.includes(marker)) {
+                        const full = path.join(dirPath, marker);
+                        try { if (fs.statSync(full).isDirectory()) score += 2; } catch { /* ignore */ }
+                    }
+                }
+                for (const marker of markerFiles) {
+                    if (items.includes(marker)) score += 2;
+                }
+                for (const marker of markerScripts) {
+                    if (items.includes(marker)) score += 1;
+                }
+                for (const item of items) {
+                    if (item.endsWith('.jar')) {
+                        const lower = item.toLowerCase();
+                        if (lower.includes('forge') || lower.includes('fabric') || lower.includes('quilt') || lower.includes('neoforge')) {
+                            score += 1;
+                        }
+                    }
+                }
+            } catch { /* ignore */ }
+            return score;
+        };
+
+        // 1. Kök dizinde zaten sunucu dosyaları var mı?
+        if (countMarkers(profilePath) > 0) return;
+
+        // 2. Alt klasörleri tara
+        let items;
+        try { items = fs.readdirSync(profilePath); } catch { return; }
+
+        const subDirs = items.filter(item => {
+            try { return fs.statSync(path.join(profilePath, item)).isDirectory() && !item.startsWith('.'); }
+            catch { return false; }
+        });
+
+        if (subDirs.length === 0) return;
+
+        let bestDir = null;
+        let bestScore = 0;
+
+        for (const dir of subDirs) {
+            const dirPath = path.join(profilePath, dir);
+            const score = countMarkers(dirPath);
+            if (score > bestScore) {
+                bestScore = score;
+                bestDir = dirPath;
+            }
+
+            // Bir seviye daha derine bak (3 katmanlı iç içe klasör durumu)
+            if (score === 0) {
+                try {
+                    const innerItems = fs.readdirSync(dirPath);
+                    const innerSubDirs = innerItems.filter(i => {
+                        try { return fs.statSync(path.join(dirPath, i)).isDirectory() && !i.startsWith('.'); }
+                        catch { return false; }
+                    });
+                    for (const innerDir of innerSubDirs) {
+                        const innerPath = path.join(dirPath, innerDir);
+                        const innerScore = countMarkers(innerPath);
+                        if (innerScore > bestScore) {
+                            bestScore = innerScore;
+                            bestDir = innerPath;
+                        }
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+
+        // Fallback: hiçbir işaretçi yoksa ama tek alt klasör varsa onu taşı
+        if (!bestDir || bestScore === 0) {
+            if (subDirs.length === 1) {
+                bestDir = path.join(profilePath, subDirs[0]);
+                console.log(`[Modpacks] Normalizasyon: İşaretçi bulunamadı ama tek alt klasör var, taşınıyor: ${subDirs[0]}`);
+            } else {
+                console.log(`[Modpacks] Normalizasyon: Birden fazla alt klasör var ve işaretçi bulunamadı, atlanıyor.`);
+                return;
+            }
+        } else {
+            console.log(`[Modpacks] Normalizasyon: "${path.basename(bestDir)}" klasörü kök dizine taşınıyor (skor: ${bestScore})`);
+        }
+
+        // 3. bestDir içeriğini profilePath köküne taşı
+        try {
+            const moveItems = fs.readdirSync(bestDir);
+            for (const item of moveItems) {
+                const src = path.join(bestDir, item);
+                const dest = path.join(profilePath, item);
+
+                try {
+                    if (fs.existsSync(dest)) {
+                        const destStat = fs.statSync(dest);
+                        if (destStat.isDirectory()) {
+                            fs.rmSync(dest, { recursive: true, force: true });
+                        } else {
+                            fs.unlinkSync(dest);
+                        }
+                    }
+                    fs.renameSync(src, dest);
+                } catch {
+                    // renameSync farklı disk bölümleri arasında çalışmaz, cpSync fallback
+                    try {
+                        fs.cpSync(src, dest, { recursive: true, force: true });
+                        const srcStat = fs.statSync(src);
+                        if (srcStat.isDirectory()) {
+                            fs.rmSync(src, { recursive: true, force: true });
+                        } else {
+                            fs.unlinkSync(src);
+                        }
+                    } catch (copyErr) {
+                        console.error(`[Modpacks] Dosya taşıma hatası (${item}): ${copyErr.message}`);
+                    }
+                }
+            }
+
+            // Boşalan klasörleri temizle
+            let currentDir = bestDir;
+            while (currentDir !== profilePath) {
+                try {
+                    const remaining = fs.readdirSync(currentDir);
+                    if (remaining.length === 0) {
+                        fs.rmdirSync(currentDir);
+                    } else {
+                        break;
+                    }
+                } catch { break; }
+                currentDir = path.dirname(currentDir);
+            }
+
+            console.log(`[Modpacks] Normalizasyon tamamlandı.`);
+        } catch (err) {
+            console.error(`[Modpacks] Normalizasyon hatası: ${err.message}`);
+        }
+    }
+
+    /**
      * Modpack yükleme - ilerleme takipli
      */
     async installModpack(modId, fileId) {
@@ -267,6 +417,10 @@ class CurseForgeService {
                     throw new Error('Dosyalar çıkartılamadı ("unzip" hatası).');
                 }
             }
+
+            // 5.5 Klasör yapısını normalize et (iç içe klasör durumu)
+            this._updateProgress('Düzenleniyor', 78, 'Klasör yapısı düzenleniyor...');
+            this._normalizeExtractedFiles(profilePath);
 
             // 6. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
