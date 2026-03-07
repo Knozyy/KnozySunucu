@@ -423,6 +423,8 @@ export default function ModpacksPage() {
 
 // Reusable Version Select Modal
 function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect, isPending, buttonLabel }) {
+    const [selectedFileId, setSelectedFileId] = useState(null);
+
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
             <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
@@ -462,11 +464,14 @@ function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => onSelect(file.id)}
+                                    onClick={() => {
+                                        setSelectedFileId(file.id);
+                                        onSelect(file.id);
+                                    }}
                                     disabled={isPending}
                                     className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
                                 >
-                                    {isPending ? (
+                                    {isPending && selectedFileId === file.id ? (
                                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                     ) : (
                                         <>
