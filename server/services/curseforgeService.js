@@ -191,7 +191,7 @@ class CurseForgeService {
      * Zip çıkartıldıktan sonra iç içe klasör yapısını düzleştir.
      * Bazı modpack'ler zip içinde ek bir klasör açar (ör: slug/ModpackAdi-1.0/mods/...)
      * Bu metot, sunucu dosyalarını içeren alt klasörü tespit edip
-     * tüm içeriği profilePath köküne taşır.
+     * tüm içeriği referans olarak profilePath köküne taşır.
      */
     _normalizeExtractedFiles(profilePath) {
         const markerDirs = ['mods', 'config'];
@@ -217,7 +217,7 @@ class CurseForgeService {
                 for (const item of items) {
                     if (item.endsWith('.jar')) {
                         const lower = item.toLowerCase();
-                        if (lower.includes('forge') || lower.includes('fabric') || lower.includes('quilt') || lower.includes('neoforge')) {
+                        if (lower.includes('forge') || lower.includes('fabric') || lower.includes('quilt') || lower.includes('neoforge') || lower.includes('server')) {
                             score += 1;
                         }
                     }
@@ -229,60 +229,60 @@ class CurseForgeService {
         // 1. Kök dizinde zaten sunucu dosyaları var mı?
         if (countMarkers(profilePath) > 0) return;
 
-        // 2. Alt klasörleri tara
-        let items;
-        try { items = fs.readdirSync(profilePath); } catch { return; }
-
-        const subDirs = items.filter(item => {
-            try { return fs.statSync(path.join(profilePath, item)).isDirectory() && !item.startsWith('.'); }
-            catch { return false; }
-        });
-
-        if (subDirs.length === 0) return;
-
+        // 2. Alt klasörleri Queue ile derinlemesine tara (Breadth-First Search)
+        let queue = [profilePath];
         let bestDir = null;
         let bestScore = 0;
 
-        for (const dir of subDirs) {
-            const dirPath = path.join(profilePath, dir);
-            const score = countMarkers(dirPath);
-            if (score > bestScore) {
-                bestScore = score;
-                bestDir = dirPath;
-            }
+        let iterCount = 0;
+        const maxIter = 100; // Sonsuz döngü koruması
 
-            // Bir seviye daha derine bak (3 katmanlı iç içe klasör durumu)
-            if (score === 0) {
-                try {
-                    const innerItems = fs.readdirSync(dirPath);
-                    const innerSubDirs = innerItems.filter(i => {
-                        try { return fs.statSync(path.join(dirPath, i)).isDirectory() && !i.startsWith('.'); }
-                        catch { return false; }
-                    });
-                    for (const innerDir of innerSubDirs) {
-                        const innerPath = path.join(dirPath, innerDir);
-                        const innerScore = countMarkers(innerPath);
-                        if (innerScore > bestScore) {
-                            bestScore = innerScore;
-                            bestDir = innerPath;
-                        }
+        while (queue.length > 0 && iterCount < maxIter) {
+            iterCount++;
+            const currentDir = queue.shift();
+
+            let items;
+            try { items = fs.readdirSync(currentDir); } catch { continue; }
+
+            for (const item of items) {
+                if (item.startsWith('.')) continue; // Gizli klasörleri atla
+                const itemPath = path.join(currentDir, item);
+
+                let isDir = false;
+                try { isDir = fs.statSync(itemPath).isDirectory(); } catch { continue; }
+
+                if (isDir) {
+                    const score = countMarkers(itemPath);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestDir = itemPath;
                     }
-                } catch { /* ignore */ }
+                    queue.push(itemPath);
+                }
             }
         }
 
-        // Fallback: hiçbir işaretçi yoksa ama tek alt klasör varsa onu taşı
+        // Fallback: hiçbir işaretçi yoksa ama kök dizinde veya alt dizinde sadece tek bir alt klasör ağacı varsa onu taşı
         if (!bestDir || bestScore === 0) {
-            if (subDirs.length === 1) {
+            let rootItems;
+            try { rootItems = fs.readdirSync(profilePath).filter(i => !i.startsWith('.')); } catch { return; }
+            const subDirs = rootItems.filter(item => {
+                try { return fs.statSync(path.join(profilePath, item)).isDirectory(); }
+                catch { return false; }
+            });
+
+            if (rootItems.length === 1 && subDirs.length === 1) {
                 bestDir = path.join(profilePath, subDirs[0]);
-                console.log(`[Modpacks] Normalizasyon: İşaretçi bulunamadı ama tek alt klasör var, taşınıyor: ${subDirs[0]}`);
+                console.log(`[Modpacks] Normalizasyon: İşaretçi bulunamadı ama tek bir alt klasör var, taşınıyor: ${subDirs[0]}`);
             } else {
-                console.log(`[Modpacks] Normalizasyon: Birden fazla alt klasör var ve işaretçi bulunamadı, atlanıyor.`);
+                console.log(`[Modpacks] Normalizasyon: İşaretçi bulunamadı ve birden fazla dosya/klasör var, atlanıyor.`);
                 return;
             }
         } else {
-            console.log(`[Modpacks] Normalizasyon: "${path.basename(bestDir)}" klasörü kök dizine taşınıyor (skor: ${bestScore})`);
+            console.log(`[Modpacks] Normalizasyon: İşaretçi bulundu. "${path.basename(bestDir)}" klasörü kök dizine taşınıyor (skor: ${bestScore})`);
         }
+
+        if (bestDir === profilePath) return; // Zaten kökte
 
         // 3. bestDir içeriğini profilePath köküne taşı
         try {
@@ -334,6 +334,47 @@ class CurseForgeService {
             console.log(`[Modpacks] Normalizasyon tamamlandı.`);
         } catch (err) {
             console.error(`[Modpacks] Normalizasyon hatası: ${err.message}`);
+        }
+    }
+
+    /**
+     * Başlatma scriptleri yoksa otomatik oluştur (user.jar varsayımıyla)
+     */
+    _generateStartupScripts(profilePath) {
+        const markerScripts = ['run.sh', 'run.bat', 'startserver.sh', 'ServerStart.sh', 'start.sh', 'start.bat'];
+        let hasScript = false;
+
+        try {
+            const items = fs.readdirSync(profilePath);
+            for (const item of items) {
+                if (markerScripts.includes(item.toLowerCase())) {
+                    hasScript = true;
+                    break;
+                }
+            }
+        } catch (err) {
+            console.error(`[Modpacks] Dizin okuma hatası: ${err.message}`);
+            return;
+        }
+
+        if (!hasScript) {
+            console.log(`[Modpacks] Başlatma scripti bulunamadı. Otomatik oluşturuluyor...`);
+            const shPath = path.join(profilePath, 'start.sh');
+            const batPath = path.join(profilePath, 'start.bat');
+            const javaCmd = 'java -Xmx4G -Xms1G -jar user.jar nogui';
+
+            const shContent = `#!/bin/bash\n${javaCmd}\n`;
+            const batContent = `@echo off\n${javaCmd}\npause\n`;
+
+            try {
+                fs.writeFileSync(shPath, shContent, { mode: 0o755 });
+                fs.writeFileSync(batPath, batContent);
+                console.log(`[Modpacks] start.sh ve start.bat (user.jar referanslı) başarıyla oluşturuldu.`);
+            } catch (err) {
+                console.error(`[Modpacks] Script oluşturma hatası: ${err.message}`);
+            }
+        } else {
+            console.log(`[Modpacks] Başlatma scripti zaten mevcut.`);
         }
     }
 
@@ -421,6 +462,10 @@ class CurseForgeService {
             // 5.5 Klasör yapısını normalize et (iç içe klasör durumu)
             this._updateProgress('Düzenleniyor', 78, 'Klasör yapısı düzenleniyor...');
             this._normalizeExtractedFiles(profilePath);
+
+            // 5.6 Başlatma scriptlerini kontrol et/oluştur
+            this._updateProgress('Script Kontrolü', 80, 'Başlatma scriptleri kontrol ediliyor...');
+            this._generateStartupScripts(profilePath);
 
             // 6. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();

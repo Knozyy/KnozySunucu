@@ -2,16 +2,24 @@ const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const curseForge = require('../services/curseforgeService');
+const ftbService = require('../services/ftbService');
 const { getDb } = require('../db/database');
 const path = require('path');
 const fs = require('fs');
 
 const router = express.Router();
 
+const getService = (req) => {
+    const provider = req.query.provider || req.body.provider || 'curseforge';
+    return provider === 'ftb' ? ftbService : curseForge;
+};
+
+
 // Popüler modpackler
 router.get('/popular', authMiddleware, async (req, res) => {
     try {
-        const modpacks = await curseForge.getPopularModpacks(20);
+        const service = getService(req);
+        const modpacks = await service.getPopularModpacks(20);
         res.json({ modpacks });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -21,7 +29,8 @@ router.get('/popular', authMiddleware, async (req, res) => {
 // Arama
 router.get('/search', authMiddleware, async (req, res) => {
     try {
-        const modpacks = await curseForge.searchModpacks(req.query.query || '');
+        const service = getService(req);
+        const modpacks = await service.searchModpacks(req.query.query || '');
         res.json({ modpacks });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -55,14 +64,15 @@ router.get('/active', authMiddleware, (req, res) => {
 // Modpack dosyaları (sürüm listesi)
 router.get('/:modId/files', authMiddleware, async (req, res) => {
     try {
-        const files = await curseForge.getModpackFiles(req.params.modId);
+        const service = getService(req);
+        const files = await service.getModpackFiles(req.params.modId);
         res.json({ files });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Güncelleme kontrolü
+// Güncelleme kontrolü - sadece curseforge şimdilik
 router.get('/:modId/check-update', authMiddleware, async (req, res) => {
     try {
         const result = await curseForge.checkUpdate(parseInt(req.params.modId));
@@ -74,7 +84,18 @@ router.get('/:modId/check-update', authMiddleware, async (req, res) => {
 
 // Kurulum durumu
 router.get('/install-status', authMiddleware, (req, res) => {
-    res.json(curseForge.getInstallStatus());
+    const provider = req.query.provider || 'curseforge';
+    const service = provider === 'ftb' ? ftbService : curseForge;
+
+    // Check both services if provider isn't explicit and one is active
+    let status = service.getInstallStatus();
+    if (!status.isInstalling) {
+        const otherService = provider === 'ftb' ? curseForge : ftbService;
+        const otherStatus = otherService.getInstallStatus();
+        if (otherStatus.isInstalling) status = otherStatus;
+    }
+
+    res.json(status);
 });
 
 // Modpack yükle
@@ -83,7 +104,8 @@ router.post('/install', authMiddleware, requireRole('admin'), async (req, res) =
         const { modId, fileId } = req.body;
         if (!modId) return res.status(400).json({ error: 'modId gerekli' });
 
-        const result = await curseForge.installModpack(modId, fileId);
+        const service = getService(req);
+        const result = await service.installModpack(modId, fileId);
         res.json({ message: `${result.name} yüklendi!`, ...result });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -97,7 +119,14 @@ router.post('/update', authMiddleware, requireRole('admin'), async (req, res) =>
         if (!dbId || !modId || !fileId) {
             return res.status(400).json({ error: 'dbId, modId ve fileId gerekli' });
         }
-        const result = await curseForge.updateModpack(dbId, modId, fileId);
+
+        const db = getDb();
+        const modpack = db.prepare('SELECT provider FROM installed_modpacks WHERE id = ?').get(dbId);
+        const provider = modpack?.provider || 'curseforge';
+        const service = provider === 'ftb' ? ftbService : curseForge;
+
+        // Note: FTB Update logic might need special handling later, acting as Curseforge for now
+        const result = await service.updateModpack ? await service.updateModpack(dbId, modId, fileId) : await curseForge.updateModpack(dbId, modId, fileId);
         res.json(result);
     } catch (err) {
         res.status(500).json({ error: err.message });

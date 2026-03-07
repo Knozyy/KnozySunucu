@@ -54,6 +54,7 @@ function formatFileDate(dateStr) {
 export default function ModpacksPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('search');
+    const [provider, setProvider] = useState('curseforge'); // 'curseforge' or 'ftb'
     const [editingModpack, setEditingModpack] = useState(null);
     const [confirmSwitch, setConfirmSwitch] = useState(null);
     const [versionModal, setVersionModal] = useState(null);
@@ -62,14 +63,14 @@ export default function ModpacksPage() {
     const { t } = useI18n();
 
     const { data: searchResults, isLoading: searching, refetch: doSearch } = useQuery({
-        queryKey: ['modpackSearch', searchQuery],
-        queryFn: () => api.get(`/modpacks/search?query=${encodeURIComponent(searchQuery)}`).then(r => r.data),
+        queryKey: ['modpackSearch', searchQuery, provider],
+        queryFn: () => api.get(`/modpacks/search?query=${encodeURIComponent(searchQuery)}&provider=${provider}`).then(r => r.data),
         enabled: false,
     });
 
     const { data: popularData, isLoading: loadingPopular } = useQuery({
-        queryKey: ['modpackPopular'],
-        queryFn: () => api.get('/modpacks/popular').then(r => r.data),
+        queryKey: ['modpackPopular', provider],
+        queryFn: () => api.get(`/modpacks/popular?provider=${provider}`).then(r => r.data),
         staleTime: 300000,
     });
 
@@ -84,7 +85,7 @@ export default function ModpacksPage() {
     });
 
     const installMutation = useMutation({
-        mutationFn: ({ modId, fileId }) => api.post('/modpacks/install', { modId, fileId }),
+        mutationFn: ({ modId, fileId, providerParam }) => api.post('/modpacks/install', { modId, fileId, provider: providerParam }),
         onSuccess: () => {
             toast.success('Kurulum başlatıldı!');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
@@ -96,8 +97,8 @@ export default function ModpacksPage() {
     const [isPolling, setIsPolling] = useState(false);
 
     const { data: installStatusData } = useQuery({
-        queryKey: ['installStatus'],
-        queryFn: () => api.get('/modpacks/install-status').then(r => {
+        queryKey: ['installStatus', provider],
+        queryFn: () => api.get(`/modpacks/install-status?provider=${provider}`).then(r => {
             const d = r.data;
             setIsPolling(d.isInstalling);
             return d;
@@ -156,7 +157,7 @@ export default function ModpacksPage() {
     const openVersionModal = async (modpack) => {
         setVersionModal({ modpack, files: [], loading: true });
         try {
-            const res = await api.get(`/modpacks/${modpack.id}/files`);
+            const res = await api.get(`/modpacks/${modpack.id}/files?provider=${provider}`);
             setVersionModal({ modpack, files: res.data.files || [], loading: false });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Sürümler alınamadı');
@@ -167,12 +168,13 @@ export default function ModpacksPage() {
     // Yüklü modpack sürüm değiştirme
     const openUpdateVersionModal = async (modpack) => {
         if (!modpack.curseforge_id) {
-            toast.error('Bu modpack CurseForge kaydı bulunamadı');
+            toast.error('Bu modpack kayıt ID bulunamadı');
             return;
         }
         setUpdateVersionModal({ modpack, files: [], loading: true });
         try {
-            const res = await api.get(`/modpacks/${modpack.curseforge_id}/files`);
+            const targetProvider = modpack.provider || 'curseforge';
+            const res = await api.get(`/modpacks/${modpack.curseforge_id}/files?provider=${targetProvider}`);
             setUpdateVersionModal({ modpack, files: res.data.files || [], loading: false });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Sürümler alınamadı');
@@ -181,7 +183,7 @@ export default function ModpacksPage() {
     };
 
     const handleInstallVersion = (modpack, fileId) => {
-        installMutation.mutate({ modId: modpack.id, fileId });
+        installMutation.mutate({ modId: modpack.id, fileId, providerParam: provider });
     };
 
     const handleUpdateVersion = (modpack, fileId) => {
@@ -235,7 +237,6 @@ export default function ModpacksPage() {
                 </div>
             )}
 
-            {/* Tabs */}
             <div className="flex gap-2 fade-in">
                 <button
                     onClick={() => setActiveTab('search')}
@@ -251,6 +252,33 @@ export default function ModpacksPage() {
                     <HiOutlinePuzzlePiece className="w-4 h-4 inline mr-2" />
                     Profiller ({installedData?.modpacks?.length || 0})
                 </button>
+
+                {activeTab === 'search' && (
+                    <div className="ml-auto flex items-center bg-gray-100 rounded-xl p-1">
+                        <button
+                            onClick={() => setProvider('curseforge')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${provider === 'curseforge' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                        >
+                            CurseForge
+                        </button>
+                        <button
+                            onClick={() => setProvider('ftb')}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${provider === 'ftb' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                        >
+                            Feed The Beast
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === 'installed' && (
+                    <button
+                        onClick={() => queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] })}
+                        className="ml-auto px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all flex items-center gap-2"
+                        title="Listeyi Yenile"
+                    >
+                        <HiOutlineArrowPath className="w-4 h-4" /> Yenile
+                    </button>
+                )}
             </div>
 
             {/* Search Bar */}
