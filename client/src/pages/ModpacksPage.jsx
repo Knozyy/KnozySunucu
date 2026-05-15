@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
@@ -16,28 +16,11 @@ import {
     HiOutlineXMark,
     HiOutlineChevronDown,
     HiOutlineArrowPath,
+    HiOutlineWrenchScrewdriver,
+    HiOutlineShieldCheck,
+    HiOutlineExclamationTriangle,
+    HiOutlineInformationCircle,
 } from 'react-icons/hi2';
-
-const PROPERTY_LABELS = {
-    'server-port': { label: 'Sunucu Portu', type: 'number' },
-    'max-players': { label: 'Maksimum Oyuncu', type: 'number' },
-    'motd': { label: 'Sunucu Mesajı (MOTD)', type: 'text' },
-    'difficulty': { label: 'Zorluk', type: 'select', options: ['peaceful', 'easy', 'normal', 'hard'] },
-    'gamemode': { label: 'Oyun Modu', type: 'select', options: ['survival', 'creative', 'adventure', 'spectator'] },
-    'white-list': { label: 'Whitelist', type: 'boolean' },
-    'online-mode': { label: 'Online Mod', type: 'boolean' },
-    'pvp': { label: 'PvP', type: 'boolean' },
-    'spawn-monsters': { label: 'Canavar Doğması', type: 'boolean' },
-    'spawn-animals': { label: 'Hayvan Doğması', type: 'boolean' },
-    'level-name': { label: 'Dünya Adı', type: 'text' },
-    'level-seed': { label: 'Dünya Seed', type: 'text' },
-    'view-distance': { label: 'Görüş Mesafesi', type: 'number' },
-    'simulation-distance': { label: 'Simülasyon Mesafesi', type: 'number' },
-    'server-ip': { label: 'Sunucu IP', type: 'text' },
-    'enable-command-block': { label: 'Komut Bloğu', type: 'boolean' },
-    'allow-flight': { label: 'Uçuşa İzin', type: 'boolean' },
-    'allow-nether': { label: 'Nether', type: 'boolean' },
-};
 
 function formatSize(bytes) {
     if (!bytes) return '';
@@ -58,7 +41,10 @@ export default function ModpacksPage() {
     const [editingModpack, setEditingModpack] = useState(null);
     const [confirmSwitch, setConfirmSwitch] = useState(null);
     const [versionModal, setVersionModal] = useState(null);
-    const [updateVersionModal, setUpdateVersionModal] = useState(null); // Yüklü modpack sürüm değiştirme
+    const [updateVersionModal, setUpdateVersionModal] = useState(null);
+    const [validationModal, setValidationModal] = useState(null); // { modpack, loading, analysis }
+    const [repairModal, setRepairModal] = useState(null); // { modpackId, repairId, analysisResult }
+    const [repairPolling, setRepairPolling] = useState(false);
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
@@ -148,6 +134,18 @@ export default function ModpacksPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Güncelleme başarısız'),
     });
 
+    // Onarım durumu polling
+    const { data: repairStatusData } = useQuery({
+        queryKey: ['repairStatus', repairModal?.repairId],
+        queryFn: () => api.get(`/modpacks/${repairModal.modpackId}/repair-status/${repairModal.repairId}`).then(r => {
+            const d = r.data;
+            if (d.done) setRepairPolling(false);
+            return d;
+        }),
+        enabled: !!repairModal?.repairId && repairPolling,
+        refetchInterval: repairPolling ? 800 : false,
+    });
+
     const handleSearch = (e) => {
         e.preventDefault();
         if (!searchQuery.trim()) return;
@@ -192,6 +190,29 @@ export default function ModpacksPage() {
             modId: modpack.curseforge_id,
             fileId,
         });
+    };
+
+    const openValidationModal = async (modpack) => {
+        setValidationModal({ modpack, loading: true, analysis: null });
+        try {
+            const res = await api.get(`/modpacks/${modpack.id}/analyze`);
+            setValidationModal({ modpack, loading: false, analysis: res.data });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Analiz başarısız');
+            setValidationModal(null);
+        }
+    };
+
+    const handleRepair = async (selectedIssueIds, analysisResult, modpack) => {
+        try {
+            const res = await api.post(`/modpacks/${modpack.id}/repair`, { selectedIssueIds, analysisResult });
+            const { repairId } = res.data;
+            setValidationModal(null);
+            setRepairModal({ modpackId: modpack.id, repairId, analysisResult });
+            setRepairPolling(true);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Onarım başlatılamadı');
+        }
     };
 
     const handleActivate = (modpack) => {
@@ -378,6 +399,30 @@ export default function ModpacksPage() {
                 />
             )}
 
+            {/* Doğrulama & Onarım Modalı */}
+            {validationModal && (
+                <ValidationModal
+                    modpack={validationModal.modpack}
+                    loading={validationModal.loading}
+                    analysis={validationModal.analysis}
+                    onClose={() => setValidationModal(null)}
+                    onRepair={(selectedIds) => handleRepair(selectedIds, validationModal.analysis, validationModal.modpack)}
+                />
+            )}
+
+            {/* Onarım İlerleme Modalı */}
+            {repairModal && (
+                <RepairProgressModal
+                    status={repairStatusData}
+                    modpackId={repairModal.modpackId}
+                    onClose={() => {
+                        setRepairModal(null);
+                        setRepairPolling(false);
+                        queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+                    }}
+                />
+            )}
+
             {/* Yüklü Modpack Sürüm Değiştirme Modalı */}
             {updateVersionModal && (
                 <VersionSelectModal
@@ -431,6 +476,7 @@ export default function ModpacksPage() {
                             onSettings={() => setEditingModpack(modpack)}
                             onActivate={() => handleActivate(modpack)}
                             onChangeVersion={() => openUpdateVersionModal(modpack)}
+                            onValidate={() => openValidationModal(modpack)}
                             installing={installMutation.isPending}
                             uninstalling={uninstallMutation.isPending}
                             activating={activateMutation.isPending}
@@ -521,7 +567,7 @@ function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect
     );
 }
 
-function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, installing, uninstalling, activating }) {
+function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, installing, uninstalling, activating }) {
     return (
         <div className={`glass-card p-4 fade-in group relative ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
             {/* Aktif Badge */}
@@ -577,6 +623,9 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                                 <HiOutlinePlay className="w-4 h-4" /> Aktif Yap
                             </button>
                         )}
+                        <button onClick={onValidate} className="btn-secondary text-xs py-1.5 px-3" title="Modpack dosyalarını doğrula ve eksiklikleri onar">
+                            <HiOutlineWrenchScrewdriver className="w-4 h-4" /> Doğrula & Onar
+                        </button>
                         <button onClick={onChangeVersion} className="btn-secondary text-xs py-1.5 px-3">
                             <HiOutlineArrowPath className="w-4 h-4" /> Sürüm Değiştir
                         </button>
@@ -598,141 +647,575 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
     );
 }
 
-function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
-    const [activeTab, setActiveTab] = useState('general');
-    const [settings, setSettings] = useState({
-        name: modpack.name || '',
-        version: modpack.version || '',
-        server_port: modpack.server_port || 25565,
-        minRam: '',
-        maxRam: '',
-        jvmArgs: '',
-        properties: {}
-    });
+// ─── Doğrulama Modalı ───────────────────────────────────────────────────────
 
-    const { isLoading } = useQuery({
-        queryKey: ['modpackSettings', modpack.id],
-        queryFn: () => api.get(`/modpacks/${modpack.id}/settings`).then(r => r.data),
-        onSuccess: (data) => {
-            setSettings(prev => ({
-                ...prev,
-                minRam: data.minRam || '',
-                maxRam: data.maxRam || '',
-                jvmArgs: data.jvmArgs || '',
-                properties: data.properties || {}
-            }));
-        }
-    });
+function ValidationModal({ modpack, loading, analysis, onClose, onRepair }) {
+    const [selected, setSelected] = useState({});
 
-    const handleChange = (key, value) => {
-        setSettings(prev => ({ ...prev, [key]: value }));
+    // Zorunlu (canSkip=false) sorunlar otomatik seçili, atlanamaz
+    const allIssues = analysis?.issues || [];
+    const toggleIssue = (id, canSkip) => {
+        if (!canSkip) return;
+        setSelected(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    const handlePropChange = (key, value) => {
-        setSettings(prev => ({ ...prev, properties: { ...prev.properties, [key]: value } }));
+    const isSelected = (issue) => {
+        if (!issue.canSkip) return true;
+        return selected[issue.id] !== false; // varsayılan seçili
+    };
+
+    const selectedIds = allIssues.filter(i => isSelected(i)).map(i => i.id);
+
+    const severityStyle = (severity) => {
+        if (severity === 'error') return 'text-red-600 bg-red-50 border-red-200';
+        if (severity === 'warning') return 'text-amber-600 bg-amber-50 border-amber-200';
+        return 'text-blue-600 bg-blue-50 border-blue-200';
+    };
+
+    const SeverityIcon = ({ severity }) => {
+        if (severity === 'error') return <HiOutlineExclamationTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />;
+        if (severity === 'warning') return <HiOutlineExclamationTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />;
+        return <HiOutlineInformationCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />;
     };
 
     return (
-        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="glass-card p-6 w-full max-w-2xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2 flex-shrink-0">
-                    <HiOutlineCog6Tooth className="w-6 h-6" />
-                    {modpack.name} - Ayarlar
-                </h2>
-
-                <div className="flex gap-2 mb-6 border-b border-gray-100 pb-2 flex-shrink-0">
-                    <button onClick={() => setActiveTab('general')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'general' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Genel</button>
-                    <button onClick={() => setActiveTab('ram')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'ram' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>RAM & JVM</button>
-                    <button onClick={() => setActiveTab('properties')} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'properties' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Oyun Ayarları</button>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="glass-card p-6 w-full max-w-xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-5 flex-shrink-0">
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <HiOutlineWrenchScrewdriver className="w-5 h-5 text-gray-700" />
+                        Doğrula & Onar — {modpack.name}
+                    </h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+                        <HiOutlineXMark className="w-5 h-5" />
+                    </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto min-h-0 pr-2 pb-2">
-                    {isLoading ? (
-                        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" /></div>
-                    ) : (
-                        <>
-                            {activeTab === 'general' && (
-                                <div className="space-y-4 fade-in">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Modpack Adı</label>
-                                        <input type="text" value={settings.name} onChange={e => handleChange('name', e.target.value)} className="input-field" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Versiyon</label>
-                                        <input type="text" value={settings.version} onChange={e => handleChange('version', e.target.value)} className="input-field" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Sunucu Portu</label>
-                                        <input
-                                            type="number"
-                                            value={settings.server_port}
-                                            onChange={e => handleChange('server_port', parseInt(e.target.value) || 25565)}
-                                            className="input-field"
-                                            placeholder="25565"
-                                            min={1024}
-                                            max={65535}
-                                        />
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            Farklı port kullanarak aynı makinede birden fazla sunucu çalıştırabilirsiniz (varsayılan: 25565)
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-3">
+                        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-sm text-gray-500">Analiz ediliyor...</p>
+                    </div>
+                ) : analysis ? (
+                    <>
+                        {/* Tespit Bilgisi */}
+                        <div className="bg-gray-50 rounded-xl p-4 mb-4 flex-shrink-0">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tespit Sonucu</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                <span className="text-gray-500">Paket Tipi:</span>
+                                <span className="font-medium text-gray-900 capitalize">{analysis.detectedInfo?.packageType || '?'}</span>
+                                <span className="text-gray-500">Loader:</span>
+                                <span className="font-medium text-gray-900 uppercase">{analysis.detectedInfo?.loader || '?'}</span>
+                                <span className="text-gray-500">MC Sürümü:</span>
+                                <span className="font-medium text-gray-900">{analysis.detectedInfo?.mcVersion || '?'}</span>
+                                <span className="text-gray-500">Gerekli Java:</span>
+                                <span className="font-medium text-gray-900">{analysis.detectedInfo?.requiredJava ? `Java ${analysis.detectedInfo.requiredJava}` : '?'}</span>
+                            </div>
+                        </div>
 
-                            {activeTab === 'ram' && (
-                                <div className="space-y-4 fade-in">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Min RAM <span className="text-gray-400 font-normal">(Örn: 2G)</span></label>
-                                            <input type="text" value={settings.minRam} onChange={e => handleChange('minRam', e.target.value)} className="input-field" placeholder="2G" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Max RAM <span className="text-gray-400 font-normal">(Örn: 4G, 8G)</span></label>
-                                            <input type="text" value={settings.maxRam} onChange={e => handleChange('maxRam', e.target.value)} className="input-field" placeholder="4G" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">JVM Argümanları</label>
-                                        <textarea value={settings.jvmArgs} onChange={e => handleChange('jvmArgs', e.target.value)}
-                                            className="input-field h-24 font-mono text-xs resize-none"
-                                            placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..." />
-                                        <p className="text-xs text-gray-400 mt-1">Boş bırakırsanız varsayılan JVM ayarları kullanılır.</p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'properties' && (
-                                <div className="space-y-3 fade-in">
-                                    {Object.keys(settings.properties || {}).length === 0 ? (
-                                        <div className="text-center py-8 text-gray-400">
-                                            <p>server.properties dosyası bulunamadı.</p>
-                                            <p className="text-xs mt-1">Modpack yüklemesi yeni tamamlandıysa, sunucuyu bir kez başlatmanız gerekebilir.</p>
-                                        </div>
-                                    ) : (
-                                        Object.entries(settings.properties).map(([key, value]) => {
-                                            const meta = PROPERTY_LABELS[key];
-                                            const label = meta?.label || key;
-                                            const type = meta?.type || 'text';
-                                            return (
-                                                <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
-                                                    <label className="text-sm text-gray-700 flex-shrink-0">{label}</label>
-                                                    <div className="flex-shrink-0">
-                                                        {type === 'boolean' ? (
-                                                            <button onClick={() => handlePropChange(key, value === 'true' ? 'false' : 'true')}
-                                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === 'true' ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-50 text-gray-400 border border-gray-200'}`}>
-                                                                {value === 'true' ? 'Aktif' : 'Kapalı'}
-                                                            </button>
-                                                        ) : type === 'select' ? (
-                                                            <select value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-32">
-                                                                {meta.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                            </select>
-                                                        ) : (
-                                                            <input type={type} value={value} onChange={e => handlePropChange(key, e.target.value)} className="input-field text-sm py-1.5 w-40" />
+                        {/* Sorun Listesi */}
+                        {allIssues.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 gap-3 text-green-600">
+                                <HiOutlineShieldCheck className="w-12 h-12" />
+                                <p className="font-semibold">Sorun bulunamadı!</p>
+                                <p className="text-sm text-gray-500">Sunucu başlatılmaya hazır.</p>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-sm text-gray-500 mb-3 flex-shrink-0">
+                                    {allIssues.length} sorun tespit edildi. Onarılacakları seçin:
+                                </p>
+                                <div className="flex-1 overflow-y-auto space-y-2 min-h-0 mb-4">
+                                    {allIssues.map(issue => (
+                                        <div
+                                            key={issue.id}
+                                            onClick={() => toggleIssue(issue.id, issue.canSkip)}
+                                            className={`border rounded-xl p-3 transition-all ${issue.canSkip ? 'cursor-pointer' : 'cursor-not-allowed opacity-90'} ${isSelected(issue) ? severityStyle(issue.severity) : 'bg-gray-50 border-gray-200 text-gray-400'}`}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                                                    {isSelected(issue)
+                                                        ? <div className="w-4 h-4 rounded bg-current opacity-80 flex items-center justify-center">
+                                                            <HiOutlineCheckCircle className="w-3 h-3 text-white" />
+                                                          </div>
+                                                        : <div className="w-4 h-4 rounded border-2 border-gray-300" />
+                                                    }
+                                                    <SeverityIcon severity={issue.severity} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-sm font-semibold">{issue.title}</p>
+                                                        {!issue.canSkip && (
+                                                            <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Zorunlu</span>
                                                         )}
                                                     </div>
+                                                    <p className="text-xs opacity-80 mt-0.5">{issue.description}</p>
+                                                    <p className="text-xs font-medium mt-1 opacity-70">→ {issue.action}</p>
                                                 </div>
-                                            );
-                                        })
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="flex gap-3 justify-end flex-shrink-0">
+                                    <button onClick={onClose} className="btn-secondary">İptal</button>
+                                    <button
+                                        onClick={() => onRepair(selectedIds)}
+                                        disabled={selectedIds.length === 0}
+                                        className="btn-primary"
+                                    >
+                                        <HiOutlineWrenchScrewdriver className="w-4 h-4" />
+                                        {selectedIds.length} Sorunu Onar
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+// ─── Onarım İlerleme Modalı ─────────────────────────────────────────────────
+
+function RepairProgressModal({ status, modpackId, onClose }) {
+    const [verifyResult, setVerifyResult] = useState(null);
+
+    // Onarım bitince final doğrulama yap
+    const handleVerify = async () => {
+        try {
+            const res = await api.get(`/modpacks/${modpackId}/verify`);
+            setVerifyResult(res.data);
+        } catch { /* ignore */ }
+    };
+
+    const isDone = status?.done;
+    const hasError = !!status?.error;
+    const log = status?.log || [];
+    const progress = status?.progress || 0;
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="glass-card p-6 w-full max-w-lg flex flex-col fade-in">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        {isDone
+                            ? hasError
+                                ? <><HiOutlineExclamationTriangle className="w-5 h-5 text-red-500" /> Onarım Hatası</>
+                                : <><HiOutlineShieldCheck className="w-5 h-5 text-green-500" /> Onarım Tamamlandı</>
+                            : <><div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin flex-shrink-0" /> Onarım Devam Ediyor...</>
+                        }
+                    </h2>
+                    {isDone && (
+                        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+                            <HiOutlineXMark className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-100 rounded-full h-2 mb-4 overflow-hidden">
+                    <div
+                        className={`h-full rounded-full transition-all duration-300 ${hasError ? 'bg-red-500' : 'bg-gray-900'}`}
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
+
+                {/* Log */}
+                <div className="bg-gray-900 rounded-xl p-3 h-40 overflow-y-auto font-mono text-xs text-green-400 space-y-0.5 mb-4">
+                    {log.length === 0 ? (
+                        <p className="text-gray-500">Başlatılıyor...</p>
+                    ) : log.map((line, i) => (
+                        <p key={i} className={line.startsWith('Hata') ? 'text-red-400' : ''}>{line}</p>
+                    ))}
+                </div>
+
+                {/* Final doğrulama sonucu */}
+                {isDone && !hasError && !verifyResult && (
+                    <button onClick={handleVerify} className="btn-secondary w-full mb-3 flex items-center justify-center gap-2">
+                        <HiOutlineShieldCheck className="w-4 h-4" /> Final Doğrulaması Yap
+                    </button>
+                )}
+
+                {verifyResult && (
+                    <div className={`rounded-xl p-3 mb-3 text-sm ${verifyResult.ready ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                        <p className="font-semibold">{verifyResult.summary}</p>
+                        {verifyResult.issues?.length > 0 && (
+                            <ul className="mt-2 space-y-1 text-xs">
+                                {verifyResult.issues.map((issue, i) => <li key={i}>• {issue}</li>)}
+                            </ul>
+                        )}
+                    </div>
+                )}
+
+                {isDone && (
+                    <button onClick={onClose} className="btn-primary w-full">Kapat</button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+const AIKARS_FLAGS = `-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1`;
+
+const RAM_PRESETS = ['1G', '2G', '3G', '4G', '6G', '8G', '12G', '16G', '32G'];
+
+const PROPS_GROUPS = [
+    {
+        label: 'Bağlantı & Erişim',
+        keys: [
+            { key: 'server-port', label: 'Sunucu Portu', type: 'number' },
+            { key: 'server-ip', label: 'Sunucu IP', type: 'text' },
+            { key: 'max-players', label: 'Maks. Oyuncu', type: 'number' },
+            { key: 'online-mode', label: 'Online Mod (Premium)', type: 'boolean' },
+            { key: 'white-list', label: 'Whitelist', type: 'boolean' },
+            { key: 'enforce-whitelist', label: 'Whitelist Zorla', type: 'boolean' },
+        ],
+    },
+    {
+        label: 'Oyun Ayarları',
+        keys: [
+            { key: 'difficulty', label: 'Zorluk', type: 'select', options: ['peaceful', 'easy', 'normal', 'hard'] },
+            { key: 'gamemode', label: 'Oyun Modu', type: 'select', options: ['survival', 'creative', 'adventure', 'spectator'] },
+            { key: 'pvp', label: 'PvP', type: 'boolean' },
+            { key: 'spawn-monsters', label: 'Canavar Doğması', type: 'boolean' },
+            { key: 'spawn-animals', label: 'Hayvan Doğması', type: 'boolean' },
+            { key: 'spawn-npcs', label: 'Köylü Doğması', type: 'boolean' },
+            { key: 'allow-flight', label: 'Uçuşa İzin', type: 'boolean' },
+            { key: 'allow-nether', label: 'Nether Boyutu', type: 'boolean' },
+            { key: 'enable-command-block', label: 'Komut Bloğu', type: 'boolean' },
+        ],
+    },
+    {
+        label: 'Dünya',
+        keys: [
+            { key: 'level-name', label: 'Dünya Adı', type: 'text' },
+            { key: 'level-seed', label: 'Seed', type: 'text' },
+            { key: 'view-distance', label: 'Görüş Mesafesi', type: 'number' },
+            { key: 'simulation-distance', label: 'Simülasyon Mesafesi', type: 'number' },
+        ],
+    },
+    {
+        label: 'Sunucu',
+        keys: [
+            { key: 'motd', label: 'Sunucu Mesajı (MOTD)', type: 'text' },
+            { key: 'op-permission-level', label: 'Op Yetki Seviyesi', type: 'number' },
+            { key: 'player-idle-timeout', label: 'Boşta Kalma Süresi (dk)', type: 'number' },
+            { key: 'max-tick-time', label: 'Maks. Tick Süresi (ms)', type: 'number' },
+        ],
+    },
+];
+
+function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
+    const [activeTab, setActiveTab] = useState('port');
+    const [portError, setPortError] = useState('');
+    const [settings, setSettings] = useState({
+        server_port: modpack.server_port || 25565,
+        minRam: modpack.min_ram || '2G',
+        maxRam: modpack.max_ram || '4G',
+        jvmArgs: modpack.jvm_args || '',
+        properties: {},
+    });
+
+    // React Query v5: onSuccess kaldırıldı, useEffect kullan
+    const { data: settingsData, isLoading } = useQuery({
+        queryKey: ['modpackSettings', modpack.id],
+        queryFn: () => api.get(`/modpacks/${modpack.id}/settings`).then(r => r.data),
+        staleTime: 0,
+    });
+
+    useEffect(() => {
+        if (!settingsData) return;
+        setSettings(prev => ({
+            ...prev,
+            server_port: settingsData.server_port || prev.server_port,
+            minRam: settingsData.minRam || prev.minRam,
+            maxRam: settingsData.maxRam || prev.maxRam,
+            jvmArgs: settingsData.jvmArgs || prev.jvmArgs,
+            properties: settingsData.properties || {},
+        }));
+    }, [settingsData]);
+
+    const set = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
+    const setProp = (key, value) => setSettings(prev => ({ ...prev, properties: { ...prev.properties, [key]: value } }));
+
+    const validatePort = (val) => {
+        const n = parseInt(val);
+        if (isNaN(n) || n < 1024 || n > 65535) {
+            setPortError('Port 1024–65535 arasında olmalı');
+            return false;
+        }
+        setPortError('');
+        return true;
+    };
+
+    const handleSave = () => {
+        if (!validatePort(settings.server_port)) return;
+        onSave(settings);
+    };
+
+    const hasProperties = Object.keys(settings.properties || {}).length > 0;
+
+    const TABS = [
+        { id: 'port', label: 'Bağlantı' },
+        { id: 'ram', label: 'Bellek' },
+        { id: 'jvm', label: 'JVM' },
+        { id: 'props', label: 'Oyun Ayarları' },
+    ];
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="glass-card w-full max-w-2xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {modpack.logo_url
+                                ? <img src={modpack.logo_url} alt="" className="w-full h-full object-cover" />
+                                : <HiOutlineCog6Tooth className="w-5 h-5 text-gray-500" />
+                            }
+                        </div>
+                        <div>
+                            <h2 className="text-base font-bold text-gray-900 leading-tight">{modpack.name}</h2>
+                            <p className="text-xs text-gray-400">{modpack.version}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
+                        <HiOutlineXMark className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex gap-1 px-6 pt-3 flex-shrink-0">
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+                    {isLoading ? (
+                        <div className="flex justify-center py-16">
+                            <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                    ) : (
+                        <>
+                            {/* ── Bağlantı ── */}
+                            {activeTab === 'port' && (
+                                <div className="space-y-5 fade-in">
+                                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700">
+                                        Farklı port kullanarak aynı makinede birden fazla sunucu eş zamanlı çalıştırabilirsiniz.
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Sunucu Portu</label>
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="number"
+                                                value={settings.server_port}
+                                                onChange={e => { set('server_port', parseInt(e.target.value) || ''); validatePort(e.target.value); }}
+                                                className={`input-field w-40 text-lg font-mono font-bold ${portError ? 'border-red-400' : ''}`}
+                                                min={1024} max={65535}
+                                            />
+                                            <button
+                                                onClick={() => { set('server_port', 25565); setPortError(''); }}
+                                                className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
+                                            >
+                                                Varsayılana sıfırla (25565)
+                                            </button>
+                                        </div>
+                                        {portError && <p className="text-xs text-red-500 mt-1">{portError}</p>}
+                                        <p className="text-xs text-gray-400 mt-2">Geçerli aralık: 1024 – 65535</p>
+                                    </div>
+
+                                    {/* Hızlı port önerileri */}
+                                    <div>
+                                        <p className="text-xs font-medium text-gray-500 mb-2">Hızlı Seçim</p>
+                                        <div className="flex gap-2 flex-wrap">
+                                            {[25565, 25566, 25567, 19132, 19133].map(p => (
+                                                <button
+                                                    key={p}
+                                                    onClick={() => { set('server_port', p); setPortError(''); }}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono transition-all border ${settings.server_port === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                                                >
+                                                    {p}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── Bellek ── */}
+                            {activeTab === 'ram' && (
+                                <div className="space-y-6 fade-in">
+                                    {/* Max RAM */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-sm font-semibold text-gray-700">Maksimum RAM</label>
+                                            <span className="text-lg font-bold font-mono text-gray-900">{settings.maxRam || '—'}</span>
+                                        </div>
+                                        <div className="flex gap-2 flex-wrap mb-2">
+                                            {RAM_PRESETS.map(p => (
+                                                <button key={p} onClick={() => set('maxRam', p)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all border ${settings.maxRam === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
+                                                    {p}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <input type="text" value={settings.maxRam}
+                                            onChange={e => set('maxRam', e.target.value)}
+                                            className="input-field font-mono text-sm" placeholder="Özel: 6G, 10G, 24G..." />
+                                    </div>
+
+                                    {/* Min RAM */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-sm font-semibold text-gray-700">Minimum RAM</label>
+                                            <span className="text-lg font-bold font-mono text-gray-900">{settings.minRam || '—'}</span>
+                                        </div>
+                                        <div className="flex gap-2 flex-wrap mb-2">
+                                            {RAM_PRESETS.slice(0, 6).map(p => (
+                                                <button key={p} onClick={() => set('minRam', p)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all border ${settings.minRam === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
+                                                    {p}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <input type="text" value={settings.minRam}
+                                            onChange={e => set('minRam', e.target.value)}
+                                            className="input-field font-mono text-sm" placeholder="Özel: 1G, 2G..." />
+                                    </div>
+
+                                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
+                                        <strong>Öneri:</strong> Max RAM = sistem RAM'inin %70-80'i. Min RAM = Max RAM'in yarısı.
+                                        Örnek: 16GB sistem → Max: 12G, Min: 4G
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── JVM ── */}
+                            {activeTab === 'jvm' && (
+                                <div className="space-y-4 fade-in">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm font-semibold text-gray-700">JVM Argümanları</label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => set('jvmArgs', AIKARS_FLAGS)}
+                                                className="text-xs px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors font-medium"
+                                            >
+                                                ✦ Aikar's Flags Ekle
+                                            </button>
+                                            <button
+                                                onClick={() => set('jvmArgs', '')}
+                                                className="text-xs px-3 py-1.5 bg-gray-50 text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                                            >
+                                                Temizle
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <textarea
+                                        value={settings.jvmArgs}
+                                        onChange={e => set('jvmArgs', e.target.value)}
+                                        className="input-field h-48 font-mono text-xs resize-none"
+                                        placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
+                                        spellCheck={false}
+                                    />
+                                    <p className="text-xs text-gray-400">
+                                        Boş bırakılırsa varsayılan JVM ayarları kullanılır. Aikar's Flags Minecraft sunucuları için optimize edilmiş performans bayraklarıdır.
+                                    </p>
+                                    {settings.jvmArgs && (
+                                        <div className="bg-gray-50 rounded-xl p-3">
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Önizleme:</p>
+                                            <p className="text-xs font-mono text-gray-600 break-all">
+                                                java -Xmx{settings.maxRam || '4G'} -Xms{settings.minRam || '2G'} {settings.jvmArgs} -jar server.jar nogui
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── Oyun Ayarları ── */}
+                            {activeTab === 'props' && (
+                                <div className="fade-in">
+                                    {!hasProperties ? (
+                                        <div className="text-center py-12 text-gray-400 space-y-3">
+                                            <HiOutlineCog6Tooth className="w-12 h-12 mx-auto opacity-20" />
+                                            <p className="font-medium">server.properties bulunamadı</p>
+                                            <p className="text-sm">Sunucuyu en az bir kez başlatın — Minecraft ilk açılışta bu dosyayı otomatik oluşturur.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            {PROPS_GROUPS.map(group => {
+                                                const groupProps = group.keys.filter(k => k.key in settings.properties);
+                                                if (groupProps.length === 0) return null;
+                                                return (
+                                                    <div key={group.label}>
+                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{group.label}</p>
+                                                        <div className="space-y-1">
+                                                            {groupProps.map(({ key, label, type, options }) => {
+                                                                const value = settings.properties[key] ?? '';
+                                                                return (
+                                                                    <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
+                                                                        <label className="text-sm text-gray-700 flex-1">{label}
+                                                                            <span className="ml-2 text-xs text-gray-300 font-mono">{key}</span>
+                                                                        </label>
+                                                                        <div className="flex-shrink-0">
+                                                                            {type === 'boolean' ? (
+                                                                                <button
+                                                                                    onClick={() => setProp(key, value === 'true' ? 'false' : 'true')}
+                                                                                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all border min-w-[72px] ${value === 'true' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
+                                                                                >
+                                                                                    {value === 'true' ? 'Açık' : 'Kapalı'}
+                                                                                </button>
+                                                                            ) : type === 'select' ? (
+                                                                                <select value={value} onChange={e => setProp(key, e.target.value)}
+                                                                                    className="input-field text-sm py-1.5 w-36">
+                                                                                    {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                                                </select>
+                                                                            ) : (
+                                                                                <input type={type === 'number' ? 'number' : 'text'} value={value}
+                                                                                    onChange={e => setProp(key, e.target.value)}
+                                                                                    className="input-field text-sm py-1.5 w-40 font-mono" />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* Diğer properties (gruba girmeyenler) */}
+                                            {(() => {
+                                                const knownKeys = PROPS_GROUPS.flatMap(g => g.keys.map(k => k.key));
+                                                const others = Object.entries(settings.properties).filter(([k]) => !knownKeys.includes(k));
+                                                if (others.length === 0) return null;
+                                                return (
+                                                    <div>
+                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Diğer</p>
+                                                        <div className="space-y-1">
+                                                            {others.map(([key, value]) => (
+                                                                <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 gap-4">
+                                                                    <label className="text-xs font-mono text-gray-500 flex-1">{key}</label>
+                                                                    <input type="text" value={value}
+                                                                        onChange={e => setProp(key, e.target.value)}
+                                                                        className="input-field text-xs py-1.5 w-48 font-mono" />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -740,10 +1223,14 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
                     )}
                 </div>
 
-                <div className="flex gap-3 mt-6 justify-end flex-shrink-0">
+                {/* Footer */}
+                <div className="flex gap-3 px-6 pb-6 pt-4 border-t border-gray-100 justify-end flex-shrink-0">
                     <button onClick={onClose} className="btn-secondary">İptal</button>
-                    <button onClick={() => onSave(settings)} disabled={saving || isLoading} className="btn-primary">
-                        {saving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Kaydet'}
+                    <button onClick={handleSave} disabled={saving || isLoading || !!portError} className="btn-primary">
+                        {saving
+                            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Kaydediliyor...</>
+                            : 'Kaydet'
+                        }
                     </button>
                 </div>
             </div>

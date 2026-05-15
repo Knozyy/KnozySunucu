@@ -1,14 +1,16 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
 /**
- * Java Manager - Minecraft sürümüne göre Java yönetimi
+ * Java Manager - Minecraft sürümüne göre global Java yönetimi
+ * Java sürümleri ~/.knozysunucu/java/ altında saklanır (tüm profiller tarafından paylaşılır)
  */
 class JavaManager {
     constructor() {
-        this.javaDir = path.resolve(process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server', '..', 'java');
+        this.javaDir = path.join(os.homedir(), '.knozysunucu', 'java');
     }
 
     // MC sürümüne göre gereken Java
