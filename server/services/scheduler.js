@@ -166,7 +166,7 @@ class Scheduler {
             const now = Date.now();
             const nextRun = now + (task.interval_minutes * 60 * 1000);
 
-            db.prepare('UPDATE scheduled_tasks SET last_run = datetime("now"), next_run = ? WHERE id = ?').run(nextRun.toString(), task.id);
+            db.prepare(`UPDATE scheduled_tasks SET last_run = datetime('now'), next_run = ? WHERE id = ?`).run(nextRun.toString(), task.id);
 
             // minecraftService singleton'ını al
             const mcService = require('./minecraftService');
