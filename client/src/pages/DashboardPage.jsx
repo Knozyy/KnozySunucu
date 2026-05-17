@@ -10,6 +10,7 @@ import {
     HiOutlineArrowDownTray, HiOutlineExclamationTriangle,
     HiOutlinePlay, HiOutlineStop, HiOutlineArrowPath,
     HiOutlineWrenchScrewdriver, HiOutlinePuzzlePiece,
+    HiOutlineXMark,
 } from 'react-icons/hi2';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -63,8 +64,27 @@ export default function DashboardPage() {
     const [usageHistory, setUsageHistory] = useState([]);
     const historyRef = useRef([]);
     const queryClient = useQueryClient();
-    const { user } = useAuth();
+    const { user, token } = useAuth();
     const { t } = useI18n();
+    const [crashAlert, setCrashAlert] = useState(null); // { code, timestamp, autoRestarted, crashCount }
+
+    // WebSocket — crash eventi dinle
+    useEffect(() => {
+        if (!token) return;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/console?token=${token}`);
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'crash') {
+                    setCrashAlert(msg.data);
+                    // Status sorgusunu yenile ki dashboard güncellenen durumu göstersin
+                    queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
+                }
+            } catch { /* ignore */ }
+        };
+        return () => ws.close();
+    }, [token, queryClient]);
 
     const { data: systemInfo, isLoading: infoLoading } = useQuery({
         queryKey: ['systemInfo'],
@@ -162,6 +182,27 @@ export default function DashboardPage() {
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h1>
                 <p className="text-gray-500">{t('dashboard.subtitle')}</p>
             </div>
+
+            {/* ── Çöküm Uyarısı ── */}
+            {crashAlert && (
+                <div className="glass-card p-4 fade-in border-l-4 border-red-500 bg-red-50/60">
+                    <div className="flex items-center gap-3">
+                        <HiOutlineExclamationTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900">
+                                {crashAlert.autoRestarted ? '⚡ Sunucu çöktü ve otomatik olarak yeniden başlatıldı' : '🔴 Sunucu çöktü — manuel başlatma gerekiyor'}
+                            </p>
+                            <p className="text-sm text-gray-600 mt-0.5">
+                                {new Date(crashAlert.timestamp).toLocaleString('tr-TR')} · Exit code: {crashAlert.code} · Çöküm #{crashAlert.crashCount}
+                                {crashAlert.reason === 'max_crashes' && <span className="ml-2 text-red-600 font-medium">— Maksimum çöküm limitine ulaşıldı, otomatik başlatma durduruldu</span>}
+                            </p>
+                        </div>
+                        <button onClick={() => setCrashAlert(null)} className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                            <HiOutlineXMark className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Güncelleme Uyarısı */}
             {updateInfo?.hasUpdate && (

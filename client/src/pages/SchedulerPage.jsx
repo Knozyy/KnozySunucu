@@ -6,6 +6,7 @@ import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineClock, HiOutlineTrash, HiOutlinePlus,
     HiOutlinePlay, HiOutlinePause, HiOutlineDocumentText,
+    HiOutlineArrowPath, HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 
 function formatCountdown(ms) {
@@ -84,6 +85,25 @@ export default function SchedulerPage() {
         mutationFn: (id) => api.post(`/scheduler/${id}/toggle`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduler'] }),
     });
+
+    // ── Otomatik Yeniden Başlatma ayarı ──
+    const { data: autoRestartData } = useQuery({
+        queryKey: ['autoRestart'],
+        queryFn: () => api.get('/minecraft/auto-restart').then(r => r.data),
+        refetchInterval: 30000,
+    });
+
+    const autoRestartMutation = useMutation({
+        mutationFn: (enabled) => api.put('/minecraft/auto-restart', { enabled }),
+        onSuccess: (_, enabled) => {
+            toast.success(enabled ? 'Otomatik başlatma açıldı' : 'Otomatik başlatma kapatıldı');
+            queryClient.invalidateQueries({ queryKey: ['autoRestart'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Ayar güncellenemedi'),
+    });
+
+    const autoRestartEnabled = autoRestartData?.enabled ?? true;
+    const crashHistory = autoRestartData?.crashes || [];
 
     const tasks = data?.tasks || [];
 
@@ -226,6 +246,46 @@ export default function SchedulerPage() {
                     </div>
                 </div>
             )}
+
+            {/* ── Otomatik Yeniden Başlatma ── */}
+            <div className="glass-card p-5 fade-in">
+                <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${autoRestartEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                        <HiOutlineArrowPath className={`w-5 h-5 ${autoRestartEnabled ? 'text-green-600' : 'text-gray-400'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900">Çökme Sonrası Otomatik Yeniden Başlatma</p>
+                        <p className="text-sm text-gray-500">
+                            Sunucu beklenmedik şekilde kapanırsa otomatik olarak yeniden başlatılır.
+                            {crashHistory.length > 0 && (
+                                <span className="ml-1 text-amber-600 font-medium">
+                                    Son çöküm: {new Date(crashHistory[0].occurred_at).toLocaleString('tr-TR')}
+                                </span>
+                            )}
+                        </p>
+                        {crashHistory.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {crashHistory.slice(0, 5).map(c => (
+                                    <span key={c.id} className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${c.auto_restarted ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                        <HiOutlineExclamationTriangle className="w-3 h-3" />
+                                        {new Date(c.occurred_at).toLocaleTimeString('tr-TR')} — code {c.exit_code}
+                                        {c.auto_restarted ? ' ↻' : ' ✗'}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {/* Toggle switch */}
+                    <button
+                        onClick={() => autoRestartMutation.mutate(!autoRestartEnabled)}
+                        disabled={autoRestartMutation.isPending}
+                        className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 focus:outline-none ${autoRestartEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                        title={autoRestartEnabled ? 'Kapat' : 'Aç'}
+                    >
+                        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${autoRestartEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+                    </button>
+                </div>
+            </div>
 
             {/* Task List */}
             <div className="space-y-3">
