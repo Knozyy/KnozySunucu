@@ -21,7 +21,7 @@ import {
     HiOutlineShieldCheck,
     HiOutlineExclamationTriangle,
     HiOutlineInformationCircle,
-    HiOutlineTerminal,
+    HiOutlineCommandLine as HiOutlineTerminal,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
