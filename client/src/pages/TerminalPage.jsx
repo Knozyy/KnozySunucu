@@ -60,8 +60,12 @@ export default function TerminalPage() {
 
     const attachScreen = async (name) => {
         try {
+            // Önce Ctrl+A D ile mevcut screen'den çık (bash'taysa etki etmez)
+            if (activeScreen && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
+                await new Promise(r => setTimeout(r, 300));
+            }
             await api.post(`/terminal/screens/${name}/attach`);
-            if (xtermRef.current) xtermRef.current.clear();
             setActiveScreen(name);
             queryClient.invalidateQueries({ queryKey: ['terminalScreens'] });
         } catch (err) {
@@ -69,7 +73,7 @@ export default function TerminalPage() {
         }
     };
 
-    const detachScreen = async () => {
+    const detachScreen = () => {
         // Ctrl+A D gönder — screen'den çık, bash'e dön
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
