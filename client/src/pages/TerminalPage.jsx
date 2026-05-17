@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/context/AuthContext';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -17,6 +18,7 @@ import {
 
 export default function TerminalPage() {
     const [searchParams] = useSearchParams();
+    const { token } = useAuth();
     const terminalRef = useRef(null);
     const xtermRef = useRef(null);
     const fitAddonRef = useRef(null);
@@ -107,7 +109,6 @@ export default function TerminalPage() {
         fitAddonRef.current = fitAddon;
 
         // WebSocket bağlantısı
-        const token = localStorage.getItem('token');
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/terminal?token=${token}`;
         const ws = new WebSocket(wsUrl);
@@ -158,7 +159,7 @@ export default function TerminalPage() {
             xtermRef.current = null;
             wsRef.current = null;
         };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const cleanup = initTerminal();
