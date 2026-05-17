@@ -145,6 +145,18 @@ export default function TerminalPage() {
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
 
+        // Scroll olaylarını DOM seviyesinde yakala — PTY'ye ANSI mouse sequence
+        // gönderilmesini engelle (screen mouse tracking modunu açınca 'a','b' spawn olur).
+        // Bunun yerine xterm'in kendi scrollback buffer'ını kullan.
+        const termEl = terminalRef.current;
+        const wheelHandler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const lines = Math.sign(e.deltaY) * Math.max(1, Math.round(Math.abs(e.deltaY) / 40));
+            term.scrollLines(lines);
+        };
+        termEl.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
+
         // WebSocket bağlantısı
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/terminal?token=${token}`;
@@ -190,6 +202,7 @@ export default function TerminalPage() {
         if (terminalRef.current) resizeObserver.observe(terminalRef.current);
 
         return () => {
+            termEl.removeEventListener('wheel', wheelHandler, { capture: true });
             resizeObserver.disconnect();
             ws.close();
             term.dispose();
