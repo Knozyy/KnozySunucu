@@ -6,15 +6,14 @@ import {
     HiOutlineHome, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
-    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
-    HiOutlineTerminal
+    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
 const navItems = [
     { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
     { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
-    { path: '/terminal', label: 'Terminal', icon: HiOutlineTerminal, adminOnly: true },
+    { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, adminOnly: true },
     { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
     { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, adminOnly: true },
     { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, adminOnly: true },
