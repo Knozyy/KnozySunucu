@@ -14,7 +14,6 @@ import {
     HiOutlineArrowRightOnRectangle,
     HiOutlineArrowPath,
     HiOutlineXMark,
-    HiOutlinePaperAirplane,
 } from 'react-icons/hi2';
 
 export default function TerminalPage() {
@@ -26,9 +25,9 @@ export default function TerminalPage() {
     const wsRef = useRef(null);
     const queryClient = useQueryClient();
     const [connected, setConnected] = useState(false);
+    const [activeScreen, setActiveScreen] = useState(null); // şu an bağlı olunan screen adı
     const [newScreenName, setNewScreenName] = useState('');
     const [showNewScreen, setShowNewScreen] = useState(false);
-    const [sendCmd, setSendCmd] = useState({}); // { [screenName]: inputValue }
 
     // URL'den komut parametresini al (FTB yönlendirme)
     const pendingCommand = searchParams.get('run');
@@ -61,15 +60,21 @@ export default function TerminalPage() {
 
     const attachScreen = async (name) => {
         try {
-            // PTY'yi yeniden başlatıp doğrudan screen'e gir (diğerini zorla çıkar)
             await api.post(`/terminal/screens/${name}/attach`);
-            // Ekranı temizle — yeni PTY başlıyor
             if (xtermRef.current) xtermRef.current.clear();
-            toast.success(`${name} screen'ine bağlanıldı`);
+            setActiveScreen(name);
             queryClient.invalidateQueries({ queryKey: ['terminalScreens'] });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Bağlanılamadı');
         }
+    };
+
+    const detachScreen = async () => {
+        // Ctrl+A D gönder — screen'den çık, bash'e dön
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
+        }
+        setActiveScreen(null);
     };
 
     // Terminal başlat
@@ -217,73 +222,60 @@ export default function TerminalPage() {
                                 <p className="text-xs">Screen yok</p>
                             </div>
                         ) : (
-                            <div className="space-y-2 flex-1 overflow-y-auto">
-                                {screens.map(screen => (
-                                    <div key={screen.fullId} className="rounded-xl border border-gray-100 p-2.5 bg-white">
-                                        {/* Başlık + butonlar */}
-                                        <div className="flex items-center justify-between gap-1 mb-2">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-gray-900 truncate">{screen.name}</p>
-                                                <p className={`text-xs mt-0.5 ${screen.status?.toLowerCase().includes('detached') ? 'text-amber-500' : 'text-green-500'}`}>
-                                                    {screen.status}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                <button
-                                                    onClick={() => attachScreen(screen.name)}
-                                                    disabled={!connected}
-                                                    className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
-                                                    title="Terminale bağlan"
-                                                >
-                                                    <HiOutlineArrowRightOnRectangle className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        if (confirm(`'${screen.name}' screen'ini kapatmak istiyor musunuz?`)) {
-                                                            killScreenMutation.mutate(screen.name);
-                                                        }
-                                                    }}
-                                                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Kapat"
-                                                >
-                                                    <HiOutlineTrash className="w-3.5 h-3.5" />
-                                                </button>
+                            <div className="space-y-1 flex-1 overflow-y-auto">
+                                {screens.map(screen => {
+                                    const isActive = activeScreen === screen.name;
+                                    return (
+                                        <div
+                                            key={screen.fullId}
+                                            className={`rounded-xl border p-2.5 transition-colors ${isActive ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-white hover:bg-gray-50'}`}
+                                        >
+                                            <div className="flex items-center justify-between gap-1">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm font-semibold truncate ${isActive ? 'text-blue-700' : 'text-gray-900'}`}>
+                                                        {isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 mb-0.5" />}
+                                                        {screen.name}
+                                                    </p>
+                                                    <p className={`text-xs mt-0.5 ${screen.status?.toLowerCase().includes('detached') ? 'text-amber-500' : 'text-green-500'}`}>
+                                                        {screen.status}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {isActive ? (
+                                                        <button
+                                                            onClick={detachScreen}
+                                                            className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors font-medium"
+                                                            title="Screen'den çık (Ctrl+A D)"
+                                                        >
+                                                            Çık
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => attachScreen(screen.name)}
+                                                            disabled={!connected}
+                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
+                                                            title="Terminale bağlan"
+                                                        >
+                                                            <HiOutlineArrowRightOnRectangle className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm(`'${screen.name}' screen'ini kapatmak istiyor musunuz?`)) {
+                                                                killScreenMutation.mutate(screen.name);
+                                                                if (isActive) setActiveScreen(null);
+                                                            }
+                                                        }}
+                                                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Kapat"
+                                                    >
+                                                        <HiOutlineTrash className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                        {/* Hızlı komut gönder */}
-                                        <form
-                                            onSubmit={async (e) => {
-                                                e.preventDefault();
-                                                const cmd = sendCmd[screen.name]?.trim();
-                                                if (!cmd) return;
-                                                try {
-                                                    await api.post(`/terminal/screens/${screen.name}/send`, { command: cmd });
-                                                    setSendCmd(prev => ({ ...prev, [screen.name]: '' }));
-                                                    toast.success(`→ ${screen.name}`);
-                                                } catch (err) {
-                                                    toast.error(err.response?.data?.error || 'Gönderilemedi');
-                                                }
-                                            }}
-                                            className="flex gap-1"
-                                        >
-                                            <input
-                                                type="text"
-                                                value={sendCmd[screen.name] || ''}
-                                                onChange={e => setSendCmd(prev => ({ ...prev, [screen.name]: e.target.value }))}
-                                                placeholder="komut gönder..."
-                                                className="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded-lg font-mono focus:outline-none focus:border-gray-400 bg-gray-50 min-w-0"
-                                            />
-                                            <button
-                                                type="submit"
-                                                disabled={!sendCmd[screen.name]?.trim()}
-                                                className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 flex-shrink-0"
-                                                title="Gönder"
-                                            >
-                                                <HiOutlinePaperAirplane className="w-3.5 h-3.5" />
-                                            </button>
-                                        </form>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
