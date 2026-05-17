@@ -6,8 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { initDatabase } = require('./db/database');
-const { setupWebSocket } = require('./services/consoleService');
-const { setupTerminalWebSocket } = require('./services/terminalWsService');
+const { setupWebSockets } = require('./services/wsRouter');
 
 const authRoutes = require('./routes/auth');
 const systemRoutes = require('./routes/system');
@@ -70,10 +69,8 @@ app.use((req, res) => {
     }
 });
 
-// WebSocket for console
-setupWebSocket(server);
-// WebSocket for bash terminal
-setupTerminalWebSocket(server);
+// WebSocket router — console + terminal
+setupWebSockets(server);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {
