@@ -44,6 +44,20 @@ function initDatabase() {
       size INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS crash_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exit_code INTEGER,
+      auto_restarted INTEGER DEFAULT 0,
+      crash_count INTEGER DEFAULT 1,
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle

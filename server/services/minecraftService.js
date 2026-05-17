@@ -14,6 +14,9 @@ class MinecraftService extends EventEmitter {
         this.maxLogLines = 500;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
         this._statsInterval = null;
+        // Çöküm takibi
+        this._crashCount = 0;
+        this._crashWindowStart = 0;
     }
 
     getServerPath() {
@@ -331,27 +334,63 @@ class MinecraftService extends EventEmitter {
             this.emit('status', this.status);
             this.emit('log', `[System] Sunucu kapandı (exit code: ${code})`);
 
-            // Otomatik çökme kurtarma
+            // ── Çöküm tespiti ─────────────────────────────────────────────
             if (wasRunning && !wasStopping && code !== 0) {
-                this.addLog('[System] ⚠️ Sunucu beklenmedik şekilde çöktü! 10 saniye sonra otomatik yeniden başlatılacak...');
-                this.emit('log', '[System] ⚠️ Sunucu çöktü! Otomatik yeniden başlatma 10sn...');
+                // Çöküm sayacını güncelle (5 dakikalık pencere)
+                const now = Date.now();
+                if (now - this._crashWindowStart > 300000) {
+                    this._crashCount = 0;
+                    this._crashWindowStart = now;
+                }
+                this._crashCount = (this._crashCount || 0) + 1;
+
+                // Auto-restart ayarını DB'den oku
+                let autoRestartEnabled = true;
+                try {
+                    const { getDb } = require('../db/database');
+                    const db = getDb();
+                    const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
+                    autoRestartEnabled = !setting || setting.value === '1';
+
+                    // Çöküm kaydını DB'ye yaz
+                    db.prepare(`INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)`)
+                        .run(code ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
+                } catch { /* ignore */ }
+
+                // Arka arkaya çok fazla çöküm varsa durdur
+                const MAX_CRASHES = 5;
+                if (this._crashCount >= MAX_CRASHES) {
+                    this.addLog(`[System] 🔴 Son 5 dakikada ${this._crashCount} çöküm! Otomatik yeniden başlatma devre dışı bırakıldı.`);
+                    this.emit('log', `[System] 🔴 Çok fazla çöküm (${this._crashCount}x). Otomatik başlatma durduruldu.`);
+                    this.emit('crash', { code, timestamp: now, autoRestarted: false, crashCount: this._crashCount, reason: 'max_crashes' });
+                    return;
+                }
+
+                this.addLog(`[System] ⚠️ Sunucu çöktü (exit code: ${code}, çöküm #${this._crashCount})`);
+                this.emit('crash', { code, timestamp: now, autoRestarted: autoRestartEnabled, crashCount: this._crashCount });
 
                 // Discord bildirim gönder
                 try {
                     const notificationService = require('./notificationService');
-                    notificationService.send('server_crash', `Sunucu çöktü (exit code: ${code}). Otomatik yeniden başlatma yapılıyor...`);
+                    notificationService.send('server_crash', `Sunucu çöktü (exit code: ${code}). ${autoRestartEnabled ? 'Otomatik yeniden başlatma yapılıyor...' : 'Otomatik başlatma kapalı.'}`);
                 } catch { /* ignore */ }
 
-                setTimeout(() => {
-                    if (this.status === 'stopped') {
-                        try {
-                            this.addLog('[System] Otomatik yeniden başlatma başlatılıyor...');
-                            this.start();
-                        } catch (err) {
-                            this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`);
+                if (autoRestartEnabled) {
+                    this.addLog('[System] 🔄 10 saniye sonra otomatik yeniden başlatılıyor...');
+                    this.emit('log', '[System] 🔄 Otomatik yeniden başlatma 10sn içinde...');
+                    setTimeout(() => {
+                        if (this.status === 'stopped') {
+                            try {
+                                this.addLog('[System] Otomatik yeniden başlatma başlatılıyor...');
+                                this.start();
+                            } catch (err) {
+                                this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`);
+                            }
                         }
-                    }
-                }, 10000);
+                    }, 10000);
+                } else {
+                    this.emit('log', '[System] ⚠️ Sunucu çöktü. Otomatik başlatma kapalı, manuel başlatma gerekiyor.');
+                }
             }
         });
 

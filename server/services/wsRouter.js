@@ -44,10 +44,15 @@ function handleConsole(ws) {
         if (ws.readyState === WebSocket.OPEN)
             ws.send(JSON.stringify({ type: 'players', data: players }));
     };
+    const crashHandler = (data) => {
+        if (ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ type: 'crash', data }));
+    };
 
     minecraftService.on('log', logHandler);
     minecraftService.on('status', statusHandler);
     minecraftService.on('players', playersHandler);
+    minecraftService.on('crash', crashHandler);
 
     ws.on('message', (message) => {
         try {
@@ -61,6 +66,7 @@ function handleConsole(ws) {
         minecraftService.off('log', logHandler);
         minecraftService.off('status', statusHandler);
         minecraftService.off('players', playersHandler);
+        minecraftService.off('crash', crashHandler);
     });
 }
 

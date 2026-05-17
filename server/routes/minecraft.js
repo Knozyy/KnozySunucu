@@ -2,6 +2,7 @@ const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const minecraftService = require('../services/minecraftService');
+const { getDb } = require('../db/database');
 
 const router = express.Router();
 
@@ -125,6 +126,36 @@ router.get('/detect-info', authMiddleware, (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: 'Tespit yapılamadı' });
+    }
+});
+
+// GET /api/minecraft/auto-restart — ayarı oku
+router.get('/auto-restart', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
+        const enabled = !setting || setting.value === '1';
+        // Son 10 çöküm olayını da döndür
+        const crashes = db.prepare("SELECT * FROM crash_events ORDER BY occurred_at DESC LIMIT 10").all();
+        res.json({ enabled, crashes });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/minecraft/auto-restart — ayarı güncelle
+router.put('/auto-restart', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { enabled } = req.body;
+        const db = getDb();
+        db.prepare(`
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES ('auto_restart_enabled', ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        `).run(enabled ? '1' : '0');
+        res.json({ enabled: !!enabled });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
