@@ -110,8 +110,41 @@ class TerminalService {
     }
 
     attachScreen(name) {
+        if (!pty) return;
+        // Mevcut PTY'yi kapat, doğrudan o screen içinde yeni PTY aç
+        // -D: diğer bağlı kullanıcıyı zorla çıkar, -r: reattach
         if (this.ptyProcess) {
-            this.ptyProcess.write(`screen -x ${name}\r`);
+            try { this.ptyProcess.kill(); } catch { /* ignore */ }
+            this.ptyProcess = null;
+        }
+        this.outputBuffer = [];
+
+        try {
+            this.ptyProcess = pty.spawn('screen', ['-D', '-r', name], {
+                name: 'xterm-256color',
+                cols: 220,
+                rows: 50,
+                cwd: os.homedir(),
+                env: { ...process.env, TERM: 'xterm-256color' },
+            });
+
+            this.ptyProcess.onData(data => {
+                this.outputBuffer.push(data);
+                if (this.outputBuffer.length > 2000) this.outputBuffer.shift();
+                for (const ws of this.clients) {
+                    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'output', data }));
+                }
+            });
+
+            this.ptyProcess.onExit(() => {
+                this.ptyProcess = null;
+                this.outputBuffer = [];
+                // Screen'den çıkınca (Ctrl+A D) normal bash'e dön
+                setTimeout(() => { if (pty) this._spawn(); }, 500);
+            });
+        } catch (err) {
+            console.error('[Terminal] Screen attach hatası:', err.message);
+            setTimeout(() => { if (pty) this._spawn(); }, 500);
         }
     }
 
