@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
@@ -20,6 +21,7 @@ import {
     HiOutlineShieldCheck,
     HiOutlineExclamationTriangle,
     HiOutlineInformationCircle,
+    HiOutlineTerminal,
 } from 'react-icons/hi2';
 
 function formatSize(bytes) {
@@ -45,7 +47,9 @@ export default function ModpacksPage() {
     const [validationModal, setValidationModal] = useState(null); // { modpack, loading, analysis }
     const [repairModal, setRepairModal] = useState(null); // { modpackId, repairId, analysisResult }
     const [repairPolling, setRepairPolling] = useState(false);
+    const [terminalHint, setTerminalHint] = useState(null); // { installPath, name } — FTB manuel kurulum
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
     const { t } = useI18n();
 
     const { data: searchResults, isLoading: searching, refetch: doSearch } = useQuery({
@@ -145,6 +149,27 @@ export default function ModpacksPage() {
         enabled: !!repairModal?.repairId && repairPolling,
         refetchInterval: repairPolling ? 800 : false,
     });
+
+    // FTB kurulumu bitince terminal yönlendirme hint'i göster
+    useEffect(() => {
+        if (
+            installStatusData?.progress === 100 &&
+            !installStatusData?.isInstalling &&
+            !installStatusData?.error &&
+            provider === 'ftb' &&
+            installStatusData?.installPath
+        ) {
+            setTerminalHint({
+                installPath: installStatusData.installPath,
+                name: installStatusData.modpackName || 'FTB Modpack',
+            });
+        }
+    }, [installStatusData, provider]);
+
+    const openTerminalForInstall = (installPath) => {
+        const cmd = `cd "${installPath}" && ls -la`;
+        navigate(`/terminal?run=${encodeURIComponent(cmd)}`);
+    };
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -348,6 +373,39 @@ export default function ModpacksPage() {
                 </div>
             )}
 
+            {/* FTB / Manuel kurulum terminal yönlendirme */}
+            {terminalHint && (
+                <div className="glass-card p-4 bg-amber-50/70 border-l-4 border-amber-400 fade-in">
+                    <div className="flex items-start gap-3">
+                        <HiOutlineTerminal className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-semibold text-amber-900">Manuel kurulum adımları gerekiyor</p>
+                            <p className="text-xs text-amber-700 mt-1">
+                                <strong>{terminalHint.name}</strong> dosyaları indirildi. FTB sunucu kurulumunu tamamlamak için
+                                terminale geçip installer'ı çalıştırmanız gerekiyor.
+                            </p>
+                            <p className="text-xs font-mono bg-amber-100 rounded px-2 py-1 mt-2 text-amber-800">
+                                cd &quot;{terminalHint.installPath}&quot; &amp;&amp; java -jar *installer*.jar --installServer
+                            </p>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                            <button
+                                onClick={() => openTerminalForInstall(terminalHint.installPath)}
+                                className="btn-primary text-xs py-1.5 px-3 bg-amber-600 hover:bg-amber-700 flex items-center gap-1.5"
+                            >
+                                <HiOutlineTerminal className="w-4 h-4" /> Terminale Git
+                            </button>
+                            <button
+                                onClick={() => setTerminalHint(null)}
+                                className="p-1.5 text-amber-500 hover:text-amber-700 transition-colors"
+                            >
+                                <HiOutlineXMark className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {editingModpack && (
                 <ModpackSettingsModal
                     modpack={editingModpack}
@@ -477,6 +535,7 @@ export default function ModpacksPage() {
                             onActivate={() => handleActivate(modpack)}
                             onChangeVersion={() => openUpdateVersionModal(modpack)}
                             onValidate={() => openValidationModal(modpack)}
+                            onOpenTerminal={() => openTerminalForInstall(modpack.install_path)}
                             installing={installMutation.isPending}
                             uninstalling={uninstallMutation.isPending}
                             activating={activateMutation.isPending}
@@ -567,7 +626,7 @@ function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect
     );
 }
 
-function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, installing, uninstalling, activating }) {
+function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, onOpenTerminal, installing, uninstalling, activating }) {
     return (
         <div className={`glass-card p-4 fade-in group relative ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
             {/* Aktif Badge */}
@@ -626,6 +685,11 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                         <button onClick={onValidate} className="btn-secondary text-xs py-1.5 px-3" title="Modpack dosyalarını doğrula ve eksiklikleri onar">
                             <HiOutlineWrenchScrewdriver className="w-4 h-4" /> Doğrula & Onar
                         </button>
+                        {modpack.install_path && (
+                            <button onClick={onOpenTerminal} className="btn-secondary text-xs py-1.5 px-3" title="Terminalde bu klasörü aç">
+                                <HiOutlineTerminal className="w-4 h-4" /> Terminal
+                            </button>
+                        )}
                         <button onClick={onChangeVersion} className="btn-secondary text-xs py-1.5 px-3">
                             <HiOutlineArrowPath className="w-4 h-4" /> Sürüm Değiştir
                         </button>

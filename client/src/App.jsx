@@ -16,6 +16,7 @@ import FilesPage from '@/pages/FilesPage';
 import ModsPage from '@/pages/ModsPage';
 import WorldsPage from '@/pages/WorldsPage';
 import SchedulerPage from '@/pages/SchedulerPage';
+import TerminalPage from '@/pages/TerminalPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -91,6 +92,7 @@ function App() {
                   <Route path="files" element={<FilesPage />} />
                   <Route path="worlds" element={<WorldsPage />} />
                   <Route path="scheduler" element={<SchedulerPage />} />
+                  <Route path="terminal" element={<TerminalPage />} />
                   <Route path="backup" element={<BackupPage />} />
                   <Route path="settings" element={<SettingsPage />} />
                 </Route>
