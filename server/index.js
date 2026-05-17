@@ -7,6 +7,7 @@ const cors = require('cors');
 const http = require('http');
 const { initDatabase } = require('./db/database');
 const { setupWebSocket } = require('./services/consoleService');
+const { setupTerminalWebSocket } = require('./services/terminalWsService');
 
 const authRoutes = require('./routes/auth');
 const systemRoutes = require('./routes/system');
@@ -22,6 +23,7 @@ const worldRoutes = require('./routes/worlds');
 const schedulerRoutes = require('./routes/scheduler');
 const notificationRoutes = require('./routes/notifications');
 const usersRoutes = require('./routes/users');
+const terminalRoutes = require('./routes/terminal');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +51,7 @@ app.use('/api/worlds', worldRoutes);
 app.use('/api/scheduler', schedulerRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/terminal', terminalRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -69,6 +72,8 @@ app.use((req, res) => {
 
 // WebSocket for console
 setupWebSocket(server);
+// WebSocket for bash terminal
+setupTerminalWebSocket(server);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {

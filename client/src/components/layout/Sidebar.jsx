@@ -6,13 +6,15 @@ import {
     HiOutlineHome, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
-    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle
+    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
+    HiOutlineTerminal
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
 const navItems = [
     { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
     { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
+    { path: '/terminal', label: 'Terminal', icon: HiOutlineTerminal, adminOnly: true },
     { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
     { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, adminOnly: true },
     { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, adminOnly: true },
@@ -89,7 +91,7 @@ export default function Sidebar({ isOpen, onClose }) {
                                         end={item.path === '/'}
                                     >
                                         <item.icon className="w-5 h-5 flex-shrink-0" />
-                                        <span>{t(item.i18nKey)}</span>
+                                        <span>{item.label || t(item.i18nKey)}</span>
                                     </NavLink>
                                 </li>
                             );
