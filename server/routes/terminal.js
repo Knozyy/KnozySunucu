@@ -34,6 +34,18 @@ router.post('/screens/:name/attach', authMiddleware, requireRole('admin'), (req,
     res.json({ message: `Screen '${req.params.name}' attach komutu gönderildi` });
 });
 
+// Screen'e doğrudan komut gönder (stuff)
+router.post('/screens/:name/send', authMiddleware, requireRole('admin'), (req, res) => {
+    const { command } = req.body;
+    if (!command) return res.status(400).json({ error: 'Komut gerekli' });
+    try {
+        terminalService.sendToScreen(req.params.name, command);
+        res.json({ message: 'Komut gönderildi' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Screen kapat
 router.delete('/screens/:name', authMiddleware, requireRole('admin'), (req, res) => {
     try {

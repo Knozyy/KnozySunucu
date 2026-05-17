@@ -152,6 +152,16 @@ class TerminalService {
         execSync(`screen -S ${name} -X quit 2>&1 || true`, { timeout: 5000 });
     }
 
+    /**
+     * Screen içindeki prosese doğrudan komut gönder (bağlı olmaya gerek yok)
+     * screen -S <name> -X stuff "<komut>\r"
+     */
+    sendToScreen(name, command) {
+        // Tek tırnak içindeki tek tırnakları escape et
+        const escaped = command.replace(/'/g, "'\\''");
+        execSync(`screen -S ${name} -X stuff '${escaped}\r'`, { timeout: 5000 });
+    }
+
     runInTerminal(command) {
         if (this.ptyProcess) {
             this.ptyProcess.write(`${command}\r`);

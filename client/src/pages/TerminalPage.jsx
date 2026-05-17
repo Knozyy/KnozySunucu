@@ -14,6 +14,7 @@ import {
     HiOutlineArrowRightOnRectangle,
     HiOutlineArrowPath,
     HiOutlineXMark,
+    HiOutlinePaperAirplane,
 } from 'react-icons/hi2';
 
 export default function TerminalPage() {
@@ -27,6 +28,7 @@ export default function TerminalPage() {
     const [connected, setConnected] = useState(false);
     const [newScreenName, setNewScreenName] = useState('');
     const [showNewScreen, setShowNewScreen] = useState(false);
+    const [sendCmd, setSendCmd] = useState({}); // { [screenName]: inputValue }
 
     // URL'den komut parametresini al (FTB yönlendirme)
     const pendingCommand = searchParams.get('run');
@@ -215,10 +217,11 @@ export default function TerminalPage() {
                                 <p className="text-xs">Screen yok</p>
                             </div>
                         ) : (
-                            <div className="space-y-1 flex-1 overflow-y-auto">
+                            <div className="space-y-2 flex-1 overflow-y-auto">
                                 {screens.map(screen => (
-                                    <div key={screen.fullId} className="rounded-xl border border-gray-100 p-2.5 hover:bg-gray-50 transition-colors">
-                                        <div className="flex items-center justify-between gap-1">
+                                    <div key={screen.fullId} className="rounded-xl border border-gray-100 p-2.5 bg-white">
+                                        {/* Başlık + butonlar */}
+                                        <div className="flex items-center justify-between gap-1 mb-2">
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-semibold text-gray-900 truncate">{screen.name}</p>
                                                 <p className={`text-xs mt-0.5 ${screen.status?.toLowerCase().includes('detached') ? 'text-amber-500' : 'text-green-500'}`}>
@@ -230,7 +233,7 @@ export default function TerminalPage() {
                                                     onClick={() => attachScreen(screen.name)}
                                                     disabled={!connected}
                                                     className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
-                                                    title="Bağlan"
+                                                    title="Terminale bağlan"
                                                 >
                                                     <HiOutlineArrowRightOnRectangle className="w-3.5 h-3.5" />
                                                 </button>
@@ -247,6 +250,38 @@ export default function TerminalPage() {
                                                 </button>
                                             </div>
                                         </div>
+                                        {/* Hızlı komut gönder */}
+                                        <form
+                                            onSubmit={async (e) => {
+                                                e.preventDefault();
+                                                const cmd = sendCmd[screen.name]?.trim();
+                                                if (!cmd) return;
+                                                try {
+                                                    await api.post(`/terminal/screens/${screen.name}/send`, { command: cmd });
+                                                    setSendCmd(prev => ({ ...prev, [screen.name]: '' }));
+                                                    toast.success(`→ ${screen.name}`);
+                                                } catch (err) {
+                                                    toast.error(err.response?.data?.error || 'Gönderilemedi');
+                                                }
+                                            }}
+                                            className="flex gap-1"
+                                        >
+                                            <input
+                                                type="text"
+                                                value={sendCmd[screen.name] || ''}
+                                                onChange={e => setSendCmd(prev => ({ ...prev, [screen.name]: e.target.value }))}
+                                                placeholder="komut gönder..."
+                                                className="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded-lg font-mono focus:outline-none focus:border-gray-400 bg-gray-50 min-w-0"
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={!sendCmd[screen.name]?.trim()}
+                                                className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 flex-shrink-0"
+                                                title="Gönder"
+                                            >
+                                                <HiOutlinePaperAirplane className="w-3.5 h-3.5" />
+                                            </button>
+                                        </form>
                                     </div>
                                 ))}
                             </div>
