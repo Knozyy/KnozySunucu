@@ -14,6 +14,7 @@ import {
     HiOutlineArrowRightOnRectangle,
     HiOutlineArrowPath,
     HiOutlineXMark,
+    HiOutlinePaperAirplane,
 } from 'react-icons/hi2';
 
 export default function TerminalPage() {
@@ -28,6 +29,8 @@ export default function TerminalPage() {
     const [activeScreen, setActiveScreen] = useState(null); // şu an bağlı olunan screen adı
     const [newScreenName, setNewScreenName] = useState('');
     const [showNewScreen, setShowNewScreen] = useState(false);
+    const [cmdInput, setCmdInput] = useState('');
+    const [cmdTarget, setCmdTarget] = useState(''); // hedef screen adı
 
     // URL'den komut parametresini al (FTB yönlendirme)
     const pendingCommand = searchParams.get('run');
@@ -58,6 +61,22 @@ export default function TerminalPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Screen kapatılamadı'),
     });
 
+    const sendCmdMutation = useMutation({
+        mutationFn: ({ name, command }) => api.post(`/terminal/screens/${name}/send`, { command }),
+        onSuccess: () => {
+            setCmdInput('');
+            toast.success(`→ ${cmdTarget}`);
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Gönderilemedi'),
+    });
+
+    const handleSendCmd = () => {
+        const cmd = cmdInput.trim();
+        const target = cmdTarget || activeScreen;
+        if (!cmd || !target) return;
+        sendCmdMutation.mutate({ name: target, command: cmd });
+    };
+
     const attachScreen = async (name) => {
         try {
             // Önce Ctrl+A D ile mevcut screen'den çık (bash'taysa etki etmez)
@@ -67,6 +86,7 @@ export default function TerminalPage() {
             }
             await api.post(`/terminal/screens/${name}/attach`);
             setActiveScreen(name);
+            setCmdTarget(name);
             queryClient.invalidateQueries({ queryKey: ['terminalScreens'] });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Bağlanılamadı');
@@ -360,6 +380,39 @@ export default function TerminalPage() {
                         className="flex-1 p-2"
                         style={{ minHeight: 0 }}
                     />
+
+                    {/* ── Screen Komut Gönder ── */}
+                    <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5 flex items-center gap-2 flex-shrink-0">
+                        <HiOutlinePaperAirplane className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Screen'e gönder</span>
+                        <select
+                            value={cmdTarget}
+                            onChange={e => setCmdTarget(e.target.value)}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all flex-shrink-0"
+                        >
+                            <option value="">— screen seç —</option>
+                            {screens.map(s => (
+                                <option key={s.fullId} value={s.name}>{s.name}</option>
+                            ))}
+                        </select>
+                        <input
+                            type="text"
+                            value={cmdInput}
+                            onChange={e => setCmdInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') handleSendCmd(); }}
+                            placeholder={cmdTarget ? `${cmdTarget} screen'ine komut gönder…` : 'Önce bir screen seçin…'}
+                            className="flex-1 text-sm font-mono px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition-all"
+                            disabled={!cmdTarget}
+                        />
+                        <button
+                            onClick={handleSendCmd}
+                            disabled={!cmdTarget || !cmdInput.trim() || sendCmdMutation.isPending}
+                            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0"
+                        >
+                            <HiOutlinePaperAirplane className="w-3.5 h-3.5" />
+                            Gönder
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
