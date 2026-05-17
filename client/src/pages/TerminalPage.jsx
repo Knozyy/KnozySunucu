@@ -57,10 +57,16 @@ export default function TerminalPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Screen kapatılamadı'),
     });
 
-    const attachScreen = (name) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'input', data: `screen -x ${name}\r` }));
+    const attachScreen = async (name) => {
+        try {
+            // PTY'yi yeniden başlatıp doğrudan screen'e gir (diğerini zorla çıkar)
+            await api.post(`/terminal/screens/${name}/attach`);
+            // Ekranı temizle — yeni PTY başlıyor
+            if (xtermRef.current) xtermRef.current.clear();
             toast.success(`${name} screen'ine bağlanıldı`);
+            queryClient.invalidateQueries({ queryKey: ['terminalScreens'] });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Bağlanılamadı');
         }
     };
 
