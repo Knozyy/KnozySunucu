@@ -1,32 +1,268 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
 
+// ── Screen ayarları ───────────────────────────────────────────────────────────
+const SCREEN_NAME = process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
+const LOG_FILE   = '/tmp/knozy-mc.log';
+
 class MinecraftService extends EventEmitter {
     constructor() {
         super();
-        this.process = null;
-        this.status = 'stopped';
-        this.players = [];
-        this.logs = [];
-        this.maxLogLines = 500;
+        this._tailProcess = null;   // tail -f process (log okuma)
+        this._javaPid     = null;   // gerçek Java PID
+        this.process      = null;   // Windows compat. (eski API) — Linux'ta null
+        this.status       = 'stopped';
+        this.players      = [];
+        this.logs         = [];
+        this.maxLogLines  = 500;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
-        this._statsInterval = null;
+        this._statsInterval      = null;
+        this._statusCheckInterval = null;
         // Çöküm takibi
-        this._crashCount = 0;
+        this._crashCount       = 0;
         this._crashWindowStart = 0;
+
+        // Panel yeniden başlarsa çalışan sunucuya yeniden bağlan
+        if (this._useScreen()) {
+            setTimeout(() => this._reconnectIfRunning(), 500);
+        }
     }
 
+    // ── Platform yardımcıları ─────────────────────────────────────────────────
+
+    /** Linux'ta screen kullanılacak mı? */
+    _useScreen() {
+        if (process.platform === 'win32') return false;
+        try { execSync('which screen', { stdio: 'ignore' }); return true; } catch { return false; }
+    }
+
+    _isScreenRunning() {
+        try {
+            const out = execSync(`screen -ls 2>/dev/null || true`, { encoding: 'utf8' });
+            return out.includes(SCREEN_NAME);
+        } catch { return false; }
+    }
+
+    _findJavaPid() {
+        try {
+            const serverPath = this.getServerPath();
+            // Önce sunucu yoluna göre ara
+            let result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+            if (!result) {
+                // Fallback: genel java server arama
+                result = execSync(`pgrep -f "java.*nogui" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+            }
+            const pids = result.split('\n').filter(Boolean).map(Number);
+            return pids.length > 0 ? pids[0] : null;
+        } catch { return null; }
+    }
+
+    // ── Panel restart sonrası yeniden bağlanma ────────────────────────────────
+
+    _reconnectIfRunning() {
+        try {
+            if (!this._isScreenRunning()) return;
+            const javaPid = this._findJavaPid();
+            if (!javaPid) return;
+
+            this._javaPid = javaPid;
+            this.status   = 'running';
+            this.addLog('[System] ✅ Panel yeniden başlatıldı — çalışan sunucu tespit edildi, yeniden bağlanıldı.');
+            this.emit('log', '[System] ✅ Panel yeniden başlatıldı — çalışan sunucu tespit edildi.');
+            this.emit('status', this.status);
+            this._startLogTail(true /* tail mevcut dosyanın sonundan */);
+            this._startStatsTracking();
+            this._startStatusWatch();
+        } catch (err) {
+            this.addLog(`[System] Reconnect hatası: ${err.message}`);
+        }
+    }
+
+    // ── Log tail (Linux/screen modu) ──────────────────────────────────────────
+
+    _startLogTail(fromEnd = false) {
+        this._stopLogTail();
+
+        // Log dosyası yoksa oluştur
+        if (!fs.existsSync(LOG_FILE)) {
+            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+        }
+
+        // -n 0: sadece yeni satırları oku (reconnect için) | -n +1: baştan oku
+        const nArg = fromEnd ? '0' : '+1';
+        this._tailProcess = spawn('tail', [`-n`, nArg, '-f', LOG_FILE], {
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+
+        let buffer = '';
+        this._tailProcess.stdout.on('data', (data) => {
+            buffer += data.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // tamamlanmamış satır
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                this.addLog(line);
+                this.emit('log', line);
+                this._parseLine(line);
+            }
+        });
+
+        this._tailProcess.on('close', () => { this._tailProcess = null; });
+    }
+
+    _stopLogTail() {
+        if (this._tailProcess) {
+            try { this._tailProcess.kill(); } catch { /* ignore */ }
+            this._tailProcess = null;
+        }
+    }
+
+    // ── Satır analizi (her iki modda ortak) ──────────────────────────────────
+
+    _parseLine(line) {
+        const lower = line.toLowerCase();
+
+        // Başarılı başlatma
+        if ((line.includes('Done (') && line.includes(')!')) ||
+            lower.includes('server started') ||
+            lower.includes('started in ') ||
+            lower.includes('thread/info]: done')) {
+            if (this.status !== 'running') {
+                this.status = 'running';
+                this.emit('status', this.status);
+                if (this._useScreen()) this._javaPid = this._findJavaPid();
+            }
+        }
+
+        // Otomatik onaylar
+        if (lower.includes("type 'i agree'")) {
+            this.addLog("[System] Otomatik kurulum onayı gönderildi.");
+            this.sendCommand('I agree');
+        }
+        if (lower.includes("eula=true") || lower.includes("accept the eula")) {
+            this.addLog("[System] Otomatik EULA onayı gönderildi.");
+            this.sendCommand('true');
+            this.sendCommand('I agree');
+        }
+
+        // Oyuncu giriş/çıkış
+        const joinMatch = line.match(/(\w+) joined the game/);
+        if (joinMatch && !this.players.includes(joinMatch[1])) {
+            this.players.push(joinMatch[1]);
+            this.emit('players', this.players);
+        }
+        const leaveMatch = line.match(/(\w+) left the game/);
+        if (leaveMatch) {
+            this.players = this.players.filter(p => p !== leaveMatch[1]);
+            this.emit('players', this.players);
+        }
+    }
+
+    // ── Java process izleyici (screen modu) ──────────────────────────────────
+
+    _startStatusWatch() {
+        this._stopStatusWatch();
+        this._statusCheckInterval = setInterval(() => {
+            if (this.status === 'stopped') {
+                this._stopStatusWatch();
+                return;
+            }
+            const javaPid = this._findJavaPid();
+            if (!javaPid && (this.status === 'running' || this.status === 'starting')) {
+                this._onServerExited();
+            } else if (javaPid) {
+                this._javaPid = javaPid;
+            }
+        }, 5000);
+    }
+
+    _stopStatusWatch() {
+        if (this._statusCheckInterval) {
+            clearInterval(this._statusCheckInterval);
+            this._statusCheckInterval = null;
+        }
+    }
+
+    _onServerExited() {
+        const wasRunning  = this.status === 'running' || this.status === 'starting';
+        const wasStopping = this.status === 'stopping';
+
+        this.status       = 'stopped';
+        this.players      = [];
+        this._javaPid     = null;
+        this.processStats = { cpuPercent: 0, memoryMB: 0 };
+
+        this._stopStatsTracking();
+        this._stopStatusWatch();
+        this._stopLogTail();
+
+        this.emit('status', this.status);
+        this.emit('log', '[System] Sunucu kapandı.');
+
+        if (wasRunning && !wasStopping) {
+            this._handleCrash(-1);
+        }
+    }
+
+    /** Çöküm tespiti ve oto-başlatma — her iki platformdan çağrılır */
+    _handleCrash(exitCode) {
+        const now = Date.now();
+        if (now - this._crashWindowStart > 300000) {
+            this._crashCount = 0;
+            this._crashWindowStart = now;
+        }
+        this._crashCount = (this._crashCount || 0) + 1;
+
+        let autoRestartEnabled = true;
+        try {
+            const db = getDb();
+            const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
+            autoRestartEnabled = !setting || setting.value === '1';
+            db.prepare('INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)')
+                .run(exitCode ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
+        } catch { /* ignore */ }
+
+        const MAX_CRASHES = 5;
+        if (this._crashCount >= MAX_CRASHES) {
+            this.addLog(`[System] 🔴 Son 5 dakikada ${this._crashCount} çöküm! Otomatik başlatma durduruldu.`);
+            this.emit('log', `[System] 🔴 Çok fazla çöküm (${this._crashCount}x). Otomatik başlatma durduruldu.`);
+            this.emit('crash', { code: exitCode, timestamp: now, autoRestarted: false, crashCount: this._crashCount, reason: 'max_crashes' });
+            return;
+        }
+
+        this.addLog(`[System] ⚠️ Sunucu çöktü (exit code: ${exitCode}, çöküm #${this._crashCount})`);
+        this.emit('crash', { code: exitCode, timestamp: now, autoRestarted: autoRestartEnabled, crashCount: this._crashCount });
+
+        try {
+            const notificationService = require('./notificationService');
+            notificationService.send('server_crash', `Sunucu çöktü (exit code: ${exitCode}). ${autoRestartEnabled ? 'Otomatik yeniden başlatma yapılıyor...' : 'Otomatik başlatma kapalı.'}`);
+        } catch { /* ignore */ }
+
+        if (autoRestartEnabled) {
+            this.addLog('[System] 🔄 10 saniye sonra otomatik yeniden başlatılıyor...');
+            this.emit('log', '[System] 🔄 Otomatik yeniden başlatma 10sn içinde...');
+            setTimeout(() => {
+                if (this.status === 'stopped') {
+                    try { this.start(); }
+                    catch (err) { this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`); }
+                }
+            }, 10000);
+        } else {
+            this.emit('log', '[System] ⚠️ Otomatik başlatma kapalı, manuel başlatma gerekiyor.');
+        }
+    }
+
+    // ── Temel metodlar ───────────────────────────────────────────────────────
+
     getServerPath() {
-        // Aktif profil varsa onun yolunu kullan
         try {
             const db = getDb();
             const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
-            if (active?.install_path && fs.existsSync(active.install_path)) {
-                return active.install_path;
-            }
+            if (active?.install_path && fs.existsSync(active.install_path)) return active.install_path;
         } catch { /* fallback */ }
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
@@ -43,32 +279,26 @@ class MinecraftService extends EventEmitter {
         const target = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(profileId);
         if (!target) throw new Error('Profil bulunamadı');
 
-        // Sunucu açıksa kapat (process tree dahil)
-        if (this.status === 'running' || this.process) {
+        if (this.status === 'running' || this.process || this._javaPid) {
             this.addLog('[Profil] Sunucu kapatılıyor (save-all)...');
             try { this.sendCommand('save-all'); } catch { /* ignore */ }
             await new Promise(r => setTimeout(r, 3000));
             try { this.sendCommand('stop'); } catch { /* ignore */ }
-            // Sunucu kapanmasını bekle (max 15sn, sonra tree kill)
             await new Promise((resolve) => {
                 const check = setInterval(() => {
-                    if (!this.process) { clearInterval(check); resolve(); }
+                    if (this.status === 'stopped') { clearInterval(check); resolve(); }
                 }, 500);
                 setTimeout(() => {
                     clearInterval(check);
-                    if (this.process) {
-                        this._killProcessTree(this.process.pid);
-                    }
+                    this._forceKill();
                     setTimeout(resolve, 2000);
                 }, 15000);
             });
         }
 
-        // Tüm profilleri pasif yap, hedefi aktif yap
         db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
         db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(profileId);
 
-        // Port ayarını uygula
         if (target.server_port && target.install_path) {
             const propsPath = path.join(target.install_path, 'server.properties');
             if (fs.existsSync(propsPath)) {
@@ -92,14 +322,248 @@ class MinecraftService extends EventEmitter {
             status: this.status,
             players: this.players,
             playerCount: this.players.length,
-            pid: this.process ? this.process.pid : null,
+            pid: this._javaPid || (this.process ? this.process.pid : null),
             processStats: this.processStats,
         };
     }
 
-    /**
-     * Başlatma script'ini otomatik tespit et
-     */
+    // ── start() ──────────────────────────────────────────────────────────────
+
+    start() {
+        if (this.status === 'running' || this.status === 'starting') {
+            throw new Error('Sunucu zaten çalışıyor');
+        }
+
+        const serverPath = this.getServerPath();
+        this._acceptEula(serverPath);
+
+        const scriptInfo = this._detectStartScript(serverPath);
+        const cwd = (scriptInfo && scriptInfo.cwd) || serverPath;
+
+        if (this._useScreen()) {
+            // ── Linux: screen içinde başlat ──────────────────────────────
+            let runCmd;
+            if (scriptInfo) {
+                const ext = path.extname(scriptInfo.script).toLowerCase();
+                try { execSync(`chmod +x "${scriptInfo.scriptPath}"`, { stdio: 'ignore' }); } catch { /* ignore */ }
+                runCmd = ext === '.bat'
+                    ? `bash "${scriptInfo.scriptPath}"`
+                    : `bash "${scriptInfo.scriptPath}"`;
+            } else {
+                const db = getDb();
+                const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+                const maxRam = (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
+                const minRam = (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
+                const jvmArgs = (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
+                const jvmStr = jvmArgs || `-Xmx${maxRam} -Xms${minRam}`;
+                runCmd = `java ${jvmStr} -jar server.jar nogui`;
+            }
+
+            // Log dosyasını temizle
+            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+
+            // Eski screen'i temizle
+            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+            try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
+
+            // Screen başlat — çıktıyı log dosyasına yönlendir
+            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${LOG_FILE}'`;
+            execSync(`screen -dmS ${SCREEN_NAME} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
+
+            this.addLog(`[System] Sunucu başlatılıyor (screen: ${SCREEN_NAME})`);
+            this.status = 'starting';
+            this.emit('status', this.status);
+
+            // Log tail'i biraz bekleyerek başlat (screen başlasın)
+            setTimeout(() => this._startLogTail(false), 1200);
+            this._startStatsTracking();
+            this._startStatusWatch();
+
+        } else {
+            // ── Windows: doğrudan spawn (eski yöntem) ───────────────────
+            let cmd, args;
+            if (scriptInfo) {
+                const ext = path.extname(scriptInfo.script).toLowerCase();
+                if (ext === '.bat') { cmd = 'cmd'; args = ['/c', scriptInfo.scriptPath]; }
+                else if (ext === '.ps1') { cmd = 'powershell'; args = ['-ExecutionPolicy', 'Bypass', '-File', scriptInfo.scriptPath]; }
+                else { try { fs.chmodSync(scriptInfo.scriptPath, '755'); } catch { /* ignore */ } cmd = 'bash'; args = [scriptInfo.scriptPath]; }
+                this.addLog(`[System] Script ile başlatılıyor: ${scriptInfo.script}`);
+            } else {
+                const db = getDb();
+                const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+                const maxRam = (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
+                const minRam = (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
+                const jvmArgs = (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
+                cmd = 'java'; args = [];
+                if (jvmArgs) { args.push(...jvmArgs.split(' ').filter(a => a)); }
+                else { args.push(`-Xmx${maxRam}`, `-Xms${minRam}`); }
+                args.push('-jar', this.getServerJar(), 'nogui');
+            }
+
+            this.process = spawn(cmd, args, {
+                cwd,
+                stdio: ['pipe', 'pipe', 'pipe'],
+            });
+
+            this.status = 'starting';
+            this.emit('status', this.status);
+            this._startStatsTracking();
+
+            let stdoutBuf = '', stderrBuf = '';
+            this.process.stdout.on('data', (data) => {
+                stdoutBuf += data.toString();
+                const lines = stdoutBuf.split('\n'); stdoutBuf = lines.pop();
+                for (let line of lines) {
+                    line = line.trim(); if (!line) continue;
+                    this.addLog(line); this.emit('log', line); this._parseLine(line);
+                }
+            });
+            this.process.stderr.on('data', (data) => {
+                stderrBuf += data.toString();
+                const lines = stderrBuf.split('\n'); stderrBuf = lines.pop();
+                for (let line of lines) {
+                    line = line.trim(); if (!line) continue;
+                    this.addLog(`[STDERR] ${line}`); this.emit('log', `[STDERR] ${line}`);
+                }
+            });
+            this.process.on('close', (code) => {
+                const wasRunning  = this.status === 'running' || this.status === 'starting';
+                const wasStopping = this.status === 'stopping';
+                this.status = 'stopped';
+                this.players = [];
+                this.process = null;
+                this.processStats = { cpuPercent: 0, memoryMB: 0 };
+                this._stopStatsTracking();
+                this.emit('status', this.status);
+                this.emit('log', `[System] Sunucu kapandı (exit code: ${code})`);
+                // Crash: çalışırken beklenmedik kapanma
+                if (wasRunning && !wasStopping && code !== 0) {
+                    this._handleCrash(code);
+                }
+            });
+            this.process.on('error', (err) => {
+                this.status = 'error'; this.emit('status', this.status);
+                this.emit('log', `[Error] ${err.message}`);
+            });
+        }
+    }
+
+    // ── stop() ───────────────────────────────────────────────────────────────
+
+    stop() {
+        if (this.status === 'stopped') throw new Error('Sunucu zaten durmuş');
+
+        this.status = 'stopping';
+        this.emit('status', this.status);
+        this.addLog('[System] Sunucu kapatılıyor...');
+
+        try { this.sendCommand('stop'); } catch { /* ignore */ }
+
+        // 15sn sonra zorla kapat
+        setTimeout(() => {
+            if (this.status === 'stopping') {
+                this.addLog('[System] Graceful shutdown yanıt vermedi, zorla kapatılıyor...');
+                this._forceKill();
+            }
+        }, 15000);
+    }
+
+    _forceKill() {
+        if (this._useScreen()) {
+            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+            if (this._javaPid) {
+                try { process.kill(this._javaPid, 'SIGKILL'); } catch { /* ignore */ }
+            }
+        } else {
+            this._killProcessTree(this.process?.pid);
+        }
+        // Durumu temizle
+        this._onServerExited && setTimeout(() => {
+            if (this.status === 'stopping') this._onServerExited();
+        }, 1000);
+    }
+
+    _killProcessTree(pid) {
+        if (!pid) return;
+        try {
+            if (process.platform === 'win32') {
+                execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+            } else {
+                try { process.kill(-pid, 'SIGKILL'); } catch {
+                    try { execSync(`pkill -KILL -P ${pid}`, { stdio: 'ignore' }); } catch { /* ignore */ }
+                    try { process.kill(pid, 'SIGKILL'); } catch { /* ignore */ }
+                }
+            }
+            this.addLog('[System] Process sonlandırıldı');
+        } catch (err) {
+            this.addLog(`[System] Kill hatası: ${err.message}`);
+        }
+    }
+
+    // ── restart() ────────────────────────────────────────────────────────────
+
+    restart() {
+        return new Promise((resolve, reject) => {
+            if (this.status === 'stopped') {
+                try { this.start(); resolve(); } catch (err) { reject(err); }
+                return;
+            }
+            this.once('status', (status) => {
+                if (status === 'stopped') {
+                    setTimeout(() => {
+                        try { this.start(); resolve(); } catch (err) { reject(err); }
+                    }, 2000);
+                }
+            });
+            this.stop();
+        });
+    }
+
+    // ── sendCommand() ─────────────────────────────────────────────────────────
+
+    sendCommand(command) {
+        const isActive = this.status === 'running' || this.status === 'starting' || this.status === 'stopping';
+        if (!isActive) throw new Error('Sunucu çalışmıyor');
+
+        this.addLog(`> ${command}`);
+        this.emit('log', `> ${command}`);
+
+        if (this._useScreen()) {
+            const escaped = command.replace(/'/g, "'\\''");
+            execSync(`screen -S ${SCREEN_NAME} -X stuff '${escaped}\r'`, { timeout: 3000 });
+        } else {
+            if (this.process?.stdin) {
+                this.process.stdin.write(command + '\n');
+            }
+        }
+    }
+
+    // ── Stats takibi ─────────────────────────────────────────────────────────
+
+    _startStatsTracking() {
+        this._stopStatsTracking();
+        const systemService = require('./systemService');
+
+        this._statsInterval = setInterval(async () => {
+            try {
+                const pid = this._javaPid || this.process?.pid;
+                if (!pid) return;
+                const processes = await systemService.getProcesses();
+                const matched = processes.find(p => p.pid === pid);
+                if (matched) {
+                    this.processStats.cpuPercent = +(matched.treeCpu).toFixed(1);
+                    this.processStats.memoryMB   = Math.round(matched.treeMem);
+                }
+            } catch { /* ignore */ }
+        }, 5000);
+    }
+
+    _stopStatsTracking() {
+        if (this._statsInterval) { clearInterval(this._statsInterval); this._statsInterval = null; }
+    }
+
+    // ── Yardımcı metodlar ─────────────────────────────────────────────────────
+
     _detectStartScript(serverPath) {
         const scriptPriority = process.platform === 'win32'
             ? ['run.bat', 'start.bat', 'startserver.bat', 'ServerStart.bat', 'run.ps1', 'start.ps1']
@@ -107,35 +571,24 @@ class MinecraftService extends EventEmitter {
 
         for (const script of scriptPriority) {
             const scriptPath = path.join(serverPath, script);
-            if (fs.existsSync(scriptPath)) {
-                return { scriptPath, script };
-            }
+            if (fs.existsSync(scriptPath)) return { scriptPath, script };
         }
-
-        // Alt klasörlerde de ara
         try {
             const dirs = fs.readdirSync(serverPath).filter(d => {
                 const full = path.join(serverPath, d);
                 return fs.statSync(full).isDirectory() && !d.startsWith('.');
             });
-
             for (const dir of dirs) {
                 const subDir = path.join(serverPath, dir);
                 for (const script of scriptPriority) {
                     const scriptPath = path.join(subDir, script);
-                    if (fs.existsSync(scriptPath)) {
-                        return { scriptPath, script, cwd: subDir };
-                    }
+                    if (fs.existsSync(scriptPath)) return { scriptPath, script, cwd: subDir };
                 }
             }
         } catch { /* ignore */ }
-
         return null;
     }
 
-    /**
-     * Mod loader'ı JAR dosyalarından tespit et
-     */
     detectModLoader(serverPath) {
         const sPath = serverPath || this.getServerPath();
         try {
@@ -151,13 +604,8 @@ class MinecraftService extends EventEmitter {
         return 'forge';
     }
 
-    /**
-     * MC versiyonunu tespit et
-     */
     detectMinecraftVersion(serverPath) {
         const sPath = serverPath || this.getServerPath();
-
-        // version.json'dan
         const versionFile = path.join(sPath, 'version.json');
         if (fs.existsSync(versionFile)) {
             try {
@@ -166,8 +614,6 @@ class MinecraftService extends EventEmitter {
                 if (ver) return ver;
             } catch { /* ignore */ }
         }
-
-        // JAR dosya isimlerinden
         try {
             const jars = fs.readdirSync(sPath).filter(f => f.endsWith('.jar'));
             for (const jar of jars) {
@@ -175,343 +621,14 @@ class MinecraftService extends EventEmitter {
                 if (match) return match[1];
             }
         } catch { /* ignore */ }
-
         return '1.20.1';
     }
 
-    start() {
-        if (this.status === 'running') {
-            throw new Error('Sunucu zaten çalışıyor');
-        }
-
-        const serverPath = this.getServerPath();
-
-        // EULA otomatik kabul
-        this._acceptEula(serverPath);
-
-        // Başlatma script tespiti
-        const scriptInfo = this._detectStartScript(serverPath);
-        const cwd = (scriptInfo && scriptInfo.cwd) || serverPath;
-
-        let cmd, args;
-
-        if (scriptInfo) {
-            // Script ile başlat
-            const ext = path.extname(scriptInfo.script).toLowerCase();
-            if (ext === '.bat') {
-                cmd = 'cmd';
-                args = ['/c', scriptInfo.scriptPath];
-            } else if (ext === '.ps1') {
-                cmd = 'powershell';
-                args = ['-ExecutionPolicy', 'Bypass', '-File', scriptInfo.scriptPath];
-            } else {
-                // .sh
-                // Make executable
-                try { fs.chmodSync(scriptInfo.scriptPath, '755'); } catch { /* ignore */ }
-                cmd = 'bash';
-                args = [scriptInfo.scriptPath];
-            }
-            this.addLog(`[System] Script ile başlatılıyor: ${scriptInfo.script}`);
-        } else {
-            // Fallback: java -jar
-            const serverJar = this.getServerJar();
-            const jarPath = path.join(serverPath, serverJar);
-
-            if (!fs.existsSync(jarPath)) {
-                // Herhangi bir JAR ara
-                const jars = fs.readdirSync(serverPath).filter(f =>
-                    f.endsWith('.jar') && !f.toLowerCase().includes('installer')
-                );
-                if (jars.length === 0) {
-                    throw new Error(`Server JAR bulunamadı: ${serverPath}`);
-                }
-            }
-
-            const db = require('./db').getDb();
-            const activePack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
-
-            const maxRam = (activePack && activePack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
-            const minRam = (activePack && activePack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
-            const jvmArgs = (activePack && activePack.jvm_args) || process.env.JVM_ARGS || '';
-
-            cmd = 'java';
-            args = [];
-
-            // JVM argümanları
-            if (jvmArgs) {
-                args.push(...jvmArgs.split(' ').filter(a => a));
-            } else {
-                args.push(`-Xmx${maxRam}`, `-Xms${minRam}`);
-            }
-
-            args.push('-jar', this.getServerJar(), 'nogui');
-            this.addLog(`[System] Java ile başlatılıyor: java ${args.join(' ')}`);
-        }
-
-        this.process = spawn(cmd, args, {
-            cwd: cwd,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            detached: process.platform !== 'win32', // Linux'ta process group oluştur
-        });
-
-        this.status = 'starting';
-        this.emit('status', this.status);
-
-        // Process stats takibi başlat
-        this._startStatsTracking();
-
-        let stdoutBuffer = '';
-        this.process.stdout.on('data', (data) => {
-            stdoutBuffer += data.toString();
-            let lines = stdoutBuffer.split('\n');
-            stdoutBuffer = lines.pop(); // Son elemanı buffer'da tut (tamamlanmamış satır olabilir)
-
-            for (let line of lines) {
-                line = line.trim();
-                if (!line) continue;
-                this.addLog(line);
-                this.emit('log', line);
-
-                const lowerLine = line.toLowerCase();
-
-                // Başarılı başlatma tespiti
-                if ((line.includes('Done (') && line.includes(')!')) ||
-                    lowerLine.includes('server started') ||
-                    lowerLine.includes('started in ') ||
-                    lowerLine.includes('thread/info]: done')) {
-                    if (this.status !== 'running') {
-                        this.status = 'running';
-                        this.emit('status', this.status);
-                    }
-                }
-
-                // ServerPackCreator, eula veya Jabba kurulumu gibi onay isteklerini yakala
-                if (lowerLine.includes("type 'i agree'")) {
-                    this.addLog("[System] Otomatik kurulum onayı (I agree) gönderildi.");
-                    this.sendCommand('I agree');
-                }
-                if (lowerLine.includes("eula=true") || lowerLine.includes("accept the eula")) {
-                    this.addLog("[System] Otomatik EULA onayı gönderildi.");
-                    this.sendCommand('true');
-                    this.sendCommand('I agree');
-                }
-
-                const joinMatch = line.match(/(\w+) joined the game/);
-                if (joinMatch && !this.players.includes(joinMatch[1])) {
-                    this.players.push(joinMatch[1]);
-                    this.emit('players', this.players);
-                }
-
-                const leaveMatch = line.match(/(\w+) left the game/);
-                if (leaveMatch) {
-                    this.players = this.players.filter(p => p !== leaveMatch[1]);
-                    this.emit('players', this.players);
-                }
-            }
-        });
-
-        let stderrBuffer = '';
-        this.process.stderr.on('data', (data) => {
-            stderrBuffer += data.toString();
-            let lines = stderrBuffer.split('\n');
-            stderrBuffer = lines.pop(); // tamamlanmamış satır
-            for (let line of lines) {
-                line = line.trim();
-                if (!line) continue;
-                this.addLog(`[STDERR] ${line}`);
-                this.emit('log', `[STDERR] ${line}`);
-            }
-        });
-
-        this.process.on('close', (code) => {
-            const wasRunning = this.status === 'running' || this.status === 'starting';
-            const wasStopping = this.status === 'stopping';
-            this.status = 'stopped';
-            this.players = [];
-            this.process = null;
-            this.processStats = { cpuPercent: 0, memoryMB: 0 };
-            this._stopStatsTracking();
-            this.emit('status', this.status);
-            this.emit('log', `[System] Sunucu kapandı (exit code: ${code})`);
-
-            // ── Çöküm tespiti ─────────────────────────────────────────────
-            if (wasRunning && !wasStopping && code !== 0) {
-                // Çöküm sayacını güncelle (5 dakikalık pencere)
-                const now = Date.now();
-                if (now - this._crashWindowStart > 300000) {
-                    this._crashCount = 0;
-                    this._crashWindowStart = now;
-                }
-                this._crashCount = (this._crashCount || 0) + 1;
-
-                // Auto-restart ayarını DB'den oku
-                let autoRestartEnabled = true;
-                try {
-                    const { getDb } = require('../db/database');
-                    const db = getDb();
-                    const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
-                    autoRestartEnabled = !setting || setting.value === '1';
-
-                    // Çöküm kaydını DB'ye yaz
-                    db.prepare(`INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)`)
-                        .run(code ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
-                } catch { /* ignore */ }
-
-                // Arka arkaya çok fazla çöküm varsa durdur
-                const MAX_CRASHES = 5;
-                if (this._crashCount >= MAX_CRASHES) {
-                    this.addLog(`[System] 🔴 Son 5 dakikada ${this._crashCount} çöküm! Otomatik yeniden başlatma devre dışı bırakıldı.`);
-                    this.emit('log', `[System] 🔴 Çok fazla çöküm (${this._crashCount}x). Otomatik başlatma durduruldu.`);
-                    this.emit('crash', { code, timestamp: now, autoRestarted: false, crashCount: this._crashCount, reason: 'max_crashes' });
-                    return;
-                }
-
-                this.addLog(`[System] ⚠️ Sunucu çöktü (exit code: ${code}, çöküm #${this._crashCount})`);
-                this.emit('crash', { code, timestamp: now, autoRestarted: autoRestartEnabled, crashCount: this._crashCount });
-
-                // Discord bildirim gönder
-                try {
-                    const notificationService = require('./notificationService');
-                    notificationService.send('server_crash', `Sunucu çöktü (exit code: ${code}). ${autoRestartEnabled ? 'Otomatik yeniden başlatma yapılıyor...' : 'Otomatik başlatma kapalı.'}`);
-                } catch { /* ignore */ }
-
-                if (autoRestartEnabled) {
-                    this.addLog('[System] 🔄 10 saniye sonra otomatik yeniden başlatılıyor...');
-                    this.emit('log', '[System] 🔄 Otomatik yeniden başlatma 10sn içinde...');
-                    setTimeout(() => {
-                        if (this.status === 'stopped') {
-                            try {
-                                this.addLog('[System] Otomatik yeniden başlatma başlatılıyor...');
-                                this.start();
-                            } catch (err) {
-                                this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`);
-                            }
-                        }
-                    }, 10000);
-                } else {
-                    this.emit('log', '[System] ⚠️ Sunucu çöktü. Otomatik başlatma kapalı, manuel başlatma gerekiyor.');
-                }
-            }
-        });
-
-        this.process.on('error', (err) => {
-            this.status = 'error';
-            this.emit('status', this.status);
-            this.emit('log', `[Error] ${err.message}`);
-        });
-    }
-
-    stop() {
-        if (!this.process || this.status === 'stopped') {
-            throw new Error('Sunucu zaten durmuş');
-        }
-
-        this.status = 'stopping';
-        this.emit('status', this.status);
-        this.addLog('[System] Sunucu kapatılıyor...');
-
-        // Önce graceful stop komutu gönder (save yapması için)
-        try {
-            this.sendCommand('stop');
-        } catch { /* stdin kapalı olabilir */ }
-
-        // 15sn sonra hâlâ kapanmamışsa tüm process ağacını öldür
-        // (Bu, run.sh/run.bat gibi wrapper script döngülerini de durdurur)
-        setTimeout(() => {
-            if (this.process) {
-                this.addLog('[System] Graceful shutdown yanıt vermedi, process tree kill ediliyor...');
-                this._killProcessTree(this.process.pid);
-            }
-        }, 15000);
-    }
-
-    /**
-     * Process ağacının tamamını öldür (wrapper script + Java + child processes)
-     * Bu fonksiyon olmadan run.sh/run.bat gibi auto-restart döngüleri
-     * Java kapandıktan sonra yeni bir process başlatır.
-     */
-    _killProcessTree(pid) {
-        if (!pid) return;
-
-        try {
-            if (process.platform === 'win32') {
-                // Windows: taskkill /T (tree) /F (force)
-                const { execSync } = require('child_process');
-                execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
-            } else {
-                // Linux/macOS: Negatif PID ile process group'u öldür
-                try {
-                    process.kill(-pid, 'SIGKILL');
-                } catch {
-                    // Process group yoksa tek process'i öldür
-                    try {
-                        const { execSync } = require('child_process');
-                        // pkill ile child process'leri de öldür
-                        execSync(`pkill -KILL -P ${pid}`, { stdio: 'ignore' });
-                    } catch { /* ignore */ }
-                    try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
-                }
-            }
-            this.addLog('[System] Process tree sonlandırıldı');
-        } catch (err) {
-            this.addLog(`[System] Process tree kill hatası: ${err.message}`);
-            // Son çare: doğrudan process.kill
-            try { this.process?.kill('SIGKILL'); } catch { /* ignore */ }
-        }
-    }
-
-    restart() {
-        return new Promise((resolve, reject) => {
-            if (this.status === 'stopped') {
-                try {
-                    this.start();
-                    resolve();
-                } catch (err) {
-                    reject(err);
-                }
-                return;
-            }
-
-            this.once('status', (status) => {
-                if (status === 'stopped') {
-                    setTimeout(() => {
-                        try {
-                            this.start();
-                            resolve();
-                        } catch (err) {
-                            reject(err);
-                        }
-                    }, 2000);
-                }
-            });
-
-            this.stop();
-        });
-    }
-
-    sendCommand(command) {
-        if (!this.process || (this.status !== 'running' && this.status !== 'starting' && this.status !== 'stopping')) {
-            throw new Error('Sunucu çalışmıyor');
-        }
-
-        this.process.stdin.write(command + '\n');
-        this.addLog(`> ${command}`);
-        this.emit('log', `> ${command}`);
-    }
-
-    /**
-     * Sunucu onarımı - bozuk kütüphaneleri sil
-     */
     repair() {
-        if (this.status !== 'stopped') {
-            throw new Error('Onarım için sunucu durdurulmalı');
-        }
-
+        if (this.status !== 'stopped') throw new Error('Onarım için sunucu durdurulmalı');
         const serverPath = this.getServerPath();
         const targets = ['libraries', 'versions', 'installer.log', 'installer.log.1'];
         const deleted = [];
-
-        // Ana dizin ve alt dizinlerde ara
         const searchDirs = [serverPath];
         try {
             const dirs = fs.readdirSync(serverPath).filter(d => {
@@ -520,111 +637,50 @@ class MinecraftService extends EventEmitter {
             });
             searchDirs.push(...dirs.map(d => path.join(serverPath, d)));
         } catch { /* ignore */ }
-
         for (const dir of searchDirs) {
             for (const target of targets) {
-                const targetPath = path.join(dir, target);
+                const p = path.join(dir, target);
                 try {
-                    if (fs.existsSync(targetPath)) {
-                        const stat = fs.statSync(targetPath);
-                        if (stat.isDirectory()) {
-                            fs.rmSync(targetPath, { recursive: true, force: true });
-                        } else {
-                            fs.unlinkSync(targetPath);
-                        }
+                    if (fs.existsSync(p)) {
+                        const stat = fs.statSync(p);
+                        if (stat.isDirectory()) fs.rmSync(p, { recursive: true, force: true });
+                        else fs.unlinkSync(p);
                         deleted.push(target);
                     }
                 } catch { /* ignore */ }
             }
         }
-
-        if (deleted.length === 0) {
-            return { message: 'Onarılacak dosya bulunamadı.' };
-        }
-
+        if (deleted.length === 0) return { message: 'Onarılacak dosya bulunamadı.' };
         return { message: `Temizlenen dosyalar: ${deleted.join(', ')}. Sunucuyu tekrar başlatın.` };
     }
 
-    /**
-     * EULA otomatik kabul
-     */
     _acceptEula(serverPath) {
         const eulaPath = path.join(serverPath, 'eula.txt');
-        fs.writeFileSync(eulaPath, 'eula=true\n');
-
-        // Alt klasörlerde de oluştur
+        try { fs.writeFileSync(eulaPath, 'eula=true\n'); } catch { /* ignore */ }
         try {
             const dirs = fs.readdirSync(serverPath).filter(d => {
                 const full = path.join(serverPath, d);
                 return fs.statSync(full).isDirectory() && !d.startsWith('.');
             });
-
             for (const dir of dirs) {
-                const subDirPath = path.join(serverPath, dir);
-                const hasMods = fs.existsSync(path.join(subDirPath, 'mods'));
-                const hasScript = ['run.sh', 'startserver.sh', 'start.sh'].some(s =>
-                    fs.existsSync(path.join(subDirPath, s))
-                );
-                if (hasMods || hasScript) {
-                    fs.writeFileSync(path.join(subDirPath, 'eula.txt'), 'eula=true\n');
-                }
+                const sub = path.join(serverPath, dir);
+                const hasMods = fs.existsSync(path.join(sub, 'mods'));
+                const hasScript = ['run.sh', 'startserver.sh', 'start.sh'].some(s => fs.existsSync(path.join(sub, s)));
+                if (hasMods || hasScript) fs.writeFileSync(path.join(sub, 'eula.txt'), 'eula=true\n');
             }
         } catch { /* ignore */ }
     }
 
-    /**
-     * Process CPU/RAM izleme
-     */
-    _startStatsTracking() {
-        this._stopStatsTracking();
-        const systemService = require('./systemService');
-
-        this._statsInterval = setInterval(async () => {
-            if (!this.process || !this.process.pid) return;
-            try {
-                // Merkezi, ortak fonksiyon olan getProcesses kullan (tüm listeyi getir)
-                // pidusage linux tarafında wrapper scriptin pidini okuyup java'yı es geçiyor (cpu:0, ram:0)
-                const processes = await systemService.getProcesses();
-                const matchedProc = processes.find(p => p.pid === this.process.pid);
-
-                if (matchedProc) {
-                    // Tree values (Parent + Child alt java işlemi gibi) toplam RAM & CPU sunar.
-                    this.processStats.cpuPercent = +(matchedProc.treeCpu).toFixed(1);
-                    this.processStats.memoryMB = Math.round(matchedProc.treeMem);
-                } else {
-                    // Bulunamadıysa mevcutı koru veya kapatma durumunu hisset
-                }
-            } catch (err) {
-                this.addLog(`[System] Process stats okunamadı: ${err.message}`);
-            }
-        }, 5000);
-    }
-
-    _stopStatsTracking() {
-        if (this._statsInterval) {
-            clearInterval(this._statsInterval);
-            this._statsInterval = null;
-        }
-    }
-
     addLog(line) {
-        this.logs.push({
-            time: new Date().toISOString(),
-            message: line,
-        });
-        if (this.logs.length > this.maxLogLines) {
-            this.logs = this.logs.slice(-this.maxLogLines);
-        }
+        this.logs.push({ time: new Date().toISOString(), message: line });
+        if (this.logs.length > this.maxLogLines) this.logs = this.logs.slice(-this.maxLogLines);
     }
 
-    getRecentLogs(count = 100) {
-        return this.logs.slice(-count);
-    }
+    getRecentLogs(count = 100) { return this.logs.slice(-count); }
 
     getProperties() {
         const propsPath = path.join(this.getServerPath(), 'server.properties');
         if (!fs.existsSync(propsPath)) return {};
-
         const content = fs.readFileSync(propsPath, 'utf-8');
         const properties = {};
         content.split('\n').forEach(line => {
@@ -640,10 +696,9 @@ class MinecraftService extends EventEmitter {
     setProperties(newProps) {
         const propsPath = path.join(this.getServerPath(), 'server.properties');
         if (!fs.existsSync(propsPath)) throw new Error('server.properties bulunamadı');
-
         const content = fs.readFileSync(propsPath, 'utf-8');
         const lines = content.split('\n');
-        const updatedLines = lines.map(line => {
+        const updated = lines.map(line => {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#')) return line;
             const eqIndex = trimmed.indexOf('=');
@@ -652,7 +707,7 @@ class MinecraftService extends EventEmitter {
             if (key in newProps) return `${key}=${newProps[key]}`;
             return line;
         });
-        fs.writeFileSync(propsPath, updatedLines.join('\n'), 'utf-8');
+        fs.writeFileSync(propsPath, updated.join('\n'), 'utf-8');
     }
 }
 
