@@ -19,6 +19,8 @@ import SchedulerPage from '@/pages/SchedulerPage';
 import TerminalPage from '@/pages/TerminalPage';
 import DiscordPage from '@/pages/DiscordPage';
 import AutomationPage from '@/pages/AutomationPage';
+import PerformancePage from '@/pages/PerformancePage';
+import PlayersPage from '@/pages/PlayersPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,10 +101,11 @@ function App() {
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="discord" element={<DiscordPage />} />
                   <Route path="automation" element={<AutomationPage />} />
+                  <Route path="performance" element={<PerformancePage />} />
+                  <Route path="players" element={<PlayersPage />} />
                 </Route>
                 {/* Eski URL'ler → yenilere yönlendir */}
                 <Route path="/server" element={<Navigate to="/" replace />} />
-                <Route path="/players" element={<Navigate to="/settings" replace />} />
                 <Route path="/logs" element={<Navigate to="/console" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

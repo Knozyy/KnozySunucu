@@ -19,6 +19,8 @@ class MinecraftService extends EventEmitter {
         this.logs         = [];
         this.maxLogLines  = 500;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
+        this._lastTps = { one: null, five: null, fifteen: null };
+        this._tpsInterval        = null;
         this._statsInterval      = null;
         this._statusCheckInterval = null;
         // Çöküm takibi
@@ -163,16 +165,39 @@ class MinecraftService extends EventEmitter {
             this.sendCommand('I agree');
         }
 
+        // TPS (Paper/Spigot: "TPS from last 1m, 5m, 15m: X.XX, X.XX, X.XX")
+        const tpsMatch = line.match(/TPS from last 1m,\s*5m,\s*15m:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i);
+        if (tpsMatch) {
+            this._lastTps = {
+                one: parseFloat(tpsMatch[1]),
+                five: parseFloat(tpsMatch[2]),
+                fifteen: parseFloat(tpsMatch[3]),
+            };
+        }
+
         // Oyuncu giriş/çıkış
         const joinMatch = line.match(/(\w+) joined the game/);
         if (joinMatch && !this.players.includes(joinMatch[1])) {
             this.players.push(joinMatch[1]);
             this.emit('players', this.players);
+            try {
+                const db = getDb();
+                db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)').run(joinMatch[1], Date.now());
+            } catch { /* ignore */ }
         }
         const leaveMatch = line.match(/(\w+) left the game/);
         if (leaveMatch) {
             this.players = this.players.filter(p => p !== leaveMatch[1]);
             this.emit('players', this.players);
+            try {
+                const db = getDb();
+                const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE username = ? AND left_at IS NULL ORDER BY id DESC LIMIT 1').get(leaveMatch[1]);
+                if (open) {
+                    const now = Date.now();
+                    db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?')
+                        .run(now, Math.round((now - open.joined_at) / 1000), open.id);
+                }
+            } catch { /* ignore */ }
         }
     }
 
@@ -212,6 +237,16 @@ class MinecraftService extends EventEmitter {
         this.players      = [];
         this._javaPid     = null;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
+        this._lastTps     = { one: null, five: null, fifteen: null };
+
+        // Sunucu kapanınca açık oturumları kapat
+        try {
+            const db = getDb();
+            const now = Date.now();
+            const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE left_at IS NULL').all();
+            const stmt = db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?');
+            for (const s of open) stmt.run(now, Math.round((now - s.joined_at) / 1000), s.id);
+        } catch { /* ignore */ }
 
         this._stopStatsTracking();
         this._stopStatusWatch();
@@ -591,10 +626,18 @@ class MinecraftService extends EventEmitter {
                 }
             } catch { /* ignore */ }
         }, 5000);
+
+        // TPS komutunu 30sn'de bir gönder (Paper/Spigot sunucular için)
+        this._tpsInterval = setInterval(() => {
+            if (this.status === 'running') {
+                try { this.sendCommand('tps'); } catch { /* sunucu tps komutunu desteklemeyebilir */ }
+            }
+        }, 30000);
     }
 
     _stopStatsTracking() {
         if (this._statsInterval) { clearInterval(this._statsInterval); this._statsInterval = null; }
+        if (this._tpsInterval)   { clearInterval(this._tpsInterval);   this._tpsInterval = null; }
     }
 
     // ── Yardımcı metodlar ─────────────────────────────────────────────────────

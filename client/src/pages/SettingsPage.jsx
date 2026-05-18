@@ -8,7 +8,8 @@ import {
     HiOutlineCpuChip,
     HiOutlineShieldCheck,
     HiOutlineUserPlus, HiOutlineTrash, HiOutlinePlus, HiOutlinePencil,
-    HiOutlineCheck, HiOutlineTag,
+    HiOutlineCheck, HiOutlineTag, HiOutlineKey, HiOutlineClipboard,
+    HiOutlineEyeSlash, HiOutlineXMark,
 } from 'react-icons/hi2';
 
 // ── Tüm izin verilebilir sayfalar ─────────────────────────────────────────────
@@ -37,6 +38,7 @@ export default function SettingsPage() {
         { id: 'tasks', label: 'Görev Yöneticisi', icon: HiOutlineCpuChip },
         { id: 'users', label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
         { id: 'categories', label: 'İzin Kategorileri', icon: HiOutlineTag },
+        { id: 'tokens', label: 'API Tokenları', icon: HiOutlineKey },
     ];
 
     return (
@@ -62,6 +64,7 @@ export default function SettingsPage() {
             {activeTab === 'tasks' && <TaskManagerPanel />}
             {activeTab === 'users' && <PanelUsersPanel />}
             {activeTab === 'categories' && <CategoriesPanel />}
+            {activeTab === 'tokens' && <ApiTokensPanel />}
         </div>
     );
 }
@@ -617,6 +620,173 @@ function CategoryModal({ initial, onClose, onSaved }) {
                         )}
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// API TOKEN YÖNETİMİ
+// ============================================================
+function ApiTokensPanel() {
+    const qc = useQueryClient();
+    const [showCreate, setShowCreate] = useState(false);
+    const [form, setForm] = useState({ name: '', expiresInDays: '' });
+    const [revealed, setRevealed] = useState(null); // { id, token }
+
+    const { data: tokens = [], isLoading } = useQuery({
+        queryKey: ['api-tokens'],
+        queryFn: () => api.get('/tokens').then(r => r.data),
+    });
+
+    const createMutation = useMutation({
+        mutationFn: (body) => api.post('/tokens', body).then(r => r.data),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['api-tokens'] });
+            setShowCreate(false);
+            setForm({ name: '', expiresInDays: '' });
+            setRevealed({ id: data.id, token: data.token });
+            toast.success('Token oluşturuldu — lütfen şimdi kopyalayın!');
+        },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const revokeMutation = useMutation({
+        mutationFn: (id) => api.delete(`/tokens/${id}`),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['api-tokens'] }); toast.success('Token iptal edildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    function fmtDate(ts) {
+        if (!ts) return '—';
+        return new Date(ts * 1000).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+    function fmtAgo(str) {
+        if (!str) return '—';
+        const d = Math.floor((Date.now() - new Date(str).getTime()) / 86400000);
+        return d === 0 ? 'bugün' : `${d} gün önce`;
+    }
+
+    const copyToken = (token) => {
+        navigator.clipboard.writeText(token).then(() => toast.success('Kopyalandı!'));
+    };
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="flex items-start justify-between">
+                <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Harici araçlar ve scriptler için API erişim tokenları. Token yalnızca oluşturulduğunda gösterilir.</p>
+                </div>
+                <button onClick={() => setShowCreate(v => !v)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 flex-shrink-0 ml-4">
+                    <HiOutlinePlus className="w-4 h-4" /> Yeni Token
+                </button>
+            </div>
+
+            {/* Yeni token formu */}
+            {showCreate && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Yeni API Token</h3>
+                        <button onClick={() => setShowCreate(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <HiOutlineXMark className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">İsim</label>
+                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                                placeholder="örn: Monitoring Script"
+                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Süre (gün, boş = sonsuz)</label>
+                            <input type="number" value={form.expiresInDays} onChange={e => setForm(f => ({ ...f, expiresInDays: e.target.value }))}
+                                placeholder="örn: 30"
+                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                    </div>
+                    <button onClick={() => createMutation.mutate({ name: form.name, expiresInDays: form.expiresInDays ? parseInt(form.expiresInDays) : undefined })}
+                        disabled={!form.name.trim() || createMutation.isPending}
+                        className="w-full py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40">
+                        {createMutation.isPending ? 'Oluşturuluyor...' : 'Oluştur'}
+                    </button>
+                </div>
+            )}
+
+            {/* Token gösterme kutusu — sadece bir kez */}
+            {revealed && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                        <HiOutlineEyeSlash className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-xs font-semibold">Bu tokeni şimdi kopyalayın — bir daha gösterilmeyecek!</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs font-mono bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white break-all">
+                            {revealed.token}
+                        </code>
+                        <button onClick={() => copyToken(revealed.token)}
+                            className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800 flex-shrink-0">
+                            <HiOutlineClipboard className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setRevealed(null)}
+                            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex-shrink-0">
+                            <HiOutlineXMark className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Token listesi */}
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tokenlar</span>
+                    <span className="text-xs text-gray-400">{tokens.filter(t => t.is_active).length} aktif</span>
+                </div>
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                    </div>
+                ) : tokens.length === 0 ? (
+                    <div className="py-10 text-center">
+                        <HiOutlineKey className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                        <p className="text-sm text-gray-400">Henüz token yok.</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                        {tokens.map(t => (
+                            <div key={t.id} className={`flex items-center gap-3 px-5 py-3 ${!t.is_active ? 'opacity-50' : ''}`}>
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${t.is_active ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                                    <HiOutlineKey className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium text-sm text-gray-900 dark:text-white">{t.name}</span>
+                                        {!t.is_active && <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">iptal edildi</span>}
+                                        {t.expires_at && t.expires_at < Date.now() / 1000 && <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-500 px-1.5 py-0.5 rounded-full">süresi doldu</span>}
+                                    </div>
+                                    <div className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-0.5">
+                                        {t.token_prefix}... · oluşturan: {t.created_by} · {fmtAgo(t.created_at)}
+                                    </div>
+                                </div>
+                                <div className="text-right flex-shrink-0 mr-2">
+                                    <div className="text-xs text-gray-400">Son kullanım</div>
+                                    <div className="text-xs font-medium text-gray-600 dark:text-gray-300">{t.last_used_at ? fmtDate(t.last_used_at) : '—'}</div>
+                                </div>
+                                <div className="text-right flex-shrink-0 mr-2">
+                                    <div className="text-xs text-gray-400">Bitiş</div>
+                                    <div className="text-xs font-medium text-gray-600 dark:text-gray-300">{fmtDate(t.expires_at)}</div>
+                                </div>
+                                {t.is_active && (
+                                    <button onClick={() => { if (window.confirm(`"${t.name}" tokeni iptal edilsin mi?`)) revokeMutation.mutate(t.id); }}
+                                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                                        <HiOutlineTrash className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

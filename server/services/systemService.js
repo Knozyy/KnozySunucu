@@ -1,6 +1,27 @@
 const si = require('systeminformation');
 
+const HISTORY_SIZE = 60; // 60 samples × 3s = 3 minutes
+
 class SystemService {
+    constructor() {
+        this._history = []; // { ts, cpu, ram }
+        this._historyInterval = setInterval(() => this._sampleHistory(), 3000);
+        this._historyInterval.unref?.(); // don't block process exit
+    }
+
+    async _sampleHistory() {
+        try {
+            const [cpuLoad, mem] = await Promise.all([si.currentLoad(), si.mem()]);
+            this._history.push({
+                ts:  Date.now(),
+                cpu: +cpuLoad.currentLoad.toFixed(1),
+                ram: +((mem.active / mem.total) * 100).toFixed(1),
+            });
+            if (this._history.length > HISTORY_SIZE) this._history.shift();
+        } catch { /* ignore */ }
+    }
+
+
     async getSystemInfo() {
         const [cpu, mem, disk, os, networkInterfaces] = await Promise.all([
             si.cpu(),
@@ -204,11 +225,9 @@ class SystemService {
             byId.set(p.pid, p);
         });
 
-        // Her process için kendi yükünü parentlarına ekle root'a kadar
-        // (Bu MinecraftWrapper için Java'nın CPU'sunu saptamayı sağlar)
         processes.forEach(p => {
             let current = byId.get(p.parentPid);
-            const seen = new Set([p.pid]); // circular tree protection
+            const seen = new Set([p.pid]);
             while (current && !seen.has(current.pid)) {
                 seen.add(current.pid);
                 current.treeCpu += (p.cpu || 0);
@@ -216,6 +235,41 @@ class SystemService {
                 current = byId.get(current.parentPid);
             }
         });
+    }
+
+    async getPerformance() {
+        const mcService = require('./minecraftService');
+        const [cpuLoad, mem, disk] = await Promise.all([
+            si.currentLoad(),
+            si.mem(),
+            si.fsSize(),
+        ]);
+
+        const pid = mcService._javaPid || mcService.process?.pid || null;
+        const mainDisk = disk.find(d => d.mount === '/') || disk[0] || null;
+
+        return {
+            cpu: +cpuLoad.currentLoad.toFixed(1),
+            ram: {
+                usedMB:   Math.round(mem.active / 1048576),
+                totalMB:  Math.round(mem.total  / 1048576),
+                percent:  +((mem.active / mem.total) * 100).toFixed(1),
+            },
+            disk: mainDisk ? {
+                usedGB:  +(mainDisk.used  / 1073741824).toFixed(1),
+                totalGB: +(mainDisk.size  / 1073741824).toFixed(1),
+                percent: mainDisk.use,
+            } : null,
+            mc: {
+                status:   mcService.status,
+                players:  mcService.players.length,
+                tps:      mcService._lastTps,
+                javaMem:  mcService.processStats.memoryMB,
+                javaCpu:  mcService.processStats.cpuPercent,
+                javaPid:  pid,
+            },
+            history: [...this._history],
+        };
     }
 }
 
