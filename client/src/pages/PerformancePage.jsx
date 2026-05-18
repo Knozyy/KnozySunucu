@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
+import api from '@/services/api';
 import {
     HiOutlineCpuChip, HiOutlineCircleStack, HiOutlineServerStack,
     HiOutlineUsers, HiOutlineBoltSlash, HiOutlineBolt, HiOutlineFolder,
 } from 'react-icons/hi2';
 
 async function fetchPerformance() {
-    const { data } = await axios.get('/api/system/performance');
+    const { data } = await api.get('/system/performance');
     return data;
 }
 
@@ -141,7 +141,7 @@ const FOLDER_COLORS = {
 function DiskAnalysisPanel() {
     const { data, isLoading } = useQuery({
         queryKey: ['disk-analysis'],
-        queryFn: () => axios.get('/api/worlds/disk').then(r => r.data),
+        queryFn: () => api.get('/worlds/disk').then(r => r.data),
         refetchInterval: 60000,
     });
 
