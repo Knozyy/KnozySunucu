@@ -11,6 +11,7 @@ import {
     HiOutlineMagnifyingGlass, HiOutlineFunnel,
     HiOutlineRectangleGroup, HiOutlinePlus, HiOutlinePencil,
     HiOutlinePlay, HiOutlineXMark, HiOutlineArchiveBox,
+    HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 
 export default function ConsolePage() {
@@ -59,10 +60,11 @@ export default function ConsolePage() {
     };
 
     const tabs = [
-        { id: 'console', label: 'Konsol', icon: HiOutlineCommandLine },
-        { id: 'macros', label: 'Makrolar', icon: HiOutlineRectangleGroup },
-        { id: 'archive', label: 'Arşiv Arama', icon: HiOutlineArchiveBox },
-        { id: 'logs', label: 'Log Dosyaları', icon: HiOutlineDocumentText },
+        { id: 'console', label: 'Konsol',         icon: HiOutlineCommandLine },
+        { id: 'macros',  label: 'Makrolar',        icon: HiOutlineRectangleGroup },
+        { id: 'archive', label: 'Arşiv Arama',     icon: HiOutlineArchiveBox },
+        { id: 'crash',   label: 'Crash Raporları', icon: HiOutlineExclamationTriangle },
+        { id: 'logs',    label: 'Log Dosyaları',   icon: HiOutlineDocumentText },
     ];
 
     return (
@@ -95,6 +97,8 @@ export default function ConsolePage() {
                 <MacrosPanel mcStatus={status?.status} sendCommand={sendCommand} />
             ) : activeTab === 'archive' ? (
                 <LogArchivePanel />
+            ) : activeTab === 'crash' ? (
+                <CrashReportsPanel />
             ) : activeTab === 'console' ? (
                 <div className="glass-card overflow-hidden fade-in">
                     {/* Terminal header */}
@@ -561,6 +565,79 @@ function MacrosPanel({ mcStatus, sendCommand }) {
                     onClose={() => setModal(null)}
                     onSave={handleSave}
                 />
+            )}
+        </div>
+    );
+}
+
+// ── Crash Raporları ───────────────────────────────────────────────────────────
+function CrashReportsPanel() {
+    const [selected, setSelected] = useState(null);
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['crash-reports'],
+        queryFn: () => api.get('/logs/crash-reports').then(r => r.data),
+    });
+
+    const { data: detail, isLoading: detailLoading } = useQuery({
+        queryKey: ['crash-report-detail', selected],
+        queryFn: () => api.get(`/logs/crash-reports/${encodeURIComponent(selected)}`).then(r => r.data),
+        enabled: !!selected,
+    });
+
+    const reports = data?.reports || [];
+
+    return (
+        <div className="space-y-4 fade-in">
+            {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                    <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                </div>
+            ) : reports.length === 0 ? (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-12 text-center">
+                    <HiOutlineExclamationTriangle className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">crash-reports klasörü boş veya bulunamadı.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        {reports.map(r => (
+                            <button key={r.filename} onClick={() => setSelected(r.filename)}
+                                className={`w-full text-left bg-white dark:bg-gray-900 rounded-2xl border p-4 transition-all ${selected === r.filename ? 'border-red-400 dark:border-red-600' : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'}`}>
+                                <div className="flex items-start gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                                        <HiOutlineExclamationTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">{r.filename}</p>
+                                        {r.description && <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 line-clamp-2">{r.description}</p>}
+                                        <p className="text-xs text-gray-400 mt-1">{new Date(r.modified).toLocaleString('tr-TR')}</p>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+
+                    {selected && (
+                        <div className="bg-gray-950 rounded-2xl border border-gray-800 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+                                <span className="text-xs font-mono text-gray-400 truncate flex-1">{selected}</span>
+                                <button onClick={() => setSelected(null)} className="p-1 text-gray-500 hover:text-gray-300 ml-2">
+                                    <HiOutlineXMark className="w-4 h-4" />
+                                </button>
+                            </div>
+                            {detailLoading ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <div className="w-5 h-5 border-2 border-gray-600 border-t-gray-300 rounded-full animate-spin" />
+                                </div>
+                            ) : (
+                                <pre className="text-xs text-gray-300 font-mono p-4 overflow-auto max-h-[500px] leading-relaxed whitespace-pre-wrap">
+                                    {detail?.content || ''}
+                                </pre>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );

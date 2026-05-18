@@ -1,3 +1,4 @@
+// KnozySunucu Panel
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
@@ -28,6 +29,8 @@ const permCatRoutes = require('./routes/permissionCategories');
 const automationRoutes = require('./routes/automation');
 const macroRoutes = require('./routes/macros');
 const apiTokenRoutes = require('./routes/apiTokens');
+const auditRoutes = require('./routes/audit');
+const templateRoutes = require('./routes/templates');
 
 const app = express();
 const server = http.createServer(app);
@@ -61,6 +64,8 @@ app.use('/api/permission-categories', permCatRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/macros', macroRoutes);
 app.use('/api/tokens', apiTokenRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/templates', templateRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

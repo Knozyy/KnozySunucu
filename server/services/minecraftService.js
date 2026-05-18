@@ -627,12 +627,6 @@ class MinecraftService extends EventEmitter {
             } catch { /* ignore */ }
         }, 5000);
 
-        // TPS komutunu 30sn'de bir gönder (Paper/Spigot sunucular için)
-        this._tpsInterval = setInterval(() => {
-            if (this.status === 'running') {
-                try { this.sendCommand('tps'); } catch { /* sunucu tps komutunu desteklemeyebilir */ }
-            }
-        }, 30000);
     }
 
     _stopStatsTracking() {

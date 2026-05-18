@@ -88,7 +88,7 @@ function TpsCard({ tps }) {
                 <span>5m: <span className={color}>{tps?.five?.toFixed(1) ?? '—'}</span></span>
                 <span>15m: <span className={color}>{tps?.fifteen?.toFixed(1) ?? '—'}</span></span>
             </div>
-            <div className={`text-xs font-medium ${color}`}>{val !== null ? label : 'Paper/Spigot gerekli'}</div>
+            <div className={`text-xs font-medium ${color}`}>{val !== null ? label : 'Yalnızca Paper/Spigot'}</div>
         </div>
     );
 }

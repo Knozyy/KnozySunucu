@@ -9,7 +9,8 @@ import {
     HiOutlineShieldCheck,
     HiOutlineUserPlus, HiOutlineTrash, HiOutlinePlus, HiOutlinePencil,
     HiOutlineCheck, HiOutlineTag, HiOutlineKey, HiOutlineClipboard,
-    HiOutlineEyeSlash, HiOutlineXMark,
+    HiOutlineEyeSlash, HiOutlineXMark, HiOutlineClipboardDocumentList,
+    HiOutlineBookmarkSquare, HiOutlineBell,
 } from 'react-icons/hi2';
 
 // ── Tüm izin verilebilir sayfalar ─────────────────────────────────────────────
@@ -35,10 +36,13 @@ export default function SettingsPage() {
     const { t } = useI18n();
 
     const tabs = [
-        { id: 'tasks', label: 'Görev Yöneticisi', icon: HiOutlineCpuChip },
-        { id: 'users', label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
-        { id: 'categories', label: 'İzin Kategorileri', icon: HiOutlineTag },
-        { id: 'tokens', label: 'API Tokenları', icon: HiOutlineKey },
+        { id: 'tasks',     label: 'Görev Yöneticisi',   icon: HiOutlineCpuChip },
+        { id: 'users',     label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
+        { id: 'categories',label: 'İzin Kategorileri',   icon: HiOutlineTag },
+        { id: 'tokens',    label: 'API Tokenları',       icon: HiOutlineKey },
+        { id: 'templates', label: 'Şablonlar',           icon: HiOutlineBookmarkSquare },
+        { id: 'alerts',    label: 'Kaynak Uyarıları',    icon: HiOutlineBell },
+        { id: 'audit',     label: 'Audit Log',           icon: HiOutlineClipboardDocumentList },
     ];
 
     return (
@@ -61,10 +65,13 @@ export default function SettingsPage() {
                 ))}
             </div>
 
-            {activeTab === 'tasks' && <TaskManagerPanel />}
-            {activeTab === 'users' && <PanelUsersPanel />}
+            {activeTab === 'tasks'      && <TaskManagerPanel />}
+            {activeTab === 'users'      && <PanelUsersPanel />}
             {activeTab === 'categories' && <CategoriesPanel />}
-            {activeTab === 'tokens' && <ApiTokensPanel />}
+            {activeTab === 'tokens'     && <ApiTokensPanel />}
+            {activeTab === 'templates'  && <TemplatesPanel />}
+            {activeTab === 'alerts'     && <AlertsPanel />}
+            {activeTab === 'audit'      && <AuditLogPanel />}
         </div>
     );
 }
@@ -783,6 +790,240 @@ function ApiTokensPanel() {
                                         <HiOutlineTrash className="w-4 h-4" />
                                     </button>
                                 )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// SUNUCU ŞABLONLARI
+// ============================================================
+function TemplatesPanel() {
+    const qc = useQueryClient();
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({ name: '', description: '' });
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['server-templates'],
+        queryFn: () => api.get('/templates').then(r => r.data),
+    });
+
+    const createMutation = useMutation({
+        mutationFn: (body) => api.post('/templates', body),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['server-templates'] }); setShowForm(false); setForm({ name: '', description: '' }); toast.success('Şablon kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const applyMutation = useMutation({
+        mutationFn: (id) => api.put(`/templates/${id}/apply`),
+        onSuccess: () => toast.success('Şablon uygulandı — sunucuyu yeniden başlatın'),
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id) => api.delete(`/templates/${id}`),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['server-templates'] }); toast.success('Şablon silindi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const templates = data?.templates || [];
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">Aktif profilin RAM/JVM/port ayarlarını şablon olarak kaydedin, sonra tek tıkla uygulayın.</p>
+                <button onClick={() => setShowForm(v => !v)} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-gray-900 text-white hover:opacity-90 flex-shrink-0 ml-4">
+                    <HiOutlinePlus className="w-4 h-4" /> Şablon Kaydet
+                </button>
+            </div>
+
+            {showForm && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Şablon Adı</label>
+                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="örn: Vanilla 4GB" className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Açıklama (isteğe bağlı)</label>
+                            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Kısa açıklama..." className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowForm(false)} className="btn-secondary text-sm flex-1">İptal</button>
+                        <button onClick={() => createMutation.mutate(form)} disabled={!form.name.trim() || createMutation.isPending} className="btn-primary text-sm flex-1">
+                            {createMutation.isPending ? 'Kaydediliyor...' : 'Aktif Profili Kaydet'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {isLoading ? (
+                <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
+            ) : templates.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                    <HiOutlineBookmarkSquare className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                    <p>Henüz şablon yok.</p>
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {templates.map(t => (
+                        <div key={t.id} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 flex items-center gap-4">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                <HiOutlineBookmarkSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm text-gray-900 dark:text-white">{t.name}</p>
+                                {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
+                                <div className="flex gap-3 mt-1 text-xs text-gray-400 font-mono">
+                                    {t.config.min_ram && <span>Min: {t.config.min_ram}</span>}
+                                    {t.config.max_ram && <span>Max: {t.config.max_ram}</span>}
+                                    {t.config.server_port && <span>Port: {t.config.server_port}</span>}
+                                </div>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0">
+                                <button onClick={() => { if (window.confirm(`"${t.name}" şablonunu uygula?`)) applyMutation.mutate(t.id); }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60">
+                                    Uygula
+                                </button>
+                                <button onClick={() => { if (window.confirm('Şablonu sil?')) deleteMutation.mutate(t.id); }}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                                    <HiOutlineTrash className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// KAYNAK UYARI EŞİKLERİ
+// ============================================================
+function AlertsPanel() {
+    const [cpu, setCpu] = useState('');
+    const [ram, setRam] = useState('');
+    const [saved, setSaved] = useState(false);
+
+    useQuery({
+        queryKey: ['app-settings-alerts'],
+        queryFn: () => api.get('/system/alert-thresholds').then(r => r.data),
+        onSuccess: (d) => {
+            if (d?.cpu != null) setCpu(String(d.cpu));
+            if (d?.ram != null) setRam(String(d.ram));
+        },
+    });
+
+    const saveMutation = useMutation({
+        mutationFn: () => api.put('/system/alert-thresholds', {
+            cpu: cpu ? parseFloat(cpu) : null,
+            ram: ram ? parseFloat(ram) : null,
+        }),
+        onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); toast.success('Eşikler kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+
+    return (
+        <div className="space-y-4 fade-in">
+            <p className="text-sm text-gray-500">Belirtilen eşikleri aşan CPU veya RAM kullanımı Discord webhook üzerinden bildirim gönderir. Aynı uyarı 5 dakikada bir tekrar tetiklenir.</p>
+
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-4 max-w-md">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU Eşiği (%)</label>
+                    <input type="number" min="1" max="100" value={cpu} onChange={e => setCpu(e.target.value)}
+                        placeholder="örn: 90 (boş = kapalı)"
+                        className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM Eşiği (%)</label>
+                    <input type="number" min="1" max="100" value={ram} onChange={e => setRam(e.target.value)}
+                        placeholder="örn: 85 (boş = kapalı)"
+                        className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <p className="text-xs text-gray-400">Discord webhookunu Discord sayfasından yapılandırın.</p>
+                <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+                    className="w-full py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2">
+                    {saved ? <><HiOutlineCheck className="w-4 h-4" /> Kaydedildi</> : saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// AUDİT LOG
+// ============================================================
+function AuditLogPanel() {
+    const qc = useQueryClient();
+    const [search, setSearch] = useState('');
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['audit-log', search],
+        queryFn: () => api.get(`/audit?limit=200${search ? `&user=${encodeURIComponent(search)}` : ''}`).then(r => r.data),
+        refetchInterval: 15000,
+    });
+
+    const clearMutation = useMutation({
+        mutationFn: () => api.delete('/audit'),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['audit-log'] }); toast.success('Log temizlendi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const ACTION_COLORS = {
+        sunucu_baslat:         'text-emerald-600 bg-emerald-50',
+        sunucu_durdur:         'text-gray-600 bg-gray-100',
+        sunucu_yeniden_baslat: 'text-amber-600 bg-amber-50',
+        oyuncu_ban:            'text-red-600 bg-red-50',
+        oyuncu_ban_kaldir:     'text-blue-600 bg-blue-50',
+        ip_ban:                'text-red-600 bg-red-50',
+        ip_ban_kaldir:         'text-blue-600 bg-blue-50',
+    };
+
+    const logs = data?.logs || [];
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="flex items-center gap-3">
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                    placeholder="Kullanıcıya göre filtrele..."
+                    className="flex-1 max-w-xs px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <span className="text-xs text-gray-400">{logs.length} kayıt</span>
+                <button onClick={() => { if (window.confirm('Tüm audit logları silinsin mi?')) clearMutation.mutate(); }}
+                    className="px-3 py-2 text-xs font-medium rounded-xl text-red-600 bg-red-50 hover:bg-red-100 flex items-center gap-1">
+                    <HiOutlineTrash className="w-3.5 h-3.5" /> Temizle
+                </button>
+            </div>
+
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                    </div>
+                ) : logs.length === 0 ? (
+                    <div className="py-10 text-center">
+                        <HiOutlineClipboardDocumentList className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm text-gray-400">Henüz kayıt yok.</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-gray-50 dark:divide-gray-800 max-h-[500px] overflow-y-auto">
+                        {logs.map(log => (
+                            <div key={log.id} className="flex items-center gap-3 px-5 py-3">
+                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${ACTION_COLORS[log.action] || 'text-indigo-600 bg-indigo-50'}`}>
+                                    {log.action.replace(/_/g, ' ')}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">{log.user}</span>
+                                    {log.details && <span className="text-sm text-gray-400 ml-2 truncate">{log.details}</span>}
+                                </div>
+                                <span className="text-xs text-gray-400 flex-shrink-0">
+                                    {new Date(log.created_at).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                                </span>
                             </div>
                         ))}
                     </div>

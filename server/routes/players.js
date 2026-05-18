@@ -3,6 +3,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const PlayerManager = require('../services/playerManager');
 const { getDb } = require('../db/database');
 const mcService = require('../services/minecraftService');
+const { logAudit } = require('../services/auditService');
 
 const router = express.Router();
 const pm = new PlayerManager();
@@ -40,24 +41,28 @@ router.post('/ban', authMiddleware, (req, res) => {
     try {
         pm.banPlayer(req.body.name, req.body.reason);
         logBan(req.body.name, 'ban', req.body.reason, req.user?.username);
+        logAudit(req.user?.username, 'oyuncu_ban', `${req.body.name} — ${req.body.reason || ''}`, req.ip);
         res.json({ message: 'Banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban/:name', authMiddleware, (req, res) => {
     pm.unbanPlayer(req.params.name);
     logBan(req.params.name, 'unban', '', req.user?.username);
+    logAudit(req.user?.username, 'oyuncu_ban_kaldir', req.params.name, req.ip);
     res.json({ message: 'Ban kaldırıldı' });
 });
 router.post('/ban-ip', authMiddleware, (req, res) => {
     try {
         pm.banIp(req.body.ip, req.body.reason);
         logBan(req.body.ip, 'ban-ip', req.body.reason, req.user?.username);
+        logAudit(req.user?.username, 'ip_ban', `${req.body.ip} — ${req.body.reason || ''}`, req.ip);
         res.json({ message: 'IP banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban-ip/:ip', authMiddleware, (req, res) => {
     pm.unbanIp(req.params.ip);
     logBan(req.params.ip, 'unban-ip', '', req.user?.username);
+    logAudit(req.user?.username, 'ip_ban_kaldir', req.params.ip, req.ip);
     res.json({ message: 'IP ban kaldırıldı' });
 });
 
@@ -115,6 +120,38 @@ router.get('/stats', authMiddleware, (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// ── Oyuncu notları ────────────────────────────────────────────────────────────
+
+// GET /api/players/notes/:username
+router.get('/notes/:username', authMiddleware, (req, res) => {
+    try {
+        const rows = getDb().prepare(
+            'SELECT * FROM player_notes WHERE username = ? ORDER BY id DESC'
+        ).all(req.params.username);
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/players/notes/:username
+router.post('/notes/:username', authMiddleware, (req, res) => {
+    try {
+        const { note, color } = req.body;
+        if (!note?.trim()) return res.status(400).json({ error: 'Not boş olamaz' });
+        getDb().prepare(
+            'INSERT INTO player_notes (username, note, color, created_by) VALUES (?, ?, ?, ?)'
+        ).run(req.params.username, note.trim(), color || '#6366f1', req.user?.username || 'admin');
+        res.json({ message: 'Not eklendi' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/players/notes/:id
+router.delete('/notes/:id', authMiddleware, (req, res) => {
+    try {
+        getDb().prepare('DELETE FROM player_notes WHERE id = ?').run(req.params.id);
+        res.json({ message: 'Not silindi' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

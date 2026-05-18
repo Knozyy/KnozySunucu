@@ -3,6 +3,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const minecraftService = require('../services/minecraftService');
 const { getDb } = require('../db/database');
+const { logAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ router.get('/status', authMiddleware, (req, res) => {
 router.post('/start', authMiddleware, requireRole(['admin', 'user']), (req, res) => {
     try {
         minecraftService.start();
+        logAudit(req.user?.username, 'sunucu_baslat', '', req.ip);
         res.json({ message: 'Sunucu başlatılıyor...' });
     } catch (error) {
         console.error('[MC] Start error:', error.message);
@@ -32,6 +34,7 @@ router.post('/start', authMiddleware, requireRole(['admin', 'user']), (req, res)
 router.post('/stop', authMiddleware, requireRole(['admin', 'user']), (req, res) => {
     try {
         minecraftService.stop();
+        logAudit(req.user?.username, 'sunucu_durdur', '', req.ip);
         res.json({ message: 'Sunucu durduruluyor...' });
     } catch (error) {
         console.error('[MC] Stop error:', error.message);
@@ -43,6 +46,7 @@ router.post('/stop', authMiddleware, requireRole(['admin', 'user']), (req, res) 
 router.post('/restart', authMiddleware, requireRole(['admin', 'user']), async (req, res) => {
     try {
         await minecraftService.restart();
+        logAudit(req.user?.username, 'sunucu_yeniden_baslat', '', req.ip);
         res.json({ message: 'Sunucu yeniden başlatılıyor...' });
     } catch (error) {
         console.error('[MC] Restart error:', error.message);

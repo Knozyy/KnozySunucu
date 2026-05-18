@@ -3,11 +3,12 @@ const http = require('http');
 const { getDb } = require('../db/database');
 
 const EVENT_LABELS = {
-    server_start:  { label: 'Sunucu Başladı',   color: 0x10b981, emoji: '🟢' },
-    server_stop:   { label: 'Sunucu Durdu',      color: 0x6b7280, emoji: '🔴' },
-    server_crash:  { label: 'Sunucu Çöktü',      color: 0xef4444, emoji: '💥' },
-    player_join:   { label: 'Oyuncu Girdi',       color: 0x3b82f6, emoji: '👋' },
-    player_leave:  { label: 'Oyuncu Ayrıldı',    color: 0x8b5cf6, emoji: '👋' },
+    server_start:    { label: 'Sunucu Başladı',       color: 0x10b981, emoji: '🟢' },
+    server_stop:     { label: 'Sunucu Durdu',          color: 0x6b7280, emoji: '🔴' },
+    server_crash:    { label: 'Sunucu Çöktü',          color: 0xef4444, emoji: '💥' },
+    player_join:     { label: 'Oyuncu Girdi',           color: 0x3b82f6, emoji: '👋' },
+    player_leave:    { label: 'Oyuncu Ayrıldı',        color: 0x8b5cf6, emoji: '👋' },
+    resource_alert:  { label: 'Kaynak Uyarısı',        color: 0xf59e0b, emoji: '⚠️' },
 };
 
 function getConfig() {

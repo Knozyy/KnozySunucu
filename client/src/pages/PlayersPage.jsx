@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/api';
+import toast from 'react-hot-toast';
 import {
     HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
     HiOutlineMagnifyingGlass, HiOutlineTrophy, HiOutlineNoSymbol,
-    HiOutlineCheckCircle,
+    HiOutlineCheckCircle, HiOutlineChatBubbleLeftEllipsis,
+    HiOutlinePlus, HiOutlineTrash,
 } from 'react-icons/hi2';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
@@ -80,8 +82,9 @@ export default function PlayersPage() {
 
     const tabs = [
         { id: 'sessions', label: 'Oturum Geçmişi', icon: HiOutlineCalendarDays },
-        { id: 'stats', label: 'İstatistikler', icon: HiOutlineTrophy },
-        { id: 'banlog', label: 'Ban Günlüğü', icon: HiOutlineNoSymbol },
+        { id: 'stats',    label: 'İstatistikler',  icon: HiOutlineTrophy },
+        { id: 'banlog',   label: 'Ban Günlüğü',    icon: HiOutlineNoSymbol },
+        { id: 'notes',    label: 'Oyuncu Notları', icon: HiOutlineChatBubbleLeftEllipsis },
     ];
 
     return (
@@ -246,6 +249,8 @@ export default function PlayersPage() {
                 </div>
             )}
 
+            {activeTab === 'notes' && <PlayerNotesPanel />}
+
             {activeTab === 'banlog' && (
                 <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
                     <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
@@ -286,6 +291,88 @@ export default function PlayersPage() {
                                     </div>
                                 );
                             })}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function PlayerNotesPanel() {
+    const qc = useQueryClient();
+    const [username, setUsername] = useState('');
+    const [searched, setSearched] = useState('');
+    const [note, setNote] = useState('');
+
+    const { data: notes = [], isLoading } = useQuery({
+        queryKey: ['player-notes', searched],
+        queryFn: () => searched ? apiClient.get(`/players/notes/${encodeURIComponent(searched)}`).then(r => r.data) : Promise.resolve([]),
+        enabled: !!searched,
+    });
+
+    const addMutation = useMutation({
+        mutationFn: () => apiClient.post(`/players/notes/${encodeURIComponent(searched)}`, { note }),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['player-notes', searched] }); setNote(''); toast.success('Not eklendi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id) => apiClient.delete(`/players/notes/${id}`),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['player-notes', searched] }); toast.success('Not silindi'); },
+    });
+
+    return (
+        <div className="space-y-4">
+            <div className="flex gap-2">
+                <div className="relative flex-1 max-w-xs">
+                    <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input value={username} onChange={e => setUsername(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && setSearched(username)}
+                        placeholder="Oyuncu adı..."
+                        className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <button onClick={() => setSearched(username)} disabled={!username.trim()}
+                    className="px-4 py-2 text-sm font-medium rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 disabled:opacity-40">
+                    Ara
+                </button>
+            </div>
+
+            {searched && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
+                    <div className="flex items-center gap-3">
+                        <PlayerHead username={searched} size={8} />
+                        <span className="font-semibold text-gray-900 dark:text-white">{searched}</span>
+                    </div>
+                    <div className="flex gap-2">
+                        <input value={note} onChange={e => setNote(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && note.trim() && addMutation.mutate()}
+                            placeholder="Yeni not ekle..."
+                            className="flex-1 px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={() => addMutation.mutate()} disabled={!note.trim() || addMutation.isPending}
+                            className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
+                            <HiOutlinePlus className="w-4 h-4" />
+                        </button>
+                    </div>
+                    {isLoading ? (
+                        <div className="text-center py-4 text-gray-400 text-sm">Yükleniyor...</div>
+                    ) : notes.length === 0 ? (
+                        <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-2">Bu oyuncu için not yok.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {notes.map(n => (
+                                <div key={n.id} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800">
+                                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.color || '#6366f1' }} />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-gray-700 dark:text-gray-300">{n.note}</p>
+                                        <p className="text-xs text-gray-400 mt-0.5">{n.created_by} · {new Date(n.created_at).toLocaleDateString('tr-TR')}</p>
+                                    </div>
+                                    <button onClick={() => deleteMutation.mutate(n.id)}
+                                        className="p-1 text-gray-400 hover:text-red-500 rounded-lg">
+                                        <HiOutlineTrash className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

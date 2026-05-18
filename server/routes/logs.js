@@ -227,4 +227,52 @@ router.get('/search-all', authMiddleware, (req, res) => {
     }
 });
 
+// GET /api/logs/crash-reports - crash-reports klasöründeki raporları listele ve özetle
+router.get('/crash-reports', authMiddleware, (req, res) => {
+    try {
+        const serverPath = getServerPath();
+        const crashDir = path.join(serverPath, 'crash-reports');
+        if (!fs.existsSync(crashDir)) return res.json({ reports: [] });
+
+        const files = fs.readdirSync(crashDir)
+            .filter(f => f.endsWith('.txt'))
+            .map(f => {
+                try {
+                    const fp = path.join(crashDir, f);
+                    const stat = fs.statSync(fp);
+                    const content = fs.readFileSync(fp, 'utf-8');
+                    const lines = content.split('\n');
+                    // İlk satır genellikle başlık, stacktrace başlangıcını bul
+                    const descLine = lines.find(l => l.includes('Description:')) || lines[1] || '';
+                    const desc = descLine.replace('Description:', '').trim();
+                    const causeIdx = lines.findIndex(l => l.includes('-- Head --') || l.includes('java.lang.'));
+                    const excerpt = lines.slice(Math.max(0, causeIdx), causeIdx + 8).join('\n');
+                    return {
+                        filename: f,
+                        size: stat.size,
+                        modified: stat.mtime,
+                        description: desc,
+                        excerpt: excerpt || lines.slice(0, 8).join('\n'),
+                    };
+                } catch { return null; }
+            })
+            .filter(Boolean)
+            .sort((a, b) => new Date(b.modified) - new Date(a.modified));
+
+        res.json({ reports: files });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/logs/crash-reports/:filename - tek crash raporunu tam oku
+router.get('/crash-reports/:filename', authMiddleware, (req, res) => {
+    try {
+        const filename = req.params.filename;
+        if (filename.includes('..') || filename.includes('/') || filename.includes('\\'))
+            return res.status(400).json({ error: 'Geçersiz dosya adı' });
+        const fp = path.join(getServerPath(), 'crash-reports', filename);
+        if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Dosya bulunamadı' });
+        res.json({ filename, content: fs.readFileSync(fp, 'utf-8') });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
