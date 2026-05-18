@@ -28,50 +28,155 @@ function formatExpiry(ts) {
     return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Oyuncu grafiği (SVG tabanlı) ──────────────────────────────────────────────
+// ── Oyuncu grafiği (SVG — smooth bezier, eksanlar, istatistikler) ─────────────
 function PlayerGraph({ history }) {
-    const last24h = useMemo(() => {
+    const chart = useMemo(() => {
         const cutoff = Date.now() / 1000 - 86400;
-        return history.filter(h => h.timestamp > cutoff);
+        const raw = history.filter(h => h.timestamp > cutoff);
+        if (raw.length < 2) return null;
+
+        // Çok fazla veri noktası varsa örnekle (max 150)
+        const MAX_PTS = 150;
+        const step = Math.max(1, Math.ceil(raw.length / MAX_PTS));
+        const sampled = raw.filter((_, i) => i % step === 0 || i === raw.length - 1);
+
+        // SVG boyutları
+        const W = 700, H = 200;
+        const PADL = 44, PADR = 20, PADT = 12, PADB = 32;
+        const CW = W - PADL - PADR;
+        const CH = H - PADT - PADB;
+
+        const maxCount = Math.max(...sampled.map(h => h.count), 1);
+        const minTs = sampled[0].timestamp;
+        const maxTs = sampled[sampled.length - 1].timestamp;
+        const tsRange = Math.max(maxTs - minTs, 1);
+
+        const pts = sampled.map(h => ({
+            x: PADL + ((h.timestamp - minTs) / tsRange) * CW,
+            y: PADT + (1 - h.count / maxCount) * CH,
+            count: h.count,
+            ts: h.timestamp,
+        }));
+
+        // Y ekseni tick'leri (0 dahil 5 adet)
+        const Y_TICKS = 4;
+        const yLines = Array.from({ length: Y_TICKS + 1 }, (_, i) => ({
+            y: PADT + (i / Y_TICKS) * CH,
+            label: Math.round(maxCount * (1 - i / Y_TICKS)),
+        }));
+
+        // X ekseni tick'leri (max 6 saat etiketi)
+        const X_TICKS = Math.min(6, sampled.length);
+        const xTicks = Array.from({ length: X_TICKS }, (_, i) => {
+            const idx = Math.round(i * (sampled.length - 1) / Math.max(X_TICKS - 1, 1));
+            const d = new Date(sampled[idx].timestamp * 1000);
+            return {
+                x: pts[idx].x,
+                label: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+            };
+        });
+
+        // Smooth bezier path
+        let linePath = `M ${pts[0].x} ${pts[0].y}`;
+        for (let i = 1; i < pts.length; i++) {
+            const cp = (pts[i - 1].x + pts[i].x) / 2;
+            linePath += ` C ${cp} ${pts[i - 1].y}, ${cp} ${pts[i].y}, ${pts[i].x} ${pts[i].y}`;
+        }
+        const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${PADT + CH} L ${pts[0].x} ${PADT + CH} Z`;
+
+        const avgCount = Math.round(sampled.reduce((s, h) => s + h.count, 0) / sampled.length);
+
+        return { W, H, PADL, PADR, PADT, PADB, CW, CH, pts, yLines, xTicks, linePath, areaPath, maxCount, avgCount };
     }, [history]);
 
-    if (last24h.length < 2) {
+    if (!chart) {
         return (
-            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
-                Yeterli veri yok (min. 2 veri noktası)
+            <div className="flex flex-col items-center justify-center h-48 text-gray-400 gap-2">
+                <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center">
+                    <HiOutlineChatBubbleLeftRight className="w-6 h-6 opacity-30" />
+                </div>
+                <p className="text-sm font-medium">Yeterli veri yok</p>
+                <p className="text-xs text-gray-300">Bot çalışırken her 30 saniyede bir kayıt oluşturulur</p>
             </div>
         );
     }
 
-    const W = 600, H = 160, PAD = 16;
-    const maxCount = Math.max(...last24h.map(h => h.count), 1);
-    const minTs = last24h[0].timestamp;
-    const maxTs = last24h[last24h.length - 1].timestamp;
-    const tsRange = Math.max(maxTs - minTs, 1);
-
-    const pts = last24h.map(h => ({
-        x: PAD + ((h.timestamp - minTs) / tsRange) * (W - PAD * 2),
-        y: PAD + (1 - h.count / maxCount) * (H - PAD * 2),
-        count: h.count,
-    }));
-
-    const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
-    const area = `${pts[0].x},${H - PAD} ${polyline} ${pts[pts.length - 1].x},${H - PAD}`;
+    const { W, H, PADL, PADT, CW, CH, pts, yLines, xTicks, linePath, areaPath, maxCount, avgCount } = chart;
+    const currentCount = pts[pts.length - 1].count;
 
     return (
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40">
-            <defs>
-                <linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </linearGradient>
-            </defs>
-            <polygon points={area} fill="url(#gfill)" />
-            <polyline points={polyline} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round" />
-            {pts.map((p, i) => (
-                <circle key={i} cx={p.x} cy={p.y} r="3" fill="#6366f1" />
-            ))}
-        </svg>
+        <div className="space-y-4">
+            {/* İstatistik şeridi */}
+            <div className="flex items-center gap-8">
+                <div className="text-center">
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{currentCount}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Şu an online</p>
+                </div>
+                <div className="w-px h-10 bg-gray-200" />
+                <div className="text-center">
+                    <p className="text-3xl font-bold text-indigo-600 tabular-nums">{maxCount}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Son 24sa maks.</p>
+                </div>
+                <div className="w-px h-10 bg-gray-200" />
+                <div className="text-center">
+                    <p className="text-3xl font-bold text-gray-500 tabular-nums">{avgCount}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Ortalama</p>
+                </div>
+                <div className="ml-auto flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
+                    <span className="text-xs text-gray-400">{pts.length} veri noktası · son 24 saat</span>
+                </div>
+            </div>
+
+            {/* Grafik */}
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: '200px' }}>
+                <defs>
+                    <linearGradient id="pg-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0.01" />
+                    </linearGradient>
+                    <clipPath id="pg-clip">
+                        <rect x={PADL} y={PADT} width={CW} height={CH + 1} />
+                    </clipPath>
+                </defs>
+
+                {/* Yatay grid çizgileri + Y etiketleri */}
+                {yLines.map((t, i) => (
+                    <g key={i}>
+                        <line
+                            x1={PADL} y1={t.y} x2={W - 20} y2={t.y}
+                            stroke={i === yLines.length - 1 ? '#d1d5db' : '#f3f4f6'}
+                            strokeWidth="1"
+                        />
+                        <text x={PADL - 10} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9ca3af">
+                            {t.label}
+                        </text>
+                    </g>
+                ))}
+
+                {/* Alan dolgusu + çizgi (clip ile sınırlandırılmış) */}
+                <g clipPath="url(#pg-clip)">
+                    <path d={areaPath} fill="url(#pg-grad)" />
+                    <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </g>
+
+                {/* Son nokta vurgusu */}
+                <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="5" fill="#6366f1" stroke="white" strokeWidth="2.5" />
+
+                {/* X ekseni çizgisi */}
+                <line x1={PADL} y1={PADT + CH} x2={W - 20} y2={PADT + CH} stroke="#e5e7eb" strokeWidth="1" />
+
+                {/* X zaman etiketleri */}
+                {xTicks.map((t, i) => (
+                    <text key={i} x={t.x} y={H - 8} textAnchor="middle" fontSize="11" fill="#9ca3af">
+                        {t.label}
+                    </text>
+                ))}
+
+                {/* Y ekseni çizgisi */}
+                <line x1={PADL} y1={PADT} x2={PADL} y2={PADT + CH} stroke="#e5e7eb" strokeWidth="1" />
+            </svg>
+        </div>
     );
 }
 
@@ -439,11 +544,14 @@ export default function DiscordPage() {
             {/* ══ Oyuncu Grafiği ════════════════════════════════════════════════════ */}
             {activeTab === 'graph' && (
                 <div className="glass-card p-5 fade-in">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <p className="font-semibold text-gray-900 dark:text-white">Son 24 Saatlik Oyuncu Grafiği</p>
-                            <p className="text-xs text-gray-400 mt-0.5">Bot çalışırken her 30 saniyede güncellenir</p>
-                        </div>
+                    <div className="flex items-center justify-between mb-5">
+                        <p className="font-semibold text-gray-900 dark:text-white">Son 24 Saatlik Oyuncu Grafiği</p>
+                        <button
+                            onClick={() => queryClient.invalidateQueries({ queryKey: ['discord-history'] })}
+                            className="btn-secondary text-xs"
+                        >
+                            <HiOutlineArrowPath className="w-3.5 h-3.5" />
+                        </button>
                     </div>
                     <PlayerGraph history={historyData?.history || []} />
                 </div>
