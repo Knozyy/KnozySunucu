@@ -18,6 +18,7 @@ import WorldsPage from '@/pages/WorldsPage';
 import SchedulerPage from '@/pages/SchedulerPage';
 import TerminalPage from '@/pages/TerminalPage';
 import DiscordPage from '@/pages/DiscordPage';
+import AutomationPage from '@/pages/AutomationPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -97,6 +98,7 @@ function App() {
                   <Route path="backup" element={<BackupPage />} />
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="discord" element={<DiscordPage />} />
+                  <Route path="automation" element={<AutomationPage />} />
                 </Route>
                 {/* Eski URL'ler → yenilere yönlendir */}
                 <Route path="/server" element={<Navigate to="/" replace />} />

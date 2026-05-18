@@ -66,6 +66,14 @@ function initDatabase() {
       pages TEXT NOT NULL DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS timed_whitelist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mc_nick TEXT NOT NULL,
+      added_by TEXT,
+      expires_at INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle

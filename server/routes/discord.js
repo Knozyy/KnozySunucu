@@ -114,6 +114,87 @@ router.get('/timed-roles', authMiddleware, (req, res) => {
     }
 });
 
+// POST /api/discord/timed-roles — yeni süreli rol ekle
+router.post('/timed-roles', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { user_id, guild_id, role_id, durationDays = 0, durationHours = 0 } = req.body;
+        if (!user_id || !guild_id || !role_id) return res.status(400).json({ error: 'user_id, guild_id ve role_id gerekli' });
+        const totalSecs = (Number(durationDays) * 86400) + (Number(durationHours) * 3600);
+        if (totalSecs <= 0) return res.status(400).json({ error: 'Süre en az 1 saat olmalı' });
+        const expiry_timestamp = Math.floor(Date.now() / 1000) + totalSecs;
+        discordBotService.addTimedRole({ user_id, guild_id, role_id, expiry_timestamp });
+        res.json({ message: 'Süreli rol eklendi' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/discord/timed-roles/:index — süreli rolü sil
+router.delete('/timed-roles/:index', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const removed = discordBotService.removeTimedRoleAt(parseInt(req.params.index));
+        res.json({ message: 'Süreli rol silindi', removed });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// ── RCON Queue ────────────────────────────────────────────────────────────────
+
+// GET /api/discord/rcon-queue
+router.get('/rcon-queue', authMiddleware, (req, res) => {
+    try {
+        res.json({ queue: discordBotService.getRconQueue() });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/discord/rcon-queue — kuyruğu temizle
+router.delete('/rcon-queue', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        discordBotService.clearRconQueue();
+        res.json({ message: 'RCON kuyruğu temizlendi' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ── Status messages ───────────────────────────────────────────────────────────
+
+// GET /api/discord/status-messages
+router.get('/status-messages', authMiddleware, (req, res) => {
+    try {
+        res.json({ messages: discordBotService.getStatusMessages() });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/discord/status-messages
+router.post('/status-messages', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { serverName, message } = req.body;
+        if (!serverName || !message) return res.status(400).json({ error: 'serverName ve message gerekli' });
+        discordBotService.addStatusMessage(serverName.trim(), message.trim());
+        res.json({ message: 'Mesaj eklendi' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/discord/status-messages — serverName + index ile sil
+router.delete('/status-messages', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { serverName, index } = req.body;
+        if (!serverName || index === undefined) return res.status(400).json({ error: 'serverName ve index gerekli' });
+        const removed = discordBotService.removeStatusMessage(serverName, parseInt(index));
+        res.json({ message: 'Mesaj silindi', removed });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
 // ── Player history ────────────────────────────────────────────────────────────
 
 // GET /api/discord/player-history

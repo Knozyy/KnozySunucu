@@ -115,6 +115,68 @@ class DiscordBotService {
         return this._readJson('timed_roles.json', []);
     }
 
+    saveTimedRoles(roles) {
+        this._writeJson('timed_roles.json', roles);
+    }
+
+    addTimedRole({ user_id, guild_id, role_id, expiry_timestamp }) {
+        const roles = this.getTimedRoles();
+        roles.push({ user_id: String(user_id), guild_id: String(guild_id), role_id: String(role_id), expiry_timestamp: Number(expiry_timestamp) });
+        this.saveTimedRoles(roles);
+        return roles.length - 1;
+    }
+
+    removeTimedRoleAt(index) {
+        const roles = this.getTimedRoles();
+        if (index < 0 || index >= roles.length) throw new Error('Geçersiz indeks');
+        const removed = roles.splice(index, 1)[0];
+        this.saveTimedRoles(roles);
+        return removed;
+    }
+
+    // ── RCON queue ────────────────────────────────────────────────────────────
+
+    getRconQueue() {
+        return this._readJson('rcon_queue.json', []);
+    }
+
+    clearRconQueue() {
+        this._writeJson('rcon_queue.json', []);
+    }
+
+    // ── Status messages ───────────────────────────────────────────────────────
+
+    getStatusMessages() {
+        return this._readJson('status_messages.json', {});
+    }
+
+    saveStatusMessages(data) {
+        this._writeJson('status_messages.json', data);
+    }
+
+    addStatusMessage(serverName, message) {
+        const data = this.getStatusMessages();
+        if (!data[serverName]) data[serverName] = [];
+        data[serverName].push(message);
+        this.saveStatusMessages(data);
+        return data[serverName].length - 1;
+    }
+
+    removeStatusMessage(serverName, index) {
+        const data = this.getStatusMessages();
+        if (!data[serverName]) throw new Error('Sunucu adı bulunamadı');
+        if (index < 0 || index >= data[serverName].length) throw new Error('Geçersiz indeks');
+        const removed = data[serverName].splice(index, 1)[0];
+        this.saveStatusMessages(data);
+        return removed;
+    }
+
+    // ── Dashboard config ──────────────────────────────────────────────────────
+
+    getDashboardConfig() {
+        return this._readJson('dashboard_config.json', {});
+    }
+
     // ── Player history ────────────────────────────────────────────────────────
 
     getPlayerHistory() {

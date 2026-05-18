@@ -25,6 +25,7 @@ const usersRoutes = require('./routes/users');
 const terminalRoutes = require('./routes/terminal');
 const discordRoutes = require('./routes/discord');
 const permCatRoutes = require('./routes/permissionCategories');
+const automationRoutes = require('./routes/automation');
 
 const app = express();
 const server = http.createServer(app);
@@ -55,6 +56,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/terminal', terminalRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/permission-categories', permCatRoutes);
+app.use('/api/automation', automationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -72,6 +74,9 @@ app.use((req, res) => {
         res.status(404).json({ error: 'Frontend build not found. Run: cd client && npm run build' });
     }
 });
+
+// Süreli whitelist periyodik kontrolü
+require('./services/timedWhitelistService').start();
 
 // WebSocket router — console + terminal
 setupWebSockets(server);
