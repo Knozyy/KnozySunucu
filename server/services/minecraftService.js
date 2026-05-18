@@ -24,11 +24,25 @@ class MinecraftService extends EventEmitter {
         // Çöküm takibi
         this._crashCount       = 0;
         this._crashWindowStart = 0;
+        // Panel kapanıyor mu? (bu flag true iken MC'ye dokunulmamalı)
+        this._shuttingDown = false;
 
         // Panel yeniden başlarsa çalışan sunucuya yeniden bağlan
         if (this._useScreen()) {
             setTimeout(() => this._reconnectIfRunning(), 500);
         }
+
+        // Panel kapanırken MC screen'ini ÖLDÜRME — sadece interval/tail temizle
+        const _gracefulShutdown = () => {
+            this._shuttingDown = true;
+            this._stopStatusWatch();
+            this._stopStatsTracking();
+            this._stopLogTail();
+            // Kasıtlı olarak screen veya Java'ya dokunmuyoruz
+            process.exit(0);
+        };
+        process.once('SIGTERM', _gracefulShutdown);
+        process.once('SIGINT',  _gracefulShutdown);
     }
 
     // ── Platform yardımcıları ─────────────────────────────────────────────────
@@ -167,6 +181,9 @@ class MinecraftService extends EventEmitter {
     _startStatusWatch() {
         this._stopStatusWatch();
         this._statusCheckInterval = setInterval(() => {
+            // Panel kapanıyorsa hiçbir şey yapma
+            if (this._shuttingDown) { this._stopStatusWatch(); return; }
+
             if (this.status === 'stopped') {
                 this._stopStatusWatch();
                 return;
@@ -225,6 +242,9 @@ class MinecraftService extends EventEmitter {
             db.prepare('INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)')
                 .run(exitCode ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
         } catch { /* ignore */ }
+
+        // Panel kapanıyorsa otomatik yeniden başlatma yapma
+        if (this._shuttingDown) return;
 
         const MAX_CRASHES = 5;
         if (this._crashCount >= MAX_CRASHES) {
@@ -362,9 +382,24 @@ class MinecraftService extends EventEmitter {
             // Log dosyasını temizle
             try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
 
-            // Eski screen'i temizle
-            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
-            try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
+            // Eski screen'i temizle — ama SADECE içinde Java yoksa.
+            // Eğer Java çalışıyorsa paneli yeniden başlatmak sunucuyu öldürmesin.
+            if (this._isScreenRunning()) {
+                const existingPid = this._findJavaPid();
+                if (existingPid) {
+                    // Sunucu hâlâ çalışıyor; durumu düzelt ve başlatmayı iptal et
+                    this._javaPid = existingPid;
+                    this.status   = 'running';
+                    this.emit('status', this.status);
+                    this._startLogTail(true);
+                    this._startStatsTracking();
+                    this._startStatusWatch();
+                    throw new Error('Sunucu zaten çalışıyor (screen + java mevcut)');
+                }
+                // Screen var ama Java yok — ölü screen oturumunu temizle
+                try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+                try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
+            }
 
             // Screen başlat — çıktıyı log dosyasına yönlendir
             const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${LOG_FILE}'`;
