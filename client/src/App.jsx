@@ -17,6 +17,7 @@ import ModsPage from '@/pages/ModsPage';
 import WorldsPage from '@/pages/WorldsPage';
 import SchedulerPage from '@/pages/SchedulerPage';
 import TerminalPage from '@/pages/TerminalPage';
+import DiscordPage from '@/pages/DiscordPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,6 +96,7 @@ function App() {
                   <Route path="terminal" element={<TerminalPage />} />
                   <Route path="backup" element={<BackupPage />} />
                   <Route path="settings" element={<SettingsPage />} />
+                  <Route path="discord" element={<DiscordPage />} />
                 </Route>
                 {/* Eski URL'ler → yenilere yönlendir */}
                 <Route path="/server" element={<Navigate to="/" replace />} />

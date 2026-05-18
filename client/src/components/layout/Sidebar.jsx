@@ -6,7 +6,8 @@ import {
     HiOutlineHome, HiOutlinePuzzlePiece,
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
-    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle
+    HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
+    HiOutlineChatBubbleLeftRight,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
@@ -20,6 +21,7 @@ const navItems = [
     { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, adminOnly: true },
     { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, adminOnly: true },
     { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, adminOnly: true },
+    { path: '/discord', label: 'Discord Bot', icon: HiOutlineChatBubbleLeftRight, adminOnly: true },
     { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
 ];
 
