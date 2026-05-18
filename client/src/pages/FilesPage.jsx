@@ -6,7 +6,8 @@ import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineFolder, HiOutlineDocument, HiOutlineArrowLeft,
     HiOutlineTrash, HiOutlinePencil, HiOutlineFolderPlus,
-    HiOutlineDocumentPlus, HiOutlineArrowPath,
+    HiOutlineDocumentPlus, HiOutlineArrowPath, HiOutlineDocumentText,
+    HiOutlineMagnifyingGlass, HiOutlineCheck,
 } from 'react-icons/hi2';
 
 function formatSize(bytes, isDirectory) {
@@ -18,11 +19,16 @@ function formatSize(bytes, isDirectory) {
 }
 
 export default function FilesPage() {
+    const [activeTab, setActiveTab] = useState('browser');
     const [currentPath, setCurrentPath] = useState('');
     const [editingFile, setEditingFile] = useState(null);
     const [fileContent, setFileContent] = useState('');
     const [newItemName, setNewItemName] = useState('');
     const [showNewDialog, setShowNewDialog] = useState(null);
+    // Config editörü state
+    const [configSearch, setConfigSearch] = useState('');
+    const [editingConfig, setEditingConfig] = useState(null);
+    const [configContent, setConfigContent] = useState('');
     const queryClient = useQueryClient();
 
     const { data, isLoading } = useQuery({
@@ -52,6 +58,33 @@ export default function FilesPage() {
         onSuccess: () => { toast.success('Kaydedildi'); setEditingFile(null); },
         onError: (err) => toast.error(err.response?.data?.error || 'Kaydedilemedi'),
     });
+
+    // ── Config editörü ────────────────────────────────────────────────────────
+    const { data: configsData, isLoading: loadingConfigs } = useQuery({
+        queryKey: ['filePageConfigs'],
+        queryFn: () => api.get('/mods/configs').then(r => r.data),
+        enabled: activeTab === 'configs',
+    });
+
+    const saveConfigMutation = useMutation({
+        mutationFn: ({ path, content }) => api.put('/mods/configs/write', { path, content }),
+        onSuccess: () => { toast.success('Config kaydedildi'); setEditingConfig(null); },
+        onError: (err) => toast.error(err.response?.data?.error || 'Kaydedilemedi'),
+    });
+
+    const openConfig = async (file) => {
+        try {
+            const res = await api.get(`/mods/configs/read?path=${encodeURIComponent(file.path)}`);
+            setEditingConfig(file);
+            setConfigContent(res.data.content);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Dosya okunamadı');
+        }
+    };
+
+    const filteredConfigs = (configsData?.files || []).filter(f =>
+        !configSearch || f.path.toLowerCase().includes(configSearch.toLowerCase())
+    );
 
     const openFile = async (item) => {
         if (item.isDirectory) {
@@ -84,31 +117,139 @@ export default function FilesPage() {
             <div className="fade-in flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('files.title')}</h1>
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
-                        <button onClick={() => { setCurrentPath(''); setEditingFile(null); }} className="hover:text-gray-900 transition-colors">root</button>
-                        {pathParts.map((part, i) => (
-                            <span key={i} className="flex items-center gap-1">
-                                <span>/</span>
-                                <button
-                                    onClick={() => { setCurrentPath(pathParts.slice(0, i + 1).join('/')); setEditingFile(null); }}
-                                    className="hover:text-gray-900 transition-colors"
-                                >{part}</button>
-                            </span>
-                        ))}
+                    {activeTab === 'browser' && (
+                        <div className="flex items-center gap-1 text-sm text-gray-500">
+                            <button onClick={() => { setCurrentPath(''); setEditingFile(null); }} className="hover:text-gray-900 transition-colors">root</button>
+                            {pathParts.map((part, i) => (
+                                <span key={i} className="flex items-center gap-1">
+                                    <span>/</span>
+                                    <button
+                                        onClick={() => { setCurrentPath(pathParts.slice(0, i + 1).join('/')); setEditingFile(null); }}
+                                        className="hover:text-gray-900 transition-colors"
+                                    >{part}</button>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    {activeTab === 'configs' && (
+                        <p className="text-sm text-gray-500">config/ klasöründeki tüm yapılandırma dosyaları</p>
+                    )}
+                </div>
+                {activeTab === 'browser' && (
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowNewDialog('file')} className="btn-secondary text-xs">
+                            <HiOutlineDocumentPlus className="w-4 h-4" /> Dosya
+                        </button>
+                        <button onClick={() => setShowNewDialog('folder')} className="btn-secondary text-xs">
+                            <HiOutlineFolderPlus className="w-4 h-4" /> Klasör
+                        </button>
+                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['files'] })} className="btn-secondary text-xs">
+                            <HiOutlineArrowPath className="w-4 h-4" />
+                        </button>
                     </div>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setShowNewDialog('file')} className="btn-secondary text-xs">
-                        <HiOutlineDocumentPlus className="w-4 h-4" /> Dosya
+                )}
+                {activeTab === 'configs' && !editingConfig && (
+                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['filePageConfigs'] })} className="btn-secondary text-xs">
+                        <HiOutlineArrowPath className="w-4 h-4" /> Yenile
                     </button>
-                    <button onClick={() => setShowNewDialog('folder')} className="btn-secondary text-xs">
-                        <HiOutlineFolderPlus className="w-4 h-4" /> Klasör
-                    </button>
-                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['files'] })} className="btn-secondary text-xs">
-                        <HiOutlineArrowPath className="w-4 h-4" />
-                    </button>
-                </div>
+                )}
             </div>
+
+            {/* ── Sekmeler ── */}
+            <div className="flex gap-2 fade-in">
+                <button onClick={() => setActiveTab('browser')}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'browser' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>
+                    Dosya Gezgini
+                </button>
+                <button onClick={() => setActiveTab('configs')}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'configs' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>
+                    Config Editörü
+                </button>
+            </div>
+
+            {/* ── Config Editörü ── */}
+            {activeTab === 'configs' && (
+                <>
+                    {editingConfig ? (
+                        <div className="glass-card p-4 fade-in">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <HiOutlinePencil className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                    <span className="font-mono text-sm text-gray-700 truncate">{editingConfig.path}</span>
+                                </div>
+                                <div className="flex gap-2 flex-shrink-0 ml-3">
+                                    <button
+                                        onClick={() => saveConfigMutation.mutate({ path: editingConfig.path, content: configContent })}
+                                        disabled={saveConfigMutation.isPending}
+                                        className="btn-primary text-xs flex items-center gap-1.5"
+                                    >
+                                        <HiOutlineCheck className="w-3.5 h-3.5" />
+                                        {saveConfigMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                                    </button>
+                                    <button onClick={() => setEditingConfig(null)} className="btn-secondary text-xs">Kapat</button>
+                                </div>
+                            </div>
+                            <textarea
+                                value={configContent}
+                                onChange={e => setConfigContent(e.target.value)}
+                                className="w-full font-mono text-sm p-4 rounded-xl bg-gray-950 text-gray-100 border border-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y leading-relaxed"
+                                style={{ minHeight: '28rem' }}
+                                spellCheck={false}
+                            />
+                        </div>
+                    ) : (
+                        <>
+                            {/* Arama */}
+                            <div className="relative fade-in">
+                                <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={configSearch}
+                                    onChange={e => setConfigSearch(e.target.value)}
+                                    placeholder="Config dosyası ara... (örn: mekanism, jei, forge)"
+                                    className="input-field pl-11 text-sm"
+                                />
+                            </div>
+
+                            <div className="glass-card overflow-hidden fade-in">
+                                {loadingConfigs ? (
+                                    <div className="p-8 text-center text-gray-400">
+                                        <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-3" />
+                                        Config dosyaları yükleniyor...
+                                    </div>
+                                ) : filteredConfigs.length > 0 ? (
+                                    filteredConfigs.map(file => (
+                                        <button
+                                            key={file.path}
+                                            onClick={() => openConfig(file)}
+                                            className="w-full flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors text-left group"
+                                        >
+                                            <HiOutlineDocumentText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                                <p className="text-xs text-gray-400 truncate font-mono">{file.path}</p>
+                                            </div>
+                                            <span className="text-xs text-gray-400 flex-shrink-0">{formatSize(file.size, false)}</span>
+                                            <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">Düzenle →</span>
+                                        </button>
+                                    ))
+                                ) : (
+                                    <div className="p-10 text-center text-gray-400">
+                                        <HiOutlineDocumentText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                        <p className="font-medium">
+                                            {configSearch ? 'Arama ile eşleşen config bulunamadı' : 'config/ klasöründe düzenlenebilir dosya bulunamadı'}
+                                        </p>
+                                        <p className="text-xs mt-1 text-gray-300">.toml · .cfg · .json · .properties · .yml · .yaml · .conf</p>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+
+            {/* ── Dosya Gezgini ── */}
+            {activeTab === 'browser' && <>
 
             {/* New Item Dialog */}
             {showNewDialog && (
@@ -184,6 +325,7 @@ export default function FilesPage() {
                     </div>
                 )}
             </div>
+            </>}
         </div>
     );
 }
