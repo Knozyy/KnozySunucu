@@ -75,6 +75,14 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS player_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      joined_at INTEGER NOT NULL,
+      left_at INTEGER,
+      duration_seconds INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS command_macros (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

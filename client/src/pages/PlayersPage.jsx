@@ -1,127 +1,242 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '@/services/api';
-import toast from 'react-hot-toast';
-import { useI18n } from '@/context/I18nContext';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import {
-    HiOutlineUserPlus, HiOutlineTrash, HiOutlineShieldCheck,
-    HiOutlineNoSymbol, HiOutlineUsers,
+    HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
+    HiOutlineMagnifyingGlass, HiOutlineTrophy,
 } from 'react-icons/hi2';
 
+const api = (url) => axios.get(url).then(r => r.data);
+
+function fmtDuration(seconds) {
+    if (!seconds) return '0sn';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}s ${m}d`;
+    if (m > 0) return `${m}d ${s}sn`;
+    return `${s}sn`;
+}
+
+function fmtDate(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function timeAgo(ts) {
+    if (!ts) return '—';
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `${d} gün önce`;
+    if (h > 0) return `${h} saat önce`;
+    if (m > 0) return `${m} dk önce`;
+    return 'az önce';
+}
+
+function PlayerHead({ username, size = 8 }) {
+    return (
+        <img
+            src={`https://mc-heads.net/avatar/${username}/32`}
+            alt={username}
+            className={`w-${size} h-${size} rounded-lg flex-shrink-0`}
+            onError={e => { e.target.src = 'https://mc-heads.net/avatar/steve/32'; }}
+        />
+    );
+}
+
 export default function PlayersPage() {
-    const [activeTab, setActiveTab] = useState('whitelist');
-    const [newName, setNewName] = useState('');
-    const queryClient = useQueryClient();
+    const [search, setSearch] = useState('');
+    const [activeTab, setActiveTab] = useState('sessions');
 
-    const { data: whitelist } = useQuery({ queryKey: ['whitelist'], queryFn: () => api.get('/players/whitelist').then(r => r.data) });
-    const { data: ops } = useQuery({ queryKey: ['ops'], queryFn: () => api.get('/players/ops').then(r => r.data) });
-    const { data: banned } = useQuery({ queryKey: ['banned'], queryFn: () => api.get('/players/banned').then(r => r.data) });
+    const { data: online } = useQuery({
+        queryKey: ['players-online'],
+        queryFn: () => api('/api/players/online'),
+        refetchInterval: 5000,
+    });
 
-    const addWhitelist = useMutation({
-        mutationFn: (name) => api.post('/players/whitelist', { name }),
-        onSuccess: () => { toast.success('Whitelist\'e eklendi'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['whitelist'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Eklenemedi'),
+    const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
+        queryKey: ['player-sessions', search],
+        queryFn: () => api(`/api/players/sessions?limit=100${search ? `&username=${encodeURIComponent(search)}` : ''}`),
+        refetchInterval: 15000,
     });
-    const removeWhitelist = useMutation({
-        mutationFn: (name) => api.delete(`/players/whitelist/${name}`),
-        onSuccess: () => { toast.success('Çıkarıldı'); queryClient.invalidateQueries({ queryKey: ['whitelist'] }); },
+
+    const { data: stats = [], isLoading: statsLoading } = useQuery({
+        queryKey: ['player-stats'],
+        queryFn: () => api('/api/players/stats'),
+        refetchInterval: 30000,
     });
-    const addOp = useMutation({
-        mutationFn: (name) => api.post('/players/ops', { name }),
-        onSuccess: () => { toast.success('OP yapıldı'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['ops'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Eklenemedi'),
-    });
-    const removeOp = useMutation({
-        mutationFn: (name) => api.delete(`/players/ops/${name}`),
-        onSuccess: () => { toast.success('OP kaldırıldı'); queryClient.invalidateQueries({ queryKey: ['ops'] }); },
-    });
-    const banPlayer = useMutation({
-        mutationFn: (name) => api.post('/players/ban', { name }),
-        onSuccess: () => { toast.success('Banlandı'); setNewName(''); queryClient.invalidateQueries({ queryKey: ['banned'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Banlanamadı'),
-    });
-    const unbanPlayer = useMutation({
-        mutationFn: (name) => api.delete(`/players/ban/${name}`),
-        onSuccess: () => { toast.success('Ban kaldırıldı'); queryClient.invalidateQueries({ queryKey: ['banned'] }); },
-    });
+
+    const onlinePlayers = online?.players ?? [];
+    const mcStatus = online?.status ?? 'stopped';
 
     const tabs = [
-        { id: 'whitelist', label: 'Whitelist', icon: HiOutlineUsers, count: whitelist?.players?.length || 0 },
-        { id: 'ops', label: 'Operatörler', icon: HiOutlineShieldCheck, count: ops?.players?.length || 0 },
-        { id: 'banned', label: 'Banlı', icon: HiOutlineNoSymbol, count: banned?.players?.length || 0 },
+        { id: 'sessions', label: 'Oturum Geçmişi', icon: HiOutlineCalendarDays },
+        { id: 'stats', label: 'İstatistikler', icon: HiOutlineTrophy },
     ];
 
-    const handleAdd = () => {
-        if (!newName.trim()) return;
-        if (activeTab === 'whitelist') addWhitelist.mutate(newName.trim());
-        else if (activeTab === 'ops') addOp.mutate(newName.trim());
-        else banPlayer.mutate(newName.trim());
-    };
-
-    const getList = () => {
-        if (activeTab === 'whitelist') return whitelist?.players || [];
-        if (activeTab === 'ops') return ops?.players || [];
-        return banned?.players || [];
-    };
-
-    const handleRemove = (name) => {
-        if (activeTab === 'whitelist') removeWhitelist.mutate(name);
-        else if (activeTab === 'ops') removeOp.mutate(name);
-        else unbanPlayer.mutate(name);
-    };
-
-    const { t } = useI18n();
-
     return (
-        <div className="space-y-6">
-            <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('players.title')}</h1>
-                <p className="text-gray-500">{t('players.subtitle')}</p>
+        <div className="p-6 space-y-6">
+            <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Oyuncular</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Oturum geçmişi ve oyuncu istatistikleri</p>
             </div>
 
-            <div className="flex gap-2 fade-in">
+            {/* Online şu an */}
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                    <div className={`w-2 h-2 rounded-full ${mcStatus === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Şu An Online</h2>
+                    <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                        {onlinePlayers.length}
+                    </span>
+                </div>
+                {onlinePlayers.length === 0 ? (
+                    <p className="text-sm text-gray-400 dark:text-gray-500">
+                        {mcStatus === 'running' ? 'Şu an online oyuncu yok.' : 'Sunucu çalışmıyor.'}
+                    </p>
+                ) : (
+                    <div className="flex flex-wrap gap-3">
+                        {onlinePlayers.map(name => (
+                            <div key={name} className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl px-3 py-2">
+                                <PlayerHead username={name} size={6} />
+                                <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{name}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2">
                 {tabs.map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-                    >
-                        <tab.icon className="w-4 h-4" /> {tab.label} ({tab.count})
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                            activeTab === tab.id
+                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
+                                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                        }`}>
+                        <tab.icon className="w-4 h-4" />{tab.label}
                     </button>
                 ))}
             </div>
 
-            {/* Add player */}
-            <div className="glass-card p-4 fade-in">
-                <div className="flex gap-3">
-                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-                        className="input-field flex-1" placeholder="Oyuncu adı..."
-                        onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
-                    />
-                    <button onClick={handleAdd} className="btn-primary">
-                        <HiOutlineUserPlus className="w-5 h-5" /> Ekle
-                    </button>
-                </div>
-            </div>
+            {activeTab === 'sessions' && (
+                <div className="space-y-4">
+                    <div className="relative max-w-xs">
+                        <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Oyuncu adı ara..."
+                            className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
 
-            {/* Player list */}
-            <div className="glass-card overflow-hidden fade-in">
-                {getList().length > 0 ? getList().map((player, i) => (
-                    <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors group">
-                        <img src={`https://mc-heads.net/avatar/${player.name}/32`} alt={player.name} className="w-8 h-8 rounded-lg" loading="lazy" />
-                        <span className="text-sm text-gray-900 font-medium flex-1">{player.name}</span>
-                        {player.level && <span className="text-xs text-gray-400">Level {player.level}</span>}
-                        {player.reason && <span className="text-xs text-red-400 truncate max-w-[200px]">{player.reason}</span>}
-                        <button onClick={() => handleRemove(player.name)}
-                            className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all">
-                            <HiOutlineTrash className="w-4 h-4" />
-                        </button>
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Son Oturumlar</span>
+                            <span className="text-xs text-gray-400">{sessions.length} kayıt</span>
+                        </div>
+                        {sessionsLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                            </div>
+                        ) : sessions.length === 0 ? (
+                            <div className="py-12 text-center">
+                                <HiOutlineUsers className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                                <p className="text-sm text-gray-400 dark:text-gray-500">Henüz oturum kaydı yok.</p>
+                                <p className="text-xs text-gray-400 mt-1">Bir oyuncu sunucuya girdiğinde burada görünür.</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                                {sessions.map(s => (
+                                    <div key={s.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                        <PlayerHead username={s.username} size={8} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{s.username}</span>
+                                                {!s.left_at && (
+                                                    <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full">online</span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                                {fmtDate(s.joined_at)}
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
+                                                <HiOutlineClock className="w-3.5 h-3.5 text-gray-400" />
+                                                {s.left_at
+                                                    ? fmtDuration(s.duration_seconds)
+                                                    : <span className="text-emerald-600 dark:text-emerald-400">aktif</span>
+                                                }
+                                            </div>
+                                            {s.left_at && (
+                                                <div className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(s.left_at)}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )) : (
-                    <div className="p-8 text-center text-gray-400">
-                        <HiOutlineUsers className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Henüz oyuncu yok</p>
+                </div>
+            )}
+
+            {activeTab === 'stats' && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">En Fazla Oynayan (Top 20)</span>
                     </div>
-                )}
-            </div>
+                    {statsLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                        </div>
+                    ) : stats.length === 0 ? (
+                        <div className="py-12 text-center">
+                            <HiOutlineTrophy className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                            <p className="text-sm text-gray-400 dark:text-gray-500">Henüz istatistik yok.</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                            {stats.map((p, idx) => {
+                                const maxSeconds = stats[0]?.total_seconds || 1;
+                                const pct = Math.round((p.total_seconds / maxSeconds) * 100);
+                                const medals = ['🥇', '🥈', '🥉'];
+                                return (
+                                    <div key={p.username} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                        <span className="w-6 text-center text-sm flex-shrink-0">
+                                            {idx < 3
+                                                ? medals[idx]
+                                                : <span className="text-gray-400 dark:text-gray-500 text-xs">#{idx + 1}</span>
+                                            }
+                                        </span>
+                                        <PlayerHead username={p.username} size={8} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{p.username}</span>
+                                                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{fmtDuration(p.total_seconds)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                    <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                                                </div>
+                                                <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{p.session_count} oturum</span>
+                                            </div>
+                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                                Son görülme: {timeAgo(p.last_seen)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
