@@ -71,8 +71,23 @@ export function AuthProvider({ children }) {
         return response.data.message;
     };
 
+    /**
+     * Kullanıcının belirli bir sayfaya erişimi var mı?
+     * - Admin → her zaman true
+     * - allowed_pages === null → tüm sayfalar (admin)
+     * - allowed_pages === [] → hiçbir sayfa
+     * - allowed_pages içinde pageKey varsa → true
+     */
+    const canAccess = (pageKey) => {
+        if (!user) return false;
+        if (user.role === 'admin') return true;
+        if (user.allowed_pages === null) return true; // tam erişim
+        if (!Array.isArray(user.allowed_pages)) return false;
+        return user.allowed_pages.includes(pageKey);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, loading, login, register, logout, checkAdmin, activateGoldenKey }}>
+        <AuthContext.Provider value={{ user, token, loading, login, register, logout, checkAdmin, activateGoldenKey, canAccess }}>
             {children}
         </AuthContext.Provider>
     );

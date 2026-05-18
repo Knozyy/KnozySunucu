@@ -58,6 +58,14 @@ function initDatabase() {
       crash_count INTEGER DEFAULT 1,
       occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS permission_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT DEFAULT '#6366f1',
+      pages TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle
@@ -95,6 +103,9 @@ function initDatabase() {
       database.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
       // İlk admin varsa onu admin yap
       database.exec("UPDATE users SET role = 'admin' WHERE id = 1");
+    }
+    if (!userColNames.includes('category_id')) {
+      database.exec("ALTER TABLE users ADD COLUMN category_id INTEGER NULL REFERENCES permission_categories(id)");
     }
   } catch (err) { console.error('Migration error:', err.message) }
 

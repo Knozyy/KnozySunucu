@@ -7,8 +7,27 @@ import {
     HiOutlineArrowPath,
     HiOutlineCpuChip,
     HiOutlineUsers, HiOutlineShieldCheck, HiOutlineNoSymbol,
-    HiOutlineUserPlus, HiOutlineTrash,
+    HiOutlineUserPlus, HiOutlineTrash, HiOutlinePlus, HiOutlinePencil,
+    HiOutlineCheck, HiOutlineXMark, HiOutlineTag,
 } from 'react-icons/hi2';
+
+// ── Tüm izin verilebilir sayfalar ─────────────────────────────────────────────
+const ALL_PAGES = [
+    { key: 'console',   label: 'Konsol',       emoji: '💻' },
+    { key: 'terminal',  label: 'Terminal',      emoji: '⌨️' },
+    { key: 'worlds',    label: 'Dünyalar',      emoji: '🌍' },
+    { key: 'files',     label: 'Dosyalar',      emoji: '📁' },
+    { key: 'modpacks',  label: 'Modpackler',    emoji: '📦' },
+    { key: 'mods',      label: 'Modlar',        emoji: '🧩' },
+    { key: 'scheduler', label: 'Görevler',      emoji: '⏰' },
+    { key: 'backup',    label: 'Yedekleme',     emoji: '💾' },
+    { key: 'discord',   label: 'Discord Bot',   emoji: '🤖' },
+];
+
+const PRESET_COLORS = [
+    '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
+];
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('players');
@@ -18,6 +37,7 @@ export default function SettingsPage() {
         { id: 'players', label: 'Oyuncu Yönetimi', icon: HiOutlineUsers },
         { id: 'tasks', label: 'Görev Yöneticisi', icon: HiOutlineCpuChip },
         { id: 'users', label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
+        { id: 'categories', label: 'İzin Kategorileri', icon: HiOutlineTag },
     ];
 
     return (
@@ -43,6 +63,7 @@ export default function SettingsPage() {
             {activeTab === 'players' && <PlayersPanel />}
             {activeTab === 'tasks' && <TaskManagerPanel />}
             {activeTab === 'users' && <PanelUsersPanel />}
+            {activeTab === 'categories' && <CategoriesPanel />}
         </div>
     );
 }
@@ -54,19 +75,29 @@ export default function SettingsPage() {
 function PanelUsersPanel() {
     const queryClient = useQueryClient();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
+    const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user', category_id: '' });
 
     const { data: usersData, isLoading } = useQuery({
         queryKey: ['panelUsers'],
         queryFn: () => api.get('/users').then(r => r.data),
     });
 
+    const { data: catsData } = useQuery({
+        queryKey: ['permCategories'],
+        queryFn: () => api.get('/permission-categories').then(r => r.data),
+    });
+
     const addMutation = useMutation({
         mutationFn: (data) => api.post('/users', data),
-        onSuccess: () => {
+        onSuccess: async (_, data) => {
             toast.success('Kullanıcı başarıyla eklendi');
+            const { data: allUsers } = await api.get('/users');
+            if (data.category_id) {
+                const created = allUsers.users.find(u => u.username === data.username);
+                if (created) await api.put(`/users/${created.id}/category`, { category_id: data.category_id });
+            }
             setIsAddModalOpen(false);
-            setNewUser({ username: '', password: '', role: 'user' });
+            setNewUser({ username: '', password: '', role: 'user', category_id: '' });
             queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Kullanıcı eklenemedi'),
@@ -90,7 +121,17 @@ function PanelUsersPanel() {
         onError: (err) => toast.error(err.response?.data?.error || 'Güncellenemedi'),
     });
 
+    const updateCategoryMutation = useMutation({
+        mutationFn: ({ id, category_id }) => api.put(`/users/${id}/category`, { category_id: category_id || null }),
+        onSuccess: () => {
+            toast.success('Kategori güncellendi');
+            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Güncellenemedi'),
+    });
+
     const users = usersData?.users || [];
+    const categories = catsData?.categories || [];
 
     return (
         <div className="space-y-4 fade-in">
@@ -113,6 +154,7 @@ function PanelUsersPanel() {
                             <tr>
                                 <th className="px-6 py-3">Kullanıcı Adı</th>
                                 <th className="px-6 py-3">Rol</th>
+                                <th className="px-6 py-3">İzin Kategorisi</th>
                                 <th className="px-6 py-3">Kayıt Tarihi</th>
                                 <th className="px-6 py-3 text-right">İşlemler</th>
                             </tr>
@@ -120,7 +162,7 @@ function PanelUsersPanel() {
                         <tbody className="divide-y divide-gray-100 bg-white">
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">Yükleniyor...</td>
+                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">Yükleniyor...</td>
                                 </tr>
                             ) : users.map(user => (
                                 <tr key={user.id} className="hover:bg-gray-50/50">
@@ -135,6 +177,28 @@ function PanelUsersPanel() {
                                             <option value="user">Misafir (Yalnızca Oku)</option>
                                             <option value="admin">Yönetici (Full Erişim)</option>
                                         </select>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {user.role === 'admin' ? (
+                                            <span className="text-xs text-amber-500 font-medium">Tam Erişim</span>
+                                        ) : (
+                                            <select
+                                                value={user.category_id || ''}
+                                                onChange={(e) => updateCategoryMutation.mutate({ id: user.id, category_id: e.target.value ? parseInt(e.target.value) : null })}
+                                                className="text-xs px-2 py-1 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary focus:outline-none bg-white text-gray-700 max-w-[160px]"
+                                            >
+                                                <option value="">— Kategori Yok —</option>
+                                                {categories.map(cat => (
+                                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        {user.category_name && user.role !== 'admin' && (
+                                            <span
+                                                className="ml-2 inline-block w-2 h-2 rounded-full"
+                                                style={{ backgroundColor: user.category_color || '#6366f1' }}
+                                            />
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-gray-400">{new Date(user.created_at).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 text-right">
@@ -173,6 +237,18 @@ function PanelUsersPanel() {
                                     <option value="admin">Yönetici (Admin)</option>
                                 </select>
                             </div>
+                            {newUser.role === 'user' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">İzin Kategorisi</label>
+                                    <select value={newUser.category_id} onChange={e => setNewUser({ ...newUser, category_id: e.target.value })} className="input-field">
+                                        <option value="">— Kategori Yok (Sıfır Erişim) —</option>
+                                        {categories.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-400 mt-1">Kategori seçilmezse kullanıcı hiçbir sayfayı göremez.</p>
+                                </div>
+                            )}
                             <div className="flex gap-3 mt-6">
                                 <button onClick={() => setIsAddModalOpen(false)} className="btn-secondary flex-1">İptal</button>
                                 <button onClick={() => addMutation.mutate(newUser)} disabled={addMutation.isPending} className="btn-primary flex-1">
@@ -403,6 +479,258 @@ function PlayersPanel() {
                         <p>Henüz oyuncu yok</p>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+
+// ============================================================
+// İZİN KATEGORİLERİ PANELİ (CategoriesPanel)
+// ============================================================
+function CategoriesPanel() {
+    const queryClient = useQueryClient();
+    const [modalOpen, setModalOpen] = useState(false);
+    const [editing, setEditing] = useState(null); // null = yeni oluştur
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['permCategories'],
+        queryFn: () => api.get('/permission-categories').then(r => r.data),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id) => api.delete(`/permission-categories/${id}`),
+        onSuccess: () => {
+            toast.success('Kategori silindi');
+            queryClient.invalidateQueries({ queryKey: ['permCategories'] });
+            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Silinemedi'),
+    });
+
+    const categories = data?.categories || [];
+
+    const openCreate = () => { setEditing(null); setModalOpen(true); };
+    const openEdit = (cat) => { setEditing(cat); setModalOpen(true); };
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="glass-card p-4 flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <HiOutlineTag className="w-5 h-5 text-gray-600" /> İzin Kategorileri
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">Hangi sayfaların görüneceğini belirleyen gruplar oluşturun.</p>
+                </div>
+                <button onClick={openCreate} className="btn-primary text-sm flex items-center gap-2">
+                    <HiOutlinePlus className="w-4 h-4" /> Yeni Kategori
+                </button>
+            </div>
+
+            {isLoading ? (
+                <div className="glass-card p-8 text-center text-gray-400">Yükleniyor...</div>
+            ) : categories.length === 0 ? (
+                <div className="glass-card p-12 text-center text-gray-400">
+                    <HiOutlineTag className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p className="font-medium mb-1">Henüz kategori yok</p>
+                    <p className="text-sm">Yeni Kategori butonuna tıklayarak başlayın.</p>
+                </div>
+            ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {categories.map(cat => {
+                        const pages = Array.isArray(cat.pages) ? cat.pages : (() => { try { return JSON.parse(cat.pages || '[]'); } catch { return []; } })();
+                        return (
+                            <div key={cat.id} className="glass-card p-4 space-y-3 group">
+                                {/* Başlık */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span
+                                            className="w-3 h-3 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: cat.color || '#6366f1' }}
+                                        />
+                                        <span className="font-semibold text-gray-900 truncate">{cat.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => openEdit(cat)}
+                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title="Düzenle"
+                                        >
+                                            <HiOutlinePencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => window.confirm(`"${cat.name}" kategorisini silmek istediğinizden emin misiniz?`) && deleteMutation.mutate(cat.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Sil"
+                                        >
+                                            <HiOutlineTrash className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* İzinli sayfalar */}
+                                <div className="flex flex-wrap gap-1.5">
+                                    {pages.length === 0 ? (
+                                        <span className="text-xs text-gray-400 italic">Hiçbir sayfa seçilmedi</span>
+                                    ) : ALL_PAGES.filter(p => pages.includes(p.key)).map(p => (
+                                        <span
+                                            key={p.key}
+                                            className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                                            style={{ backgroundColor: (cat.color || '#6366f1') + '22', color: cat.color || '#6366f1' }}
+                                        >
+                                            <span>{p.emoji}</span> {p.label}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                {/* Kullanıcı sayısı */}
+                                <p className="text-xs text-gray-400">
+                                    {cat.user_count ?? 0} kullanıcı bu kategoride
+                                </p>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Oluştur / Düzenle Modalı */}
+            {modalOpen && (
+                <CategoryModal
+                    initial={editing}
+                    onClose={() => setModalOpen(false)}
+                    onSaved={() => {
+                        setModalOpen(false);
+                        queryClient.invalidateQueries({ queryKey: ['permCategories'] });
+                        queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// ── Kategori oluştur/düzenle modalı ─────────────────────────────────────────
+function CategoryModal({ initial, onClose, onSaved }) {
+    const [name, setName] = useState(initial?.name || '');
+    const [color, setColor] = useState(initial?.color || PRESET_COLORS[0]);
+    const [pages, setPages] = useState(() => {
+        const p = initial?.pages;
+        if (Array.isArray(p)) return p;
+        try { return JSON.parse(p || '[]'); } catch { return []; }
+    });
+    const [saving, setSaving] = useState(false);
+
+    const togglePage = (key) => {
+        setPages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+    };
+
+    const handleSave = async () => {
+        if (!name.trim()) { toast.error('Kategori adı boş olamaz'); return; }
+        setSaving(true);
+        try {
+            if (initial?.id) {
+                await api.put(`/permission-categories/${initial.id}`, { name: name.trim(), color, pages });
+                toast.success('Kategori güncellendi');
+            } else {
+                await api.post('/permission-categories', { name: name.trim(), color, pages });
+                toast.success('Kategori oluşturuldu');
+            }
+            onSaved();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Kaydedilemedi');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl scale-in">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-5">
+                    {initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'}
+                </h3>
+
+                <div className="space-y-5">
+                    {/* İsim */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kategori Adı</label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            className="input-field"
+                            placeholder="örn. Builder, Moderatör..."
+                            autoFocus
+                        />
+                    </div>
+
+                    {/* Renk */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Renk</label>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {PRESET_COLORS.map(c => (
+                                <button
+                                    key={c}
+                                    onClick={() => setColor(c)}
+                                    className="w-7 h-7 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                    style={{
+                                        backgroundColor: c,
+                                        boxShadow: color === c ? `0 0 0 3px white, 0 0 0 5px ${c}` : undefined,
+                                    }}
+                                />
+                            ))}
+                            <input
+                                type="color"
+                                value={color}
+                                onChange={e => setColor(e.target.value)}
+                                className="w-7 h-7 rounded-full border border-gray-200 cursor-pointer"
+                                title="Özel renk seç"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Sayfa İzinleri */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Erişilebilir Sayfalar
+                            <span className="ml-2 text-xs font-normal text-gray-400">({pages.length}/{ALL_PAGES.length} seçili)</span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {ALL_PAGES.map(page => {
+                                const selected = pages.includes(page.key);
+                                return (
+                                    <button
+                                        key={page.key}
+                                        onClick={() => togglePage(page.key)}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
+                                            selected
+                                                ? 'border-transparent text-white'
+                                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white'
+                                        }`}
+                                        style={selected ? { backgroundColor: color, borderColor: color } : {}}
+                                    >
+                                        {selected
+                                            ? <HiOutlineCheck className="w-4 h-4 flex-shrink-0" />
+                                            : <span className="w-4 h-4 flex-shrink-0 text-base leading-none">{page.emoji}</span>
+                                        }
+                                        <span className="truncate">{page.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                    <button onClick={onClose} className="btn-secondary flex-1">İptal</button>
+                    <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                        {saving ? (
+                            <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Kaydediliyor...</>
+                        ) : (
+                            <><HiOutlineCheck className="w-4 h-4" /> {initial ? 'Güncelle' : 'Oluştur'}</>
+                        )}
+                    </button>
+                </div>
             </div>
         </div>
     );

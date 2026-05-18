@@ -24,6 +24,7 @@ const notificationRoutes = require('./routes/notifications');
 const usersRoutes = require('./routes/users');
 const terminalRoutes = require('./routes/terminal');
 const discordRoutes = require('./routes/discord');
+const permCatRoutes = require('./routes/permissionCategories');
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +54,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/terminal', terminalRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/permission-categories', permCatRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

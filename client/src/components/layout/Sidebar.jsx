@@ -11,22 +11,24 @@ import {
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
+// permKey olan öğeler: admin her zaman görür, user ise kategorisine göre görür
+// adminOnly olan öğeler: sadece admin görür (kategori ile açılamaz)
 const navItems = [
     { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
-    { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine },
-    { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, adminOnly: true },
-    { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt },
-    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, adminOnly: true },
-    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, adminOnly: true },
-    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, adminOnly: true },
-    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, adminOnly: true },
-    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, adminOnly: true },
-    { path: '/discord', label: 'Discord Bot', icon: HiOutlineChatBubbleLeftRight, adminOnly: true },
+    { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine, permKey: 'console' },
+    { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, permKey: 'terminal' },
+    { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt, permKey: 'worlds' },
+    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, permKey: 'files' },
+    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, permKey: 'modpacks' },
+    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, permKey: 'mods' },
+    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, permKey: 'scheduler' },
+    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, permKey: 'backup' },
+    { path: '/discord', label: 'Discord Bot', icon: HiOutlineChatBubbleLeftRight, permKey: 'discord' },
     { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
-    const { user, activateGoldenKey, logout } = useAuth();
+    const { user, activateGoldenKey, logout, canAccess } = useAuth();
     const { isDark, toggle } = useTheme();
     const { locale, changeLocale, t } = useI18n();
 
@@ -74,7 +76,10 @@ export default function Sidebar({ isOpen, onClose }) {
                 <nav className="flex-1 py-4 px-3 overflow-y-auto">
                     <ul className="space-y-1">
                         {navItems.map((item) => {
+                            // adminOnly → sadece admin görebilir
                             if (item.adminOnly && user?.role !== 'admin') return null;
+                            // permKey olan öğeler → canAccess ile kontrol
+                            if (item.permKey && !canAccess(item.permKey)) return null;
 
                             return (
                                 <li key={item.path}>
