@@ -26,6 +26,7 @@ const terminalRoutes = require('./routes/terminal');
 const discordRoutes = require('./routes/discord');
 const permCatRoutes = require('./routes/permissionCategories');
 const automationRoutes = require('./routes/automation');
+const macroRoutes = require('./routes/macros');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,6 +58,7 @@ app.use('/api/terminal', terminalRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/permission-categories', permCatRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/macros', macroRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
