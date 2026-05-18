@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -7,30 +8,76 @@ import {
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
-    HiOutlineChatBubbleLeftRight,
+    HiOutlineChatBubbleLeftRight, HiOutlineChevronDown,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
-// permKey olan öğeler: admin her zaman görür, user ise kategorisine göre görür
-// adminOnly olan öğeler: sadece admin görür (kategori ile açılamaz)
-const navItems = [
-    { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
-    { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine, permKey: 'console' },
-    { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, permKey: 'terminal' },
-    { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt, permKey: 'worlds' },
-    { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, permKey: 'files' },
-    { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, permKey: 'modpacks' },
-    { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, permKey: 'mods' },
-    { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, permKey: 'scheduler' },
-    { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, permKey: 'backup' },
-    { path: '/discord', label: 'Discord Bot', icon: HiOutlineChatBubbleLeftRight, permKey: 'discord' },
-    { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
+// permKey: admin her zaman görür, user kategorisine göre görür
+// adminOnly: sadece admin görür
+const navGroups = [
+    {
+        id: 'general',
+        items: [
+            { path: '/', i18nKey: 'nav.dashboard', icon: HiOutlineHome },
+        ],
+    },
+    {
+        id: 'server',
+        label: 'Sunucu',
+        items: [
+            { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine, permKey: 'console' },
+            { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, permKey: 'terminal' },
+        ],
+    },
+    {
+        id: 'content',
+        label: 'İçerik',
+        items: [
+            { path: '/worlds', i18nKey: 'nav.worlds', icon: HiOutlineGlobeAlt, permKey: 'worlds' },
+            { path: '/files', i18nKey: 'nav.files', icon: HiOutlineFolder, permKey: 'files' },
+            { path: '/modpacks', i18nKey: 'nav.modpacks', icon: HiOutlinePuzzlePiece, permKey: 'modpacks' },
+            { path: '/mods', i18nKey: 'nav.mods', icon: HiOutlineCube, permKey: 'mods' },
+        ],
+    },
+    {
+        id: 'automation',
+        label: 'Otomasyon',
+        items: [
+            { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, permKey: 'scheduler' },
+            { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, permKey: 'backup' },
+        ],
+    },
+    {
+        id: 'integration',
+        label: 'Entegrasyon',
+        items: [
+            { path: '/discord', label: 'Discord Bot', icon: HiOutlineChatBubbleLeftRight, permKey: 'discord' },
+        ],
+    },
+    {
+        id: 'system',
+        label: 'Sistem',
+        items: [
+            { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
+        ],
+    },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
     const { user, activateGoldenKey, logout, canAccess } = useAuth();
     const { isDark, toggle } = useTheme();
     const { locale, changeLocale, t } = useI18n();
+
+    // Varsayılan olarak tüm gruplar açık
+    const [collapsed, setCollapsed] = useState(new Set());
+
+    const toggleGroup = (id) => {
+        setCollapsed(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
 
     const handleGoldenKey = async () => {
         if (user?.role === 'admin') return;
@@ -73,36 +120,71 @@ export default function Sidebar({ isOpen, onClose }) {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 px-3 overflow-y-auto">
-                    <ul className="space-y-1">
-                        {navItems.map((item) => {
-                            // adminOnly → sadece admin görebilir
-                            if (item.adminOnly && user?.role !== 'admin') return null;
-                            // permKey olan öğeler → canAccess ile kontrol
-                            if (item.permKey && !canAccess(item.permKey)) return null;
+                <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-1">
+                    {navGroups.map((group) => {
+                        // Gruptaki görünür öğeleri filtrele
+                        const visibleItems = group.items.filter(item => {
+                            if (item.adminOnly && user?.role !== 'admin') return false;
+                            if (item.permKey && !canAccess(item.permKey)) return false;
+                            return true;
+                        });
 
-                            return (
-                                <li key={item.path}>
-                                    <NavLink
-                                        to={item.path}
-                                        onClick={onClose}
-                                        className={({ isActive }) => `
-                                            flex items-center gap-3 px-4 py-2.5 rounded-xl
-                                            text-sm font-medium transition-all duration-200
-                                            ${isActive
-                                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
-                                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
-                                            }
-                                        `}
-                                        end={item.path === '/'}
+                        // Görünür öğe yoksa grubu hiç gösterme
+                        if (visibleItems.length === 0) return null;
+
+                        const isCollapsed = collapsed.has(group.id);
+
+                        return (
+                            <div key={group.id}>
+                                {/* Grup başlığı (sadece label olan gruplarda) */}
+                                {group.label && (
+                                    <button
+                                        onClick={() => toggleGroup(group.id)}
+                                        className="w-full flex items-center justify-between px-3 py-1.5 mb-0.5 rounded-lg group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60"
                                     >
-                                        <item.icon className="w-5 h-5 flex-shrink-0" />
-                                        <span>{item.label || t(item.i18nKey)}</span>
-                                    </NavLink>
-                                </li>
-                            );
-                        })}
-                    </ul>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-400 transition-colors">
+                                            {group.label}
+                                        </span>
+                                        <HiOutlineChevronDown
+                                            className={`w-3 h-3 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 transition-all duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+                                        />
+                                    </button>
+                                )}
+
+                                {/* Öğeler */}
+                                <ul
+                                    className="space-y-0.5 overflow-hidden transition-all duration-200"
+                                    style={{ maxHeight: isCollapsed ? '0px' : '400px', opacity: isCollapsed ? 0 : 1 }}
+                                >
+                                    {visibleItems.map((item) => (
+                                        <li key={item.path}>
+                                            <NavLink
+                                                to={item.path}
+                                                onClick={onClose}
+                                                className={({ isActive }) => `
+                                                    flex items-center gap-3 px-4 py-2.5 rounded-xl
+                                                    text-sm font-medium transition-all duration-200
+                                                    ${isActive
+                                                        ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
+                                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
+                                                    }
+                                                `}
+                                                end={item.path === '/'}
+                                            >
+                                                <item.icon className="w-5 h-5 flex-shrink-0" />
+                                                <span>{item.label || t(item.i18nKey)}</span>
+                                            </NavLink>
+                                        </li>
+                                    ))}
+                                </ul>
+
+                                {/* Grup arası ince ayraç (son grup hariç, label olan grupların altına) */}
+                                {group.label && !isCollapsed && (
+                                    <div className="mt-1 mb-0.5" />
+                                )}
+                            </div>
+                        );
+                    })}
                 </nav>
 
                 {/* Theme Toggle + User */}
