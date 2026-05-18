@@ -10,7 +10,7 @@ import {
     HiOutlinePaperAirplane, HiOutlineDocumentText,
     HiOutlineMagnifyingGlass, HiOutlineFunnel,
     HiOutlineRectangleGroup, HiOutlinePlus, HiOutlinePencil,
-    HiOutlinePlay, HiOutlineXMark,
+    HiOutlinePlay, HiOutlineXMark, HiOutlineArchiveBox,
 } from 'react-icons/hi2';
 
 export default function ConsolePage() {
@@ -61,6 +61,7 @@ export default function ConsolePage() {
     const tabs = [
         { id: 'console', label: 'Konsol', icon: HiOutlineCommandLine },
         { id: 'macros', label: 'Makrolar', icon: HiOutlineRectangleGroup },
+        { id: 'archive', label: 'Arşiv Arama', icon: HiOutlineArchiveBox },
         { id: 'logs', label: 'Log Dosyaları', icon: HiOutlineDocumentText },
     ];
 
@@ -92,6 +93,8 @@ export default function ConsolePage() {
 
             {activeTab === 'macros' ? (
                 <MacrosPanel mcStatus={status?.status} sendCommand={sendCommand} />
+            ) : activeTab === 'archive' ? (
+                <LogArchivePanel />
             ) : activeTab === 'console' ? (
                 <div className="glass-card overflow-hidden fade-in">
                     {/* Terminal header */}
@@ -235,6 +238,105 @@ function LogFilesPanel() {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ============================================================
+// LOG ARŞİV ARAMA PANELİ
+// ============================================================
+
+function LogArchivePanel() {
+    const [query, setQuery] = useState('');
+    const [level, setLevel] = useState('all');
+    const [submitted, setSubmitted] = useState('');
+
+    const { data, isFetching } = useQuery({
+        queryKey: ['log-search-all', submitted, level],
+        queryFn: () => submitted
+            ? api.get(`/logs/search-all?q=${encodeURIComponent(submitted)}&level=${level}`).then(r => r.data)
+            : null,
+        enabled: !!submitted,
+    });
+
+    const handleSearch = (e) => {
+        e.preventDefault();
+        if (query.trim()) setSubmitted(query.trim());
+    };
+
+    const getLineColor = (line) => {
+        const l = line.toLowerCase();
+        if (l.includes('error') || l.includes('fatal')) return 'text-red-400';
+        if (l.includes('warn')) return 'text-amber-400';
+        return 'text-gray-400';
+    };
+
+    return (
+        <div className="space-y-4 fade-in">
+            <form onSubmit={handleSearch} className="flex gap-2">
+                <div className="relative flex-1">
+                    <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        type="text" value={query} onChange={e => setQuery(e.target.value)}
+                        placeholder="Tüm loglarda ara... (örn: ERROR, Player, uuid)"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                </div>
+                <select value={level} onChange={e => setLevel(e.target.value)}
+                    className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300">
+                    <option value="all">Tümü</option>
+                    <option value="error">Error</option>
+                    <option value="warn">Warn</option>
+                    <option value="info">Info</option>
+                </select>
+                <button type="submit" disabled={!query.trim()}
+                    className="px-5 py-2.5 text-sm font-medium rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40">
+                    Ara
+                </button>
+            </form>
+
+            {isFetching && (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                    Tüm log dosyaları taranıyor...
+                </div>
+            )}
+
+            {data && !isFetching && (
+                <>
+                    <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
+                        <span>{data.total} sonuç</span>
+                        <span>•</span>
+                        <span>{data.filesSearched} dosya tarandı</span>
+                        <span>•</span>
+                        <span>{(data.scanned || 0).toLocaleString()} satır</span>
+                    </div>
+                    <div className="glass-card overflow-hidden">
+                        <div className="h-[500px] overflow-y-auto p-4 font-mono text-xs bg-gray-900">
+                            {data.results.length === 0 ? (
+                                <div className="text-gray-500 text-center py-16">
+                                    <HiOutlineArchiveBox className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                                    <p>Sonuç bulunamadı.</p>
+                                </div>
+                            ) : (
+                                data.results.map((r, i) => (
+                                    <div key={i} className="leading-5 hover:bg-white/5 px-2 -mx-2 rounded flex gap-2">
+                                        <span className="text-indigo-400/60 flex-shrink-0 w-28 truncate">{r.file}:{r.lineNumber}</span>
+                                        <span className={getLineColor(r.content)}>{r.content}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {!data && !isFetching && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-10 text-center">
+                    <HiOutlineArchiveBox className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Tüm log dosyalarında (latest.log + arşiv .gz) arama yapın.</p>
+                </div>
+            )}
         </div>
     );
 }

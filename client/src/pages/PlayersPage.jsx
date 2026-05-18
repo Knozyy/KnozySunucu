@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import {
     HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
-    HiOutlineMagnifyingGlass, HiOutlineTrophy,
+    HiOutlineMagnifyingGlass, HiOutlineTrophy, HiOutlineNoSymbol,
+    HiOutlineCheckCircle,
 } from 'react-icons/hi2';
 
 const api = (url) => axios.get(url).then(r => r.data);
@@ -71,9 +72,16 @@ export default function PlayersPage() {
     const onlinePlayers = online?.players ?? [];
     const mcStatus = online?.status ?? 'stopped';
 
+    const { data: banlog = [], isLoading: banloading } = useQuery({
+        queryKey: ['banlog'],
+        queryFn: () => api('/api/players/banlog'),
+        refetchInterval: 30000,
+    });
+
     const tabs = [
         { id: 'sessions', label: 'Oturum Geçmişi', icon: HiOutlineCalendarDays },
         { id: 'stats', label: 'İstatistikler', icon: HiOutlineTrophy },
+        { id: 'banlog', label: 'Ban Günlüğü', icon: HiOutlineNoSymbol },
     ];
 
     return (
@@ -229,6 +237,51 @@ export default function PlayersPage() {
                                             <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                                                 Son görülme: {timeAgo(p.last_seen)}
                                             </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeTab === 'banlog' && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Ban Geçmişi</span>
+                        <span className="text-xs text-gray-400">{banlog.length} kayıt</span>
+                    </div>
+                    {banloading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                        </div>
+                    ) : banlog.length === 0 ? (
+                        <div className="py-12 text-center">
+                            <HiOutlineNoSymbol className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                            <p className="text-sm text-gray-400 dark:text-gray-500">Ban geçmişi yok.</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                            {banlog.map(b => {
+                                const isBan = b.action === 'ban' || b.action === 'ban-ip';
+                                return (
+                                    <div key={b.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isBan ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'}`}>
+                                            {isBan ? <HiOutlineNoSymbol className="w-4 h-4" /> : <HiOutlineCheckCircle className="w-4 h-4" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{b.username}</span>
+                                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isBan ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                                                    {b.action}
+                                                </span>
+                                            </div>
+                                            {b.reason && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">Neden: {b.reason}</p>}
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{b.banned_by}</div>
+                                            <div className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(new Date(b.created_at).getTime())}</div>
                                         </div>
                                     </div>
                                 );

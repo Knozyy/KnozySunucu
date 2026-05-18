@@ -83,6 +83,15 @@ function initDatabase() {
       duration_seconds INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS ban_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      banned_by TEXT DEFAULT 'admin',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS command_macros (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

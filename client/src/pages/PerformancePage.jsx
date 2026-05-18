@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import {
     HiOutlineCpuChip, HiOutlineCircleStack, HiOutlineServerStack,
-    HiOutlineUsers, HiOutlineBoltSlash, HiOutlineBolt,
+    HiOutlineUsers, HiOutlineBoltSlash, HiOutlineBolt, HiOutlineFolder,
 } from 'react-icons/hi2';
 
 async function fetchPerformance() {
@@ -130,6 +131,86 @@ function McStatusCard({ mc }) {
     );
 }
 
+const FOLDER_COLORS = {
+    world: '#10b981', world_nether: '#ef4444', world_the_end: '#8b5cf6',
+    mods: '#f59e0b', config: '#6366f1', logs: '#64748b',
+    backups: '#06b6d4', plugins: '#ec4899', 'crash-reports': '#f97316',
+    diğer: '#94a3b8',
+};
+
+function DiskAnalysisPanel() {
+    const { data, isLoading } = useQuery({
+        queryKey: ['disk-analysis'],
+        queryFn: () => axios.get('/api/worlds/disk').then(r => r.data),
+        refetchInterval: 60000,
+    });
+
+    if (isLoading) return (
+        <div className="flex items-center justify-center py-10">
+            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+        </div>
+    );
+
+    if (!data) return null;
+
+    return (
+        <div className="space-y-4">
+            {data.sysDisk && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Sistem Diski</h3>
+                        <span className="text-xs text-gray-400">{data.sysDisk.usedGB} / {data.sysDisk.totalGB} GB</span>
+                    </div>
+                    <div className="h-2 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(data.sysDisk.percent, 100)}%`, background: data.sysDisk.percent > 85 ? '#ef4444' : data.sysDisk.percent > 60 ? '#f59e0b' : '#10b981' }}
+                        />
+                    </div>
+                    <div className="flex justify-between mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        <span>Kullanılan: {data.sysDisk.percent?.toFixed(1)}%</span>
+                        <span>Boş: {(data.sysDisk.totalGB - data.sysDisk.usedGB).toFixed(1)} GB</span>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Sunucu Klasörleri</h3>
+                    <span className="text-xs text-gray-400">Toplam: {data.totalFormatted}</span>
+                </div>
+
+                {/* Stacked bar */}
+                {data.folders.length > 0 && (
+                    <div className="flex h-4 w-full rounded-full overflow-hidden mb-4 gap-px">
+                        {data.folders.map(f => (
+                            <div key={f.name} title={`${f.name}: ${f.formatted}`}
+                                className="transition-all duration-500"
+                                style={{ width: `${f.percent}%`, background: FOLDER_COLORS[f.name] || '#94a3b8', minWidth: f.percent > 1 ? '2px' : 0 }}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                <div className="space-y-2">
+                    {data.folders.map(f => (
+                        <div key={f.name} className="flex items-center gap-3">
+                            <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: FOLDER_COLORS[f.name] || '#94a3b8' }} />
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <HiOutlineFolder className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{f.name}</span>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                                <span className="text-sm font-medium text-gray-900 dark:text-white">{f.formatted}</span>
+                                <span className="text-xs text-gray-400 ml-2">{f.percent}%</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function PerformancePage() {
     const { data, isLoading } = useQuery({
         queryKey: ['performance'],
@@ -138,17 +219,31 @@ export default function PerformancePage() {
         refetchIntervalInBackground: true,
     });
 
+    const [activeTab, setActiveTab] = useState('live');
     const cpuHistory = data?.history?.map(h => h.cpu) ?? [];
     const ramHistory = data?.history?.map(h => h.ram) ?? [];
 
     return (
         <div className="p-6 space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Performans Monitörü</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Gerçek zamanlı sistem kaynakları (3sn yenileme)</p>
+            <div className="flex items-start justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Performans Monitörü</h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Gerçek zamanlı sistem kaynakları</p>
+                </div>
             </div>
 
-            {isLoading ? (
+            <div className="flex gap-2">
+                {[{ id: 'live', label: 'Canlı' }, { id: 'disk', label: 'Disk Analizi' }].map(t => (
+                    <button key={t.id} onClick={() => setActiveTab(t.id)}
+                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === t.id ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {activeTab === 'disk' && <DiskAnalysisPanel />}
+
+            {activeTab === 'live' && (isLoading ? (
                 <div className="flex items-center justify-center h-40">
                     <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                 </div>
@@ -227,7 +322,7 @@ export default function PerformancePage() {
                         </div>
                     </div>
                 </>
-            )}
+            ))}
         </div>
     );
 }

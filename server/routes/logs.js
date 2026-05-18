@@ -170,4 +170,61 @@ router.get('/search', authMiddleware, (req, res) => {
     }
 });
 
+// GET /api/logs/search-all?q=xxx&level=all&limit=300
+// Tüm log dosyalarında arama yapar
+router.get('/search-all', authMiddleware, (req, res) => {
+    try {
+        const query = (req.query.q || '').toLowerCase().trim();
+        const level = req.query.level || 'all'; // all | error | warn | info
+        const limit = Math.min(parseInt(req.query.limit) || 300, 500);
+        if (!query) return res.json({ results: [], total: 0 });
+
+        const logsDir = findLogsDir(getServerPath());
+        if (!fs.existsSync(logsDir)) return res.json({ results: [], total: 0 });
+
+        const files = fs.readdirSync(logsDir)
+            .filter(f => f.endsWith('.log') || f.endsWith('.log.gz'))
+            .sort((a, b) => {
+                // latest.log first, then by mtime desc
+                if (a === 'latest.log') return -1;
+                if (b === 'latest.log') return 1;
+                try {
+                    return fs.statSync(path.join(logsDir, b)).mtime - fs.statSync(path.join(logsDir, a)).mtime;
+                } catch { return 0; }
+            });
+
+        const results = [];
+        let scanned = 0;
+
+        for (const file of files) {
+            if (results.length >= limit) break;
+            try {
+                let content;
+                const filePath = path.join(logsDir, file);
+                if (file.endsWith('.gz')) {
+                    content = zlib.gunzipSync(fs.readFileSync(filePath)).toString('utf-8');
+                } else {
+                    content = fs.readFileSync(filePath, 'utf-8');
+                }
+                const lines = content.split('\n');
+                scanned += lines.length;
+                for (let i = 0; i < lines.length && results.length < limit; i++) {
+                    const line = lines[i];
+                    const lower = line.toLowerCase();
+                    if (!lower.includes(query)) continue;
+                    if (level === 'error' && !lower.includes('error') && !lower.includes('fatal')) continue;
+                    if (level === 'warn'  && !lower.includes('warn'))  continue;
+                    if (level === 'info'  && !lower.includes('info'))  continue;
+                    results.push({ file, lineNumber: i + 1, content: line });
+                }
+            } catch { /* skip unreadable file */ }
+        }
+
+        res.json({ results, total: results.length, scanned, filesSearched: files.length });
+    } catch (error) {
+        console.error('[Logs] Search-all error:', error.message);
+        res.status(500).json({ error: 'Arama yapılamadı' });
+    }
+});
+
 module.exports = router;

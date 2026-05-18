@@ -7,6 +7,13 @@ const mcService = require('../services/minecraftService');
 const router = express.Router();
 const pm = new PlayerManager();
 
+function logBan(username, action, reason, bannedBy) {
+    try {
+        getDb().prepare('INSERT INTO ban_log (username, action, reason, banned_by) VALUES (?, ?, ?, ?)')
+            .run(username, action, reason || '', bannedBy || 'admin');
+    } catch { /* ignore */ }
+}
+
 // Whitelist
 router.get('/whitelist', authMiddleware, (req, res) => { res.json({ players: pm.getWhitelist() }); });
 router.post('/whitelist', authMiddleware, (req, res) => {
@@ -30,18 +37,36 @@ router.delete('/ops/:name', authMiddleware, (req, res) => {
 // Ban
 router.get('/banned', authMiddleware, (req, res) => { res.json({ players: pm.getBannedPlayers(), ips: pm.getBannedIps() }); });
 router.post('/ban', authMiddleware, (req, res) => {
-    try { pm.banPlayer(req.body.name, req.body.reason); res.json({ message: 'Banlandı' }); }
-    catch (e) { res.status(400).json({ error: e.message }); }
+    try {
+        pm.banPlayer(req.body.name, req.body.reason);
+        logBan(req.body.name, 'ban', req.body.reason, req.user?.username);
+        res.json({ message: 'Banlandı' });
+    } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban/:name', authMiddleware, (req, res) => {
-    pm.unbanPlayer(req.params.name); res.json({ message: 'Ban kaldırıldı' });
+    pm.unbanPlayer(req.params.name);
+    logBan(req.params.name, 'unban', '', req.user?.username);
+    res.json({ message: 'Ban kaldırıldı' });
 });
 router.post('/ban-ip', authMiddleware, (req, res) => {
-    try { pm.banIp(req.body.ip, req.body.reason); res.json({ message: 'IP banlandı' }); }
-    catch (e) { res.status(400).json({ error: e.message }); }
+    try {
+        pm.banIp(req.body.ip, req.body.reason);
+        logBan(req.body.ip, 'ban-ip', req.body.reason, req.user?.username);
+        res.json({ message: 'IP banlandı' });
+    } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban-ip/:ip', authMiddleware, (req, res) => {
-    pm.unbanIp(req.params.ip); res.json({ message: 'IP ban kaldırıldı' });
+    pm.unbanIp(req.params.ip);
+    logBan(req.params.ip, 'unban-ip', '', req.user?.username);
+    res.json({ message: 'IP ban kaldırıldı' });
+});
+
+// GET /api/players/banlog
+router.get('/banlog', authMiddleware, (req, res) => {
+    try {
+        const rows = getDb().prepare('SELECT * FROM ban_log ORDER BY id DESC LIMIT 200').all();
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // GET /api/players/online - anlık online oyuncular
