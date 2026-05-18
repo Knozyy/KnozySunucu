@@ -19,6 +19,8 @@ class MinecraftService extends EventEmitter {
         this.logs         = [];
         this.maxLogLines  = 500;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
+        this._lastTps = { one: null, five: null, fifteen: null };
+        this._tpsInterval        = null;
         this._statsInterval      = null;
         this._statusCheckInterval = null;
         // Çöküm takibi
@@ -161,6 +163,16 @@ class MinecraftService extends EventEmitter {
             this.addLog("[System] Otomatik EULA onayı gönderildi.");
             this.sendCommand('true');
             this.sendCommand('I agree');
+        }
+
+        // TPS (Paper/Spigot: "TPS from last 1m, 5m, 15m: X.XX, X.XX, X.XX")
+        const tpsMatch = line.match(/TPS from last 1m,\s*5m,\s*15m:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i);
+        if (tpsMatch) {
+            this._lastTps = {
+                one: parseFloat(tpsMatch[1]),
+                five: parseFloat(tpsMatch[2]),
+                fifteen: parseFloat(tpsMatch[3]),
+            };
         }
 
         // Oyuncu giriş/çıkış
@@ -591,10 +603,18 @@ class MinecraftService extends EventEmitter {
                 }
             } catch { /* ignore */ }
         }, 5000);
+
+        // TPS komutunu 30sn'de bir gönder (Paper/Spigot sunucular için)
+        this._tpsInterval = setInterval(() => {
+            if (this.status === 'running') {
+                try { this.sendCommand('tps'); } catch { /* sunucu tps komutunu desteklemeyebilir */ }
+            }
+        }, 30000);
     }
 
     _stopStatsTracking() {
         if (this._statsInterval) { clearInterval(this._statsInterval); this._statsInterval = null; }
+        if (this._tpsInterval)   { clearInterval(this._tpsInterval);   this._tpsInterval = null; }
     }
 
     // ── Yardımcı metodlar ─────────────────────────────────────────────────────

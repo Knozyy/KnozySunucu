@@ -187,6 +187,17 @@ router.get('/connection-info', authMiddleware, async (req, res) => {
         res.status(500).json({ error: 'Bağlantı bilgisi alınamadı' });
     }
 });
+// GET /api/system/performance - Canlı CPU/RAM/TPS + geçmiş
+router.get('/performance', authMiddleware, async (req, res) => {
+    try {
+        const data = await systemService.getPerformance();
+        res.json(data);
+    } catch (error) {
+        console.error('[System] Performance error:', error.message);
+        res.status(500).json({ error: 'Performans verisi alınamadı' });
+    }
+});
+
 // GET /api/system/processes - Çalışan Java (Sunucu) süreçlerini listele
 router.get('/processes', authMiddleware, async (req, res) => {
     try {

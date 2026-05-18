@@ -8,7 +8,7 @@ import {
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
-    HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt,
+    HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt, HiOutlineChartBar,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
@@ -27,6 +27,7 @@ const navGroups = [
         items: [
             { path: '/console', i18nKey: 'nav.console', icon: HiOutlineCommandLine, permKey: 'console' },
             { path: '/terminal', label: 'Terminal', icon: HiOutlineCommandLine, permKey: 'terminal' },
+            { path: '/performance', label: 'Performans', icon: HiOutlineChartBar, permKey: 'console' },
         ],
     },
     {
