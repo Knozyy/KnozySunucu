@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
+import apiClient from '@/services/api';
 import {
     HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
     HiOutlineMagnifyingGlass, HiOutlineTrophy, HiOutlineNoSymbol,
     HiOutlineCheckCircle,
 } from 'react-icons/hi2';
 
-const api = (url) => axios.get(url).then(r => r.data);
+const api = (url) => apiClient.get(url).then(r => r.data);
 
 function fmtDuration(seconds) {
     if (!seconds) return '0sn';
@@ -53,19 +53,19 @@ export default function PlayersPage() {
 
     const { data: online } = useQuery({
         queryKey: ['players-online'],
-        queryFn: () => api('/api/players/online'),
+        queryFn: () => api('/players/online'),
         refetchInterval: 5000,
     });
 
     const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
         queryKey: ['player-sessions', search],
-        queryFn: () => api(`/api/players/sessions?limit=100${search ? `&username=${encodeURIComponent(search)}` : ''}`),
+        queryFn: () => api(`/players/sessions?limit=100${search ? `&username=${encodeURIComponent(search)}` : ''}`),
         refetchInterval: 15000,
     });
 
     const { data: stats = [], isLoading: statsLoading } = useQuery({
         queryKey: ['player-stats'],
-        queryFn: () => api('/api/players/stats'),
+        queryFn: () => api('/players/stats'),
         refetchInterval: 30000,
     });
 
@@ -74,7 +74,7 @@ export default function PlayersPage() {
 
     const { data: banlog = [], isLoading: banloading } = useQuery({
         queryKey: ['banlog'],
-        queryFn: () => api('/api/players/banlog'),
+        queryFn: () => api('/players/banlog'),
         refetchInterval: 30000,
     });
 
