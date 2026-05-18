@@ -195,6 +195,37 @@ router.delete('/status-messages', authMiddleware, requireRole('admin'), (req, re
     }
 });
 
+// ── Webhook Bildirimleri ──────────────────────────────────────────────────────
+
+const webhookService = require('../services/webhookService');
+
+// GET /api/discord/webhook-config
+router.get('/webhook-config', authMiddleware, (req, res) => {
+    res.json(webhookService.getConfig());
+});
+
+// PUT /api/discord/webhook-config
+router.put('/webhook-config', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        webhookService.setConfig(req.body);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/discord/webhook-test
+router.post('/webhook-test', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const cfg = webhookService.getConfig();
+        if (!cfg.url) return res.status(400).json({ error: 'Webhook URL ayarlanmamış' });
+        webhookService.send('server_start', '✅ Bu bir test mesajıdır — webhook başarıyla çalışıyor!');
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Player history ────────────────────────────────────────────────────────────
 
 // GET /api/discord/player-history

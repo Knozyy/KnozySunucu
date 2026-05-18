@@ -27,6 +27,7 @@ const discordRoutes = require('./routes/discord');
 const permCatRoutes = require('./routes/permissionCategories');
 const automationRoutes = require('./routes/automation');
 const macroRoutes = require('./routes/macros');
+const apiTokenRoutes = require('./routes/apiTokens');
 
 const app = express();
 const server = http.createServer(app);
@@ -59,6 +60,7 @@ app.use('/api/discord', discordRoutes);
 app.use('/api/permission-categories', permCatRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/macros', macroRoutes);
+app.use('/api/tokens', apiTokenRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -79,6 +81,9 @@ app.use((req, res) => {
 
 // Süreli whitelist periyodik kontrolü
 require('./services/timedWhitelistService').start();
+
+// Discord webhook bildirimleri
+require('./services/webhookListener').start();
 
 // WebSocket router — console + terminal
 setupWebSockets(server);

@@ -83,6 +83,18 @@ function initDatabase() {
       duration_seconds INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      token_prefix TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT DEFAULT 'admin',
+      last_used_at INTEGER,
+      expires_at INTEGER,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS ban_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL,

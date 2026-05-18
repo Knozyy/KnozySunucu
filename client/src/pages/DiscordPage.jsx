@@ -9,6 +9,7 @@ import {
     HiOutlineXCircle, HiOutlineExclamationTriangle, HiOutlineCheck,
     HiOutlineMagnifyingGlass, HiOutlineClipboard, HiOutlineQueueList,
     HiOutlineSpeakerWave, HiOutlineShieldExclamation, HiOutlineInformationCircle,
+    HiOutlineBell, HiOutlineLink, HiOutlineXMark,
 } from 'react-icons/hi2';
 import { SiDiscord } from 'react-icons/si';
 
@@ -432,6 +433,7 @@ export default function DiscordPage() {
                     { key: 'status-messages', label: 'Durum Mesajları', icon: HiOutlineSpeakerWave },
                     { key: 'night-guard', label: 'Gece Koruması', icon: HiOutlineShieldExclamation },
                     { key: 'graph', label: 'Oyuncu Grafiği', icon: HiOutlineChatBubbleLeftRight },
+                    { key: 'webhook', label: 'Webhook', icon: HiOutlineBell },
                 ].map(tab => (
                     <button
                         key={tab.key}
@@ -595,6 +597,8 @@ export default function DiscordPage() {
                     <PlayerGraph history={historyData?.history || []} />
                 </div>
             )}
+
+            {activeTab === 'webhook' && <WebhookTab />}
 
         </div>
     );
@@ -893,6 +897,116 @@ function NightGuardTab() {
                 <div className="text-sm text-gray-500">
                     <p>İhlal sayacı her gün otomatik sıfırlanır. Koruma konfigürasyonu bot'un <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded text-xs">config.py</code> dosyasından yönetilir.</p>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Webhook Bildirimleri ──────────────────────────────────────────────────────
+const ALL_EVENTS = [
+    { key: 'server_start',  label: 'Sunucu Başladı',  emoji: '🟢' },
+    { key: 'server_stop',   label: 'Sunucu Durdu',    emoji: '🔴' },
+    { key: 'server_crash',  label: 'Sunucu Çöktü',    emoji: '💥' },
+    { key: 'player_join',   label: 'Oyuncu Girdi',    emoji: '👋' },
+    { key: 'player_leave',  label: 'Oyuncu Ayrıldı',  emoji: '🚶' },
+];
+
+function WebhookTab() {
+    const qc = useQueryClient();
+
+    const { data: cfg } = useQuery({
+        queryKey: ['webhook-config'],
+        queryFn: () => api.get('/discord/webhook-config').then(r => r.data),
+    });
+
+    const [url, setUrl] = useState('');
+    const [events, setEvents] = useState(ALL_EVENTS.map(e => e.key));
+
+    // Sync local state when config loads
+    useState(() => {
+        if (cfg) { setUrl(cfg.url || ''); setEvents(cfg.events || ALL_EVENTS.map(e => e.key)); }
+    }, [cfg]);
+
+    const saveMutation = useMutation({
+        mutationFn: () => api.put('/discord/webhook-config', { url, events }),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhook-config'] }); toast.success('Webhook kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const testMutation = useMutation({
+        mutationFn: () => api.post('/discord/webhook-test'),
+        onSuccess: () => toast.success('Test mesajı gönderildi ✓'),
+        onError: (e) => toast.error(e.response?.data?.error || 'Gönderilemedi'),
+    });
+
+    const toggleEvent = (key) => {
+        setEvents(prev => prev.includes(key) ? prev.filter(e => e !== key) : [...prev, key]);
+    };
+
+    return (
+        <div className="space-y-4 fade-in">
+            <div className="glass-card p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                    <HiOutlineBell className="w-5 h-5 text-indigo-500" />
+                    <h2 className="font-semibold text-gray-900 dark:text-white">Discord Webhook Bildirimleri</h2>
+                </div>
+                <p className="text-sm text-gray-500">Seçtiğiniz olaylar gerçekleştiğinde bir Discord kanalına otomatik mesaj gönderir.</p>
+
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Webhook URL</label>
+                    <div className="flex gap-2">
+                        <div className="relative flex-1">
+                            <HiOutlineLink className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="url"
+                                value={cfg ? (url || cfg.url || '') : ''}
+                                onChange={e => setUrl(e.target.value)}
+                                placeholder="https://discord.com/api/webhooks/..."
+                                className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <button
+                            onClick={() => testMutation.mutate()}
+                            disabled={testMutation.isPending || !url}
+                            className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                        >
+                            {testMutation.isPending ? '...' : 'Test'}
+                        </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">Discord kanalı → Entegrasyonlar → Webhook oluştur → URL kopyala</p>
+                </div>
+
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Bildirim Olayları</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {ALL_EVENTS.map(evt => {
+                            const enabled = events.includes(evt.key);
+                            return (
+                                <button
+                                    key={evt.key}
+                                    onClick={() => toggleEvent(evt.key)}
+                                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left ${
+                                        enabled
+                                            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'
+                                    }`}
+                                >
+                                    <span className="text-base">{evt.emoji}</span>
+                                    <span className="flex-1">{evt.label}</span>
+                                    {enabled && <HiOutlineCheck className="w-4 h-4 flex-shrink-0" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <button
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending}
+                    className="w-full py-2.5 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40"
+                >
+                    {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
             </div>
         </div>
     );
