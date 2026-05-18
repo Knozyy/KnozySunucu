@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -7,7 +7,7 @@ import {
     HiOutlineFolder, HiOutlineDocument, HiOutlineArrowLeft,
     HiOutlineTrash, HiOutlinePencil, HiOutlineFolderPlus,
     HiOutlineDocumentPlus, HiOutlineArrowPath, HiOutlineDocumentText,
-    HiOutlineMagnifyingGlass, HiOutlineCheck,
+    HiOutlineMagnifyingGlass, HiOutlineCheck, HiOutlineXMark,
 } from 'react-icons/hi2';
 
 function formatSize(bytes, isDirectory) {
@@ -17,6 +17,74 @@ function formatSize(bytes, isDirectory) {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
+
+// ── Editör Modal ──────────────────────────────────────────────────────────────
+function EditorModal({ title, filePath, content, onChange, onSave, onClose, saving, dark = false }) {
+    // Escape tuşu ile kapat
+    useEffect(() => {
+        const handler = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onClose]);
+
+    // Ctrl+S ile kaydet
+    useEffect(() => {
+        const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); onSave(); } };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onSave]);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+            {/* Panel */}
+            <div className="relative z-10 w-full max-w-5xl flex flex-col rounded-2xl shadow-2xl overflow-hidden"
+                style={{ height: 'min(85vh, 800px)' }}>
+
+                {/* Başlık çubuğu */}
+                <div className={`flex items-center gap-3 px-5 py-3.5 flex-shrink-0 border-b ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+                    <HiOutlinePencil className={`w-4 h-4 flex-shrink-0 ${dark ? 'text-gray-400' : 'text-gray-500'}`} />
+                    <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</p>
+                        {filePath && filePath !== title && (
+                            <p className={`text-xs font-mono truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{filePath}</p>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Ctrl+S kaydet · Esc kapat</span>
+                        <button
+                            onClick={onSave}
+                            disabled={saving}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                        >
+                            <HiOutlineCheck className="w-3.5 h-3.5" />
+                            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+                        </button>
+                        <button
+                            onClick={onClose}
+                            className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+                        >
+                            <HiOutlineXMark className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Textarea */}
+                <textarea
+                    value={content}
+                    onChange={e => onChange(e.target.value)}
+                    className={`flex-1 w-full font-mono text-sm p-5 resize-none focus:outline-none leading-relaxed ${dark ? 'bg-gray-950 text-gray-100 caret-blue-400' : 'bg-gray-50 text-gray-900'}`}
+                    spellCheck={false}
+                    autoFocus
+                />
+            </div>
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function FilesPage() {
     const [activeTab, setActiveTab] = useState('browser');
@@ -89,7 +157,6 @@ export default function FilesPage() {
     const openFile = async (item) => {
         if (item.isDirectory) {
             setCurrentPath(item.path);
-            setEditingFile(null);
             return;
         }
         try {
@@ -105,26 +172,60 @@ export default function FilesPage() {
         const parts = currentPath.split('/').filter(Boolean);
         parts.pop();
         setCurrentPath(parts.join('/'));
-        setEditingFile(null);
     };
 
-    const pathParts = currentPath.split('/').filter(Boolean);
+    const handleSaveFile = useCallback(() => {
+        if (editingFile) saveMutation.mutate({ path: editingFile.path, content: fileContent });
+    }, [editingFile, fileContent, saveMutation]);
 
+    const handleSaveConfig = useCallback(() => {
+        if (editingConfig) saveConfigMutation.mutate({ path: editingConfig.path, content: configContent });
+    }, [editingConfig, configContent, saveConfigMutation]);
+
+    const pathParts = currentPath.split('/').filter(Boolean);
     const { t } = useI18n();
 
     return (
         <div className="space-y-6">
+            {/* ── Dosya Editörü Modal ── */}
+            {editingFile && (
+                <EditorModal
+                    title={editingFile.name}
+                    filePath={editingFile.path}
+                    content={fileContent}
+                    onChange={setFileContent}
+                    onSave={handleSaveFile}
+                    onClose={() => setEditingFile(null)}
+                    saving={saveMutation.isPending}
+                    dark={false}
+                />
+            )}
+
+            {/* ── Config Editörü Modal ── */}
+            {editingConfig && (
+                <EditorModal
+                    title={editingConfig.name}
+                    filePath={editingConfig.path}
+                    content={configContent}
+                    onChange={setConfigContent}
+                    onSave={handleSaveConfig}
+                    onClose={() => setEditingConfig(null)}
+                    saving={saveConfigMutation.isPending}
+                    dark={true}
+                />
+            )}
+
             <div className="fade-in flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('files.title')}</h1>
                     {activeTab === 'browser' && (
                         <div className="flex items-center gap-1 text-sm text-gray-500">
-                            <button onClick={() => { setCurrentPath(''); setEditingFile(null); }} className="hover:text-gray-900 transition-colors">root</button>
+                            <button onClick={() => setCurrentPath('')} className="hover:text-gray-900 transition-colors">root</button>
                             {pathParts.map((part, i) => (
                                 <span key={i} className="flex items-center gap-1">
                                     <span>/</span>
                                     <button
-                                        onClick={() => { setCurrentPath(pathParts.slice(0, i + 1).join('/')); setEditingFile(null); }}
+                                        onClick={() => setCurrentPath(pathParts.slice(0, i + 1).join('/'))}
                                         className="hover:text-gray-900 transition-colors"
                                     >{part}</button>
                                 </span>
@@ -148,7 +249,7 @@ export default function FilesPage() {
                         </button>
                     </div>
                 )}
-                {activeTab === 'configs' && !editingConfig && (
+                {activeTab === 'configs' && (
                     <button onClick={() => queryClient.invalidateQueries({ queryKey: ['filePageConfigs'] })} className="btn-secondary text-xs">
                         <HiOutlineArrowPath className="w-4 h-4" /> Yenile
                     </button>
@@ -170,81 +271,50 @@ export default function FilesPage() {
             {/* ── Config Editörü ── */}
             {activeTab === 'configs' && (
                 <>
-                    {editingConfig ? (
-                        <div className="glass-card p-4 fade-in">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <HiOutlinePencil className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                    <span className="font-mono text-sm text-gray-700 truncate">{editingConfig.path}</span>
-                                </div>
-                                <div className="flex gap-2 flex-shrink-0 ml-3">
-                                    <button
-                                        onClick={() => saveConfigMutation.mutate({ path: editingConfig.path, content: configContent })}
-                                        disabled={saveConfigMutation.isPending}
-                                        className="btn-primary text-xs flex items-center gap-1.5"
-                                    >
-                                        <HiOutlineCheck className="w-3.5 h-3.5" />
-                                        {saveConfigMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-                                    </button>
-                                    <button onClick={() => setEditingConfig(null)} className="btn-secondary text-xs">Kapat</button>
-                                </div>
-                            </div>
-                            <textarea
-                                value={configContent}
-                                onChange={e => setConfigContent(e.target.value)}
-                                className="w-full font-mono text-sm p-4 rounded-xl bg-gray-950 text-gray-100 border border-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y leading-relaxed"
-                                style={{ minHeight: '28rem' }}
-                                spellCheck={false}
-                            />
-                        </div>
-                    ) : (
-                        <>
-                            {/* Arama */}
-                            <div className="relative fade-in">
-                                <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    value={configSearch}
-                                    onChange={e => setConfigSearch(e.target.value)}
-                                    placeholder="Config dosyası ara... (örn: mekanism, jei, forge)"
-                                    className="input-field pl-11 text-sm"
-                                />
-                            </div>
+                    {/* Arama */}
+                    <div className="relative fade-in">
+                        <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            type="text"
+                            value={configSearch}
+                            onChange={e => setConfigSearch(e.target.value)}
+                            placeholder="Config dosyası ara... (örn: mekanism, jei, forge)"
+                            className="input-field pl-11 text-sm"
+                        />
+                    </div>
 
-                            <div className="glass-card overflow-hidden fade-in">
-                                {loadingConfigs ? (
-                                    <div className="p-8 text-center text-gray-400">
-                                        <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-3" />
-                                        Config dosyaları yükleniyor...
-                                    </div>
-                                ) : filteredConfigs.length > 0 ? (
-                                    filteredConfigs.map(file => (
-                                        <button
-                                            key={file.path}
-                                            onClick={() => openConfig(file)}
-                                            className="w-full flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors text-left group"
-                                        >
-                                            <HiOutlineDocumentText className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                                                <p className="text-xs text-gray-400 truncate font-mono">{file.path}</p>
-                                            </div>
-                                            <span className="text-xs text-gray-400 flex-shrink-0">{formatSize(file.size, false)}</span>
-                                            <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">Düzenle →</span>
-                                        </button>
-                                    ))
-                                ) : (
-                                    <div className="p-10 text-center text-gray-400">
-                                        <HiOutlineDocumentText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                        <p className="font-medium">
-                                            {configSearch ? 'Arama ile eşleşen config bulunamadı' : 'config/ klasöründe düzenlenebilir dosya bulunamadı'}
-                                        </p>
-                                        <p className="text-xs mt-1 text-gray-300">.toml · .cfg · .json · .properties · .yml · .yaml · .conf</p>
-                                    </div>
-                                )}
+                    <div className="glass-card overflow-hidden fade-in">
+                        {loadingConfigs ? (
+                            <div className="p-8 text-center text-gray-400">
+                                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-3" />
+                                Config dosyaları yükleniyor...
                             </div>
-                        </>
-                    )}
+                        ) : filteredConfigs.length > 0 ? (
+                            filteredConfigs.map(file => (
+                                <button
+                                    key={file.path}
+                                    onClick={() => openConfig(file)}
+                                    className="w-full flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors text-left group"
+                                >
+                                    <HiOutlineDocumentText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                        <p className="text-xs text-gray-400 truncate font-mono">{file.path}</p>
+                                    </div>
+                                    <span className="text-xs text-gray-400 flex-shrink-0">{formatSize(file.size, false)}</span>
+                                    <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">Düzenle →</span>
+                                </button>
+                            ))
+                        ) : (
+                            <div className="p-10 text-center text-gray-400">
+                                <HiOutlineDocumentText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                <p className="font-medium">
+                                    {configSearch ? 'Arama ile eşleşen config bulunamadı' : 'config/ klasöründe düzenlenebilir dosya bulunamadı'}
+                                </p>
+                                <p className="text-xs mt-1 text-gray-300">.toml · .cfg · .json · .properties · .yml · .yaml · .conf</p>
+                            </div>
+                        )}
+                    </div>
                 </>
             )}
 
@@ -263,28 +333,6 @@ export default function FilesPage() {
                         <button onClick={() => { if (newItemName.trim()) createMutation.mutate({ path: currentPath ? `${currentPath}/${newItemName}` : newItemName, isDirectory: showNewDialog === 'folder' }); }} className="btn-primary text-xs">Oluştur</button>
                         <button onClick={() => { setShowNewDialog(null); setNewItemName(''); }} className="btn-secondary text-xs">İptal</button>
                     </div>
-                </div>
-            )}
-
-            {/* File Editor */}
-            {editingFile && (
-                <div className="glass-card p-4 fade-in">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                            <HiOutlinePencil className="w-4 h-4" /> {editingFile.name}
-                        </h3>
-                        <div className="flex gap-2">
-                            <button onClick={() => saveMutation.mutate({ path: editingFile.path, content: fileContent })} disabled={saveMutation.isPending} className="btn-primary text-xs">
-                                {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-                            </button>
-                            <button onClick={() => setEditingFile(null)} className="btn-secondary text-xs">Kapat</button>
-                        </div>
-                    </div>
-                    <textarea
-                        value={fileContent} onChange={e => setFileContent(e.target.value)}
-                        className="w-full h-96 font-mono text-sm p-4 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 resize-y"
-                        spellCheck={false}
-                    />
                 </div>
             )}
 
