@@ -29,6 +29,19 @@ router.post('/backup', authMiddleware, (req, res) => {
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// GET /api/worlds/seed - server.properties'ten level-seed okur
+router.get('/seed', authMiddleware, (req, res) => {
+    try {
+        const wm = new WorldManager();
+        const propsPath = path.join(wm.serverPath, 'server.properties');
+        if (!fs.existsSync(propsPath)) return res.json({ seed: null, message: 'server.properties bulunamadı' });
+        const content = fs.readFileSync(propsPath, 'utf-8');
+        const match = content.match(/^level-seed\s*=\s*(.*)$/m);
+        const seed = match ? (match[1].trim() || '(rastgele)') : '(bulunamadı)';
+        res.json({ seed });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/worlds/disk - sunucu klasörü boyut dökümü
 router.get('/disk', authMiddleware, async (req, res) => {
     try {

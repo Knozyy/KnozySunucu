@@ -1,4 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import CodeMirror from '@uiw/react-codemirror';
+import { json } from '@codemirror/lang-json';
+import { yaml } from '@codemirror/lang-yaml';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -18,8 +22,17 @@ function formatSize(bytes, isDirectory) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function getLanguageExt(filename) {
+    if (!filename) return [];
+    const ext = filename.split('.').pop()?.toLowerCase();
+    if (ext === 'json') return [json()];
+    if (ext === 'yml' || ext === 'yaml') return [yaml()];
+    return [];
+}
+
 // ── Editör Modal ──────────────────────────────────────────────────────────────
 function EditorModal({ title, filePath, content, onChange, onSave, onClose, saving, dark = false }) {
+    const extensions = useMemo(() => getLanguageExt(filePath || title), [filePath, title]);
     // Escape tuşu ile kapat
     useEffect(() => {
         const handler = (e) => { if (e.key === 'Escape') onClose(); };
@@ -71,14 +84,19 @@ function EditorModal({ title, filePath, content, onChange, onSave, onClose, savi
                     </div>
                 </div>
 
-                {/* Textarea */}
-                <textarea
-                    value={content}
-                    onChange={e => onChange(e.target.value)}
-                    className={`flex-1 w-full font-mono text-sm p-5 resize-none focus:outline-none leading-relaxed ${dark ? 'bg-gray-950 text-gray-100 caret-blue-400' : 'bg-gray-50 text-gray-900'}`}
-                    spellCheck={false}
-                    autoFocus
-                />
+                {/* Kod editörü */}
+                <div className="flex-1 overflow-auto">
+                    <CodeMirror
+                        value={content}
+                        onChange={onChange}
+                        extensions={extensions}
+                        theme={dark ? oneDark : undefined}
+                        height="100%"
+                        style={{ fontSize: '13px', height: '100%' }}
+                        basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
+                        autoFocus
+                    />
+                </div>
             </div>
         </div>
     );

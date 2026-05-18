@@ -5,19 +5,54 @@ const HISTORY_SIZE = 60; // 60 samples × 3s = 3 minutes
 class SystemService {
     constructor() {
         this._history = []; // { ts, cpu, ram }
+        this._alertCooldown = {}; // { cpu: lastAlertTs, ram: lastAlertTs }
         this._historyInterval = setInterval(() => this._sampleHistory(), 3000);
         this._historyInterval.unref?.(); // don't block process exit
+    }
+
+    _getThresholds() {
+        try {
+            const { getDb } = require('../db/database');
+            const db = getDb();
+            const cpu = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_cpu_threshold'").get();
+            const ram = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_ram_threshold'").get();
+            return {
+                cpu: cpu ? parseFloat(cpu.value) : null,
+                ram: ram ? parseFloat(ram.value) : null,
+            };
+        } catch { return { cpu: null, ram: null }; }
+    }
+
+    _checkAlerts(cpuPercent, ramPercent) {
+        const thresholds = this._getThresholds();
+        const webhookService = require('./webhookService');
+        const now = Date.now();
+        const COOLDOWN_MS = 5 * 60 * 1000; // aynı uyarı 5 dakikada bir
+
+        if (thresholds.cpu && cpuPercent >= thresholds.cpu) {
+            if (!this._alertCooldown.cpu || now - this._alertCooldown.cpu > COOLDOWN_MS) {
+                this._alertCooldown.cpu = now;
+                webhookService.send('resource_alert',
+                    `⚠️ CPU kullanımı eşiği aştı: **${cpuPercent.toFixed(1)}%** (eşik: ${thresholds.cpu}%)`);
+            }
+        }
+        if (thresholds.ram && ramPercent >= thresholds.ram) {
+            if (!this._alertCooldown.ram || now - this._alertCooldown.ram > COOLDOWN_MS) {
+                this._alertCooldown.ram = now;
+                webhookService.send('resource_alert',
+                    `⚠️ RAM kullanımı eşiği aştı: **${ramPercent.toFixed(1)}%** (eşik: ${thresholds.ram}%)`);
+            }
+        }
     }
 
     async _sampleHistory() {
         try {
             const [cpuLoad, mem] = await Promise.all([si.currentLoad(), si.mem()]);
-            this._history.push({
-                ts:  Date.now(),
-                cpu: +cpuLoad.currentLoad.toFixed(1),
-                ram: +((mem.active / mem.total) * 100).toFixed(1),
-            });
+            const cpu = +cpuLoad.currentLoad.toFixed(1);
+            const ram = +((mem.active / mem.total) * 100).toFixed(1);
+            this._history.push({ ts: Date.now(), cpu, ram });
             if (this._history.length > HISTORY_SIZE) this._history.shift();
+            this._checkAlerts(cpu, ram);
         } catch { /* ignore */ }
     }
 
