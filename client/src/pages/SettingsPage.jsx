@@ -15,15 +15,21 @@ import {
 
 // ── Tüm izin verilebilir sayfalar ─────────────────────────────────────────────
 const ALL_PAGES = [
-    { key: 'console',   label: 'Konsol',       emoji: '💻' },
-    { key: 'terminal',  label: 'Terminal',      emoji: '⌨️' },
-    { key: 'worlds',    label: 'Dünyalar',      emoji: '🌍' },
-    { key: 'files',     label: 'Dosyalar',      emoji: '📁' },
-    { key: 'modpacks',  label: 'Modpackler',    emoji: '📦' },
-    { key: 'mods',      label: 'Modlar',        emoji: '🧩' },
-    { key: 'scheduler', label: 'Görevler',      emoji: '⏰' },
-    { key: 'backup',    label: 'Yedekleme',     emoji: '💾' },
-    { key: 'discord',   label: 'Discord Bot',   emoji: '🤖' },
+    { key: 'dashboard',   label: 'Ana Panel',    emoji: '🏠' },
+    { key: 'console',     label: 'Konsol',       emoji: '💻' },
+    { key: 'terminal',    label: 'Terminal',      emoji: '⌨️' },
+    { key: 'players',     label: 'Oyuncular',    emoji: '👥' },
+    { key: 'worlds',      label: 'Dünyalar',     emoji: '🌍' },
+    { key: 'files',       label: 'Dosyalar',     emoji: '📁' },
+    { key: 'modpacks',    label: 'Modpackler',   emoji: '📦' },
+    { key: 'mods',        label: 'Modlar',       emoji: '🧩' },
+    { key: 'logs',        label: 'Loglar',       emoji: '📋' },
+    { key: 'performance', label: 'Performans',   emoji: '📊' },
+    { key: 'scheduler',   label: 'Görevler',     emoji: '⏰' },
+    { key: 'automation',  label: 'Otomasyon',    emoji: '🤖' },
+    { key: 'backup',      label: 'Yedekleme',    emoji: '💾' },
+    { key: 'discord',     label: 'Discord Bot',  emoji: '🎮' },
+    { key: 'server',      label: 'Sunucu Bilgi', emoji: '🖥️' },
 ];
 
 const PRESET_COLORS = [
