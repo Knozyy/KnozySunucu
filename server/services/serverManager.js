@@ -1,92 +1,26 @@
 /**
- * ServerManager — Çoklu Minecraft sunucu instance yönetimi
- * Her sunucu DB'deki `servers` tablosuna karşılık gelir.
- * Birincil sunucu (id=1 veya ilk aktif) mevcut minecraftService singletonıdır.
+ * serverManager — DEPRECATED ALIAS
+ *
+ * Eski "birincil singleton + ikincil instance" mimarisinin yerini
+ * serverRegistry (eşit sunucu mimarisi) aldı. Bu dosya geriye dönük
+ * uyumluluk için var; yeni kod doğrudan serverRegistry'yi require etmeli.
  */
-const { getDb } = require('../db/database');
+const serverRegistry = require('./serverRegistry');
 
-class ServerManager {
-    constructor() {
-        this._instances = new Map(); // serverId → MinecraftService instance
-    }
+// Eski API uyumluluğu:
+//   serverManager.setPrimary(instance) → artık no-op (registry initialize'da kurar)
+//   serverManager.getInstance(id)      → registry.get(id)
+//   serverManager.getPrimary()         → registry.getDefault()
+//   serverManager._instances           → registry._instances
+//   serverManager.getAllStatus()       → registry.getAllStatus()
+//   serverManager.getRunningCount()    → registry.getRunningCount()
+const serverManager = {
+    setPrimary() { /* no-op — registry kendi kendini yönetiyor */ },
+    getInstance: (id) => serverRegistry.get(id),
+    getPrimary: () => serverRegistry.getDefault(),
+    getAllStatus: () => serverRegistry.getAllStatus(),
+    getRunningCount: () => serverRegistry.getRunningCount(),
+    get _instances() { return serverRegistry._instances; },
+};
 
-    /**
-     * Birincil sunucu instance'ını kaydet (mevcut minecraftService singleton)
-     */
-    setPrimary(instance) {
-        // DB'deki ilk sunucunun id'sini bul
-        try {
-            const db = getDb();
-            const first = db.prepare('SELECT id FROM servers ORDER BY id ASC LIMIT 1').get();
-            if (first) {
-                this._instances.set(first.id, instance);
-                instance._serverConfig = instance._serverConfig || { id: first.id, isPrimary: true };
-            }
-        } catch { /* ignore */ }
-        this._primary = instance;
-    }
-
-    /**
-     * Belirli bir sunucu ID'si için instance döndür.
-     * Yoksa yeni bir tane oluştur.
-     */
-    getInstance(serverId) {
-        if (this._instances.has(serverId)) return this._instances.get(serverId);
-
-        // DB'den sunucu config al
-        const db = getDb();
-        const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
-        if (!server) return null;
-
-        const { MinecraftService } = require('./minecraftService');
-        const instance = new MinecraftService({ ...server, isPrimary: false });
-        this._instances.set(serverId, instance);
-        return instance;
-    }
-
-    /**
-     * Birincil sunucu instance'ını döndür
-     */
-    getPrimary() {
-        return this._primary || null;
-    }
-
-    /**
-     * Tüm sunucuların durumunu döndür
-     */
-    getAllStatus() {
-        const db = getDb();
-        const servers = db.prepare('SELECT * FROM servers ORDER BY id ASC').all();
-        return servers.map(server => {
-            const instance = this._instances.get(server.id);
-            const status = instance ? instance.getStatus() : { status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } };
-            // Atanmış modpack bilgisini ekle
-            let activeModpack = null;
-            if (server.active_modpack_id) {
-                try {
-                    activeModpack = db.prepare('SELECT id, name, version, logo_url FROM installed_modpacks WHERE id = ?')
-                        .get(server.active_modpack_id) || null;
-                } catch { /* ignore */ }
-            }
-            return {
-                ...server,
-                ...status,
-                activeModpack,
-            };
-        });
-    }
-
-    /**
-     * Şu an çalışan sunucu sayısı (CPU bölme için)
-     */
-    getRunningCount() {
-        let count = 0;
-        for (const instance of this._instances.values()) {
-            if (instance.status === 'running' || instance.status === 'starting') count++;
-        }
-        return count;
-    }
-}
-
-const serverManager = new ServerManager();
-module.exports = { serverManager, ServerManager };
+module.exports = { serverManager, serverRegistry };
