@@ -1,459 +1,370 @@
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
-import { useI18n } from '@/context/I18nContext';
+import { A, btnGhost, btnPrimary } from '@/hodo/tokens';
 import {
-    HiOutlineServer, HiOutlineUsers, HiOutlinePlay, HiOutlineStop,
-    HiOutlineArrowPath, HiOutlineWrenchScrewdriver, HiOutlinePuzzlePiece,
-    HiOutlineExclamationTriangle, HiOutlineXMark, HiOutlineArrowDownTray,
-    HiOutlineCpuChip, HiOutlineCircleStack, HiOutlinePlus, HiOutlineCheck,
-} from 'react-icons/hi2';
-import { useState, useEffect } from 'react';
+    Cap, Num, Dot, Pill, Card, KPI, KV, Stat, MiniStat,
+    ServerStatus, LegendDot, Toggle,
+} from '@/hodo/primitives';
+import { Sparkline, DualLine, UsageBar, avg, max } from '@/hodo/charts';
+import { I } from '@/hodo/icons';
 
-// RAM string'ini GB'a çevir: "4G" → 4, "512M" → 0.5
+// ─── Live series (CPU/RAM/TPS 60 örnek halka tampon) ────────────────────
+function useLiveSeries() {
+    const { data: serversData } = useQuery({
+        queryKey: ['servers-status-dash'],
+        queryFn: () => api.get('/servers/status-all').then(r => r.data),
+        refetchInterval: 3000,
+    });
+    const servers = serversData?.servers || [];
+
+    const [series, setSeries] = useState(
+        Array(60).fill(null).map(() => ({ cpu: 0, ram: 0, tps: 20, mspt: 50 }))
+    );
+
+    // Default sunucu (ilk kayıt) live örnekleri
+    useEffect(() => {
+        const def = servers[0];
+        if (!def) return;
+        const cpu = def.processStats?.cpuPercent || 0;
+        const ramMB = def.processStats?.memoryMB || 0;
+        const maxRamGB = parseRamGB(def.max_ram) || 8;
+        const ram = Math.min(100, (ramMB / (maxRamGB * 1024)) * 100);
+        setSeries(prev => [...prev.slice(1), { cpu, ram, tps: 20, mspt: 50 }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serversData]);
+
+    return { servers, series };
+}
+
 function parseRamGB(str) {
     if (!str) return 0;
-    const m = str.match(/^(\d+)([GgMm])$/);
+    const m = String(str).match(/^(\d+)([GgMm])$/);
     if (!m) return 0;
     return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
 }
 
-// ── Sunucu detay paneli ─────────────────────────────────────────────────────
-function ServerPanel({ server, user, onStatusChange, installedModpacks }) {
-    const isRunning  = server.status === 'running';
+// ─── Sunucu sekmesi (üst tabs) ──────────────────────────────────────────
+function ServerTab({ server, active, onClick, index }) {
+    const isRunning = server.status === 'running';
+    const isStarting = server.status === 'starting';
+    return (
+        <button onClick={onClick} className="hodo-navitem"
+            style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 16px', cursor: 'pointer',
+                background: active ? A.panel : 'transparent',
+                border: 'none', borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                color: active ? A.text : A.dim, fontSize: 12, fontWeight: 500,
+                fontFamily: A.sans, whiteSpace: 'nowrap',
+            }}>
+            <Dot color={isRunning ? A.ok : isStarting ? A.warn : A.faint} size={6}/>
+            <span style={{ color: active ? A.text : A.dim }}>Sunucu {index + 1}</span>
+            <span style={{ color: A.faint, fontSize: 11, fontFamily: A.mono }}>— {server.name}</span>
+        </button>
+    );
+}
+
+// ─── Server kontrol butonları ───────────────────────────────────────────
+function ServerControls({ server, onStatusChange }) {
+    const isRunning = server.status === 'running';
     const isStarting = server.status === 'starting';
     const isStopping = server.status === 'stopping';
-    const isStopped  = !isRunning && !isStarting && !isStopping;
-    const isBusy     = isStarting || isStopping;
 
-    const serverCpu   = server.processStats?.cpuPercent || 0;
-    const serverRamMB = server.processStats?.memoryMB   || 0;
-    const maxRamGB    = parseRamGB(server.max_ram);
-    const usedRamGB   = serverRamMB / 1024;
-    const ramPct      = maxRamGB > 0 ? Math.min(100, (usedRamGB / maxRamGB) * 100) : 0;
-
-    const qc = useQueryClient();
-    const [selectedPack, setSelectedPack] = useState(server.active_modpack_id ?? null);
-
-    // server değişince (tab geçişi) lokal state'i güncelle
-    useEffect(() => {
-        setSelectedPack(server.active_modpack_id ?? null);
-    }, [server.id, server.active_modpack_id]);
-
-    const startMutation = useMutation({
+    const startM = useMutation({
         mutationFn: () => api.post(`/servers/${server.id}/start`),
-        onSuccess: () => { toast.success(`${server.name} başlatılıyor...`); onStatusChange(); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Başlatılamadı'),
+        onSuccess: () => { toast.success('Başlatılıyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
-    const stopMutation = useMutation({
+    const stopM = useMutation({
         mutationFn: () => api.post(`/servers/${server.id}/stop`),
-        onSuccess: () => { toast.success(`${server.name} durduruluyor...`); onStatusChange(); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Durdurulamadı'),
+        onSuccess: () => { toast.success('Durduruluyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
-    const restartMutation = useMutation({
+    const restartM = useMutation({
         mutationFn: () => api.post(`/servers/${server.id}/restart`),
-        onSuccess: () => { toast.success(`${server.name} yeniden başlatılıyor...`); onStatusChange(); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Yeniden başlatılamadı'),
-    });
-    const setProfileMutation = useMutation({
-        mutationFn: (modpack_id) => api.post(`/servers/${server.id}/set-profile`, { modpack_id }),
-        onSuccess: () => { toast.success('Profil atandı'); qc.invalidateQueries({ queryKey: ['servers-status'] }); },
-        onError: (e) => {
-            toast.error(e.response?.data?.error || 'Profil atanamadı');
-            setSelectedPack(server.active_modpack_id ?? null); // geri al
-        },
+        onSuccess: () => { toast.success('Yeniden başlatılıyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
     return (
-        <div className="p-6 space-y-5">
-            {/* Başlık + Kontroller */}
-            <div className="flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
-                {/* Sunucu adı + durum */}
-                <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        isRunning  ? 'bg-emerald-100 dark:bg-emerald-900/30' :
-                        isStarting ? 'bg-amber-100  dark:bg-amber-900/30'   :
-                                     'bg-gray-100   dark:bg-gray-800'
-                    }`}>
-                        <HiOutlineServer className={`w-5 h-5 ${
-                            isRunning  ? 'text-emerald-600' :
-                            isStarting ? 'text-amber-500 animate-pulse' :
-                                         'text-gray-400'
-                        }`} />
-                    </div>
-                    <div>
-                        <h2 className="font-bold text-gray-900 dark:text-white text-base">{server.name}</h2>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
-                                isRunning  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
-                                isStarting ? 'bg-amber-100 text-amber-700 animate-pulse' :
-                                isStopping ? 'bg-red-100 text-red-700 animate-pulse' :
-                                             'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                            }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${
-                                    isRunning ? 'bg-emerald-500' : isStarting ? 'bg-amber-500' :
-                                    isStopping ? 'bg-red-500' : 'bg-gray-400'
-                                }`} />
-                                {isRunning ? 'Çalışıyor' : isStarting ? 'Başlatılıyor...' : isStopping ? 'Durduruluyor...' : 'Kapalı'}
-                            </span>
-                            <span className="text-xs text-gray-400">:{server.port}</span>
-                            {isRunning && server.pid && (
-                                <span className="text-xs text-gray-400 font-mono">PID {server.pid}</span>
-                            )}
-                        </div>
-                        <p className="text-xs text-gray-400 font-mono mt-1 truncate max-w-xs" title={server.path}>
-                            {server.path}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Kontrol butonları */}
-                {user?.role === 'admin' && (
-                    <div className="flex gap-2 flex-shrink-0">
-                        {isStopped ? (
-                            <button
-                                onClick={() => startMutation.mutate()}
-                                disabled={startMutation.isPending}
-                                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
-                                <HiOutlinePlay className="w-4 h-4" />
-                                {startMutation.isPending ? 'Başlatılıyor...' : 'Başlat'}
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    onClick={() => stopMutation.mutate()}
-                                    disabled={!isRunning || isBusy || stopMutation.isPending}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors">
-                                    <HiOutlineStop className="w-4 h-4" />
-                                    {stopMutation.isPending ? 'Durduruluyor...' : 'Durdur'}
-                                </button>
-                                <button
-                                    onClick={() => restartMutation.mutate()}
-                                    disabled={isBusy || restartMutation.isPending}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors">
-                                    <HiOutlineArrowPath className="w-4 h-4" />
-                                    Yeniden Başlat
-                                </button>
-                            </>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            {/* İstatistik kartları */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {/* Oyuncu */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <HiOutlineUsers className="w-4 h-4 text-amber-500" />
-                        <span className="text-xs text-gray-400 font-medium">Oyuncular</span>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none">
-                        {server.playerCount || 0}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">aktif</p>
-                </div>
-
-                {/* CPU */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <HiOutlineCpuChip className="w-4 h-4 text-blue-500" />
-                        <span className="text-xs text-gray-400 font-medium">CPU</span>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none">
-                        {isRunning ? `${serverCpu.toFixed(1)}%` : '—'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">kullanım</p>
-                </div>
-
-                {/* RAM — 2 kolon kaplıyor */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 col-span-2">
-                    <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                            <HiOutlineCircleStack className="w-4 h-4 text-purple-500" />
-                            <span className="text-xs text-gray-400 font-medium">RAM</span>
-                        </div>
-                        <span className="text-xs text-gray-400">
-                            {isRunning
-                                ? `${usedRamGB.toFixed(1)} / ${maxRamGB}G`
-                                : `Maks: ${server.max_ram}`}
-                        </span>
-                    </div>
-                    {isRunning ? (
-                        <>
-                            <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none mb-2.5">
-                                {usedRamGB.toFixed(1)}
-                                <span className="text-sm font-normal text-gray-400 ml-1">GB</span>
-                            </p>
-                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                <div
-                                    className={`h-1.5 rounded-full transition-all duration-500 ${
-                                        ramPct > 85 ? 'bg-red-500' :
-                                        ramPct > 60 ? 'bg-amber-500' : 'bg-emerald-500'
-                                    }`}
-                                    style={{ width: `${ramPct}%` }}
-                                />
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">{ramPct.toFixed(0)}% kullanımda</p>
-                        </>
-                    ) : (
-                        <>
-                            <p className="text-2xl font-bold text-gray-400 leading-none">—</p>
-                            <p className="text-xs text-gray-400 mt-1">
-                                Min: {server.min_ram} &nbsp;·&nbsp; Screen: knozy-mc{server.id}
-                            </p>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* Online oyuncu listesi */}
-            {isRunning && server.players?.length > 0 && (
-                <div>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Online Oyuncular</p>
-                    <div className="flex flex-wrap gap-2">
-                        {server.players.map(p => (
-                            <div key={p} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-1.5">
-                                <img
-                                    src={`https://mc-heads.net/avatar/${p}/20`}
-                                    alt={p}
-                                    className="w-5 h-5 rounded"
-                                    loading="lazy"
-                                />
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{p}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+            {!isRunning && !isStarting && (
+                <button onClick={() => startM.mutate()} disabled={startM.isPending}
+                    style={{ ...btnPrimary, opacity: startM.isPending ? 0.5 : 1 }}>
+                    <I.Play size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>BAŞLAT
+                </button>
             )}
-
-            {/* Per-sunucu profil seçici */}
-            {installedModpacks?.length > 0 && user?.role === 'admin' && (
-                <div className="flex items-center gap-3 pt-1 border-t border-gray-100 dark:border-gray-800 flex-wrap">
-                    <HiOutlinePuzzlePiece className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <span className="text-xs font-medium text-gray-500 flex-shrink-0">Profil</span>
-                    <select
-                        className="flex-1 min-w-0 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={selectedPack ?? ''}
-                        onChange={(e) => {
-                            const val = e.target.value || null;
-                            setSelectedPack(val);
-                            setProfileMutation.mutate(val);
-                        }}
-                        disabled={setProfileMutation.isPending}
-                    >
-                        <option value="">— Profil seçilmedi —</option>
-                        {installedModpacks.map(mp => {
-                            // Bu profil başka sunucuda aktifse göster ama devre dışı
-                            const usedBy = mp._usedByServerId && mp._usedByServerId !== server.id;
-                            return (
-                                <option key={mp.id} value={mp.id} disabled={usedBy}>
-                                    {mp.name} {mp.version}{usedBy ? ` (${mp._usedByName}'da aktif)` : ''}
-                                </option>
-                            );
-                        })}
-                    </select>
-                    {server.activeModpack && (
-                        <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 flex-shrink-0">
-                            <HiOutlineCheck className="w-3.5 h-3.5" />
-                            {server.activeModpack.name}
-                        </span>
-                    )}
-                </div>
+            {(isRunning || isStarting) && (
+                <>
+                    <button onClick={() => stopM.mutate()} disabled={stopM.isPending}
+                        style={btnGhost}>
+                        <I.Stop size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>DURDUR
+                    </button>
+                    <button onClick={() => restartM.mutate()} disabled={restartM.isPending}
+                        style={btnGhost}>
+                        <I.Restart size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİDEN
+                    </button>
+                </>
             )}
+            {isStopping && <Pill color={A.warn} bg="rgba(251,191,36,0.10)">DURDURULUYOR</Pill>}
         </div>
     );
 }
 
-// ── Ana Dashboard ────────────────────────────────────────────────────────────
-export default function DashboardPage() {
+// ─── Tek sunucu paneli (KPI'lar + grafikler + profil + oyuncular) ──────
+function ServerPanel({ server, series, installedModpacks }) {
     const qc = useQueryClient();
-    const { user, token } = useAuth();
-    const { t } = useI18n();
-    const [crashAlert, setCrashAlert] = useState(null);
-    const [selectedId, setSelectedId] = useState(null);
+    const cpu = server.processStats?.cpuPercent || 0;
+    const ramMB = server.processStats?.memoryMB || 0;
+    const maxRamGB = parseRamGB(server.max_ram) || 8;
+    const ramGB = ramMB / 1024;
+    const ramPct = maxRamGB > 0 ? Math.min(100, (ramGB / maxRamGB) * 100) : 0;
 
-    // WebSocket — crash eventi dinle
-    useEffect(() => {
-        if (!token) return;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/console?token=${token}`);
-        ws.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'crash') {
-                    setCrashAlert(msg.data);
-                    qc.invalidateQueries({ queryKey: ['servers-status'] });
-                }
-            } catch { /* ignore */ }
-        };
-        return () => ws.close();
-    }, [token, qc]);
+    const cpuVals = series.map(s => s.cpu);
+    const ramVals = series.map(s => s.ram);
 
-    const { data: serversData, isLoading } = useQuery({
-        queryKey: ['servers-status'],
-        queryFn: () => api.get('/servers/status-all').then(r => r.data),
-        refetchInterval: 3000,
+    // Oyuncular
+    const { data: playersData } = useQuery({
+        queryKey: ['players-online', server.id],
+        queryFn: () => api.get(`/players/online?serverId=${server.id}`).then(r => r.data),
+        refetchInterval: 5000,
+    });
+    const players = playersData?.players || [];
+
+    // Aktif profil
+    const activePack = installedModpacks.find(p => p.id === server.active_modpack_id);
+
+    // Profil ataması
+    const [selectedPack, setSelectedPack] = useState(server.active_modpack_id ?? null);
+    useEffect(() => { setSelectedPack(server.active_modpack_id ?? null); }, [server.id, server.active_modpack_id]);
+
+    const setProfileM = useMutation({
+        mutationFn: (modpack_id) => api.post(`/servers/${server.id}/set-profile`, { modpack_id }),
+        onSuccess: () => {
+            toast.success('Profil atandı');
+            qc.invalidateQueries({ queryKey: ['servers-status-dash'] });
+        },
+        onError: (e) => {
+            toast.error(e.response?.data?.error || 'Profil atanamadı');
+            setSelectedPack(server.active_modpack_id ?? null);
+        },
     });
 
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* KPI strip */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+                <KPI label="CPU" value={cpu.toFixed(1)} unit="%" spark={cpuVals} sparkMax={100}/>
+                <KPI label="RAM" value={ramGB.toFixed(2)} unit={` / ${maxRamGB} GB`}
+                    sub={`${ramPct.toFixed(0)}%`} spark={ramVals} sparkMax={100}/>
+                <KPI label="OYUNCU" value={players.length} unit="/20"
+                    sub={server.status === 'running' ? 'online' : 'offline'}/>
+                <KPI label="STATUS" value={server.status.toUpperCase()}
+                    sub={server.port ? `port ${server.port}` : '—'}/>
+                <KPI label="PROFIL" value={activePack?.name || '—'}
+                    sub={activePack?.version || ''} />
+                <KPI label="SUNUCU" value={`#${server.id}`} sub={server.name}/>
+            </div>
+
+            {/* Row 2: chart + connection */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 12 }}>
+                <Card title="Kaynaklar (60s · canlı)" accent="var(--accent)"
+                    action={
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                            <LegendDot color="var(--accent)" label="CPU"/>
+                            <LegendDot color={A.ok} label="RAM" dashed/>
+                        </div>
+                    }>
+                    <DualLine a={cpuVals} b={ramVals} width={780} height={180}
+                        strokeA="var(--accent)" strokeB={A.ok}/>
+                    <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12,
+                        marginTop: 14, paddingTop: 12, borderTop: `1px solid ${A.border}`,
+                    }}>
+                        <Stat label="CPU avg" value={`${avg(cpuVals).toFixed(1)}%`}/>
+                        <Stat label="CPU peak" value={`${max(cpuVals).toFixed(1)}%`}/>
+                        <Stat label="RAM avg" value={`${avg(ramVals).toFixed(1)}%`}/>
+                        <Stat label="RAM peak" value={`${max(ramVals).toFixed(1)}%`}/>
+                    </div>
+                </Card>
+
+                <Card title="Sunucu Bilgisi" accent={A.ok}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                        <KV label="ad" value={server.name} mono/>
+                        <KV label="port" value={server.port || '—'} mono/>
+                        <KV label="ram min" value={server.min_ram || '—'} mono/>
+                        <KV label="ram max" value={server.max_ram || '—'} mono/>
+                        <KV label="path" value={server.path || '—'} mono valueColor={A.dim}/>
+                        <KV label="durum" value={server.status} mono valueColor={
+                            server.status === 'running' ? A.ok :
+                            server.status === 'starting' ? A.warn : A.dim
+                        }/>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Row 3: players + active profile + control */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 12 }}>
+                <Card title={`Online Oyuncular · ${players.length}`} accent="var(--accent)">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        {players.length === 0 ? (
+                            <div style={{ color: A.faint, fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                                Şu an online oyuncu yok
+                            </div>
+                        ) : (
+                            players.map((p, i) => (
+                                <div key={p} style={{
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '8px 0',
+                                    borderTop: i ? `1px solid ${A.border}` : 'none',
+                                }}>
+                                    <div style={{
+                                        width: 26, height: 26, borderRadius: 1,
+                                        background: 'var(--accent)', display: 'grid',
+                                        placeItems: 'center', color: A.bg,
+                                        fontFamily: A.mono, fontWeight: 700, fontSize: 10,
+                                    }}>{p.slice(0, 2).toUpperCase()}</div>
+                                    <div style={{ flex: 1, fontSize: 12, color: A.text }}>{p}</div>
+                                    <Dot color={A.ok} size={6}/>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </Card>
+
+                <Card title="Aktif Profil" accent={A.ok}>
+                    {activePack ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>{activePack.name}</div>
+                                    <div style={{ fontSize: 11, color: A.faint, marginTop: 2, fontFamily: A.mono }}>
+                                        v{activePack.version || '?'}
+                                    </div>
+                                </div>
+                                <Pill color={A.ok} bg="rgba(74,222,128,0.10)">ACTIVE</Pill>
+                            </div>
+                            <div style={{
+                                display: 'flex', flexDirection: 'column', gap: 6,
+                                paddingTop: 8, borderTop: `1px solid ${A.border}`,
+                            }}>
+                                <Cap>HEAP</Cap>
+                                <UsageBar value={ramPct} color="var(--accent)"/>
+                                <div style={{
+                                    display: 'flex', justifyContent: 'space-between',
+                                    fontFamily: A.mono, fontSize: 11, color: A.dim,
+                                }}>
+                                    <span>{ramGB.toFixed(2)} / {maxRamGB} GB</span>
+                                    <span>{ramPct.toFixed(0)}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ color: A.faint, fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                            Henüz profil atanmamış
+                        </div>
+                    )}
+                </Card>
+
+                <Card title="Profil Seç" accent={A.warn}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <select
+                            value={selectedPack || ''}
+                            onChange={(e) => {
+                                const id = e.target.value ? parseInt(e.target.value) : null;
+                                setSelectedPack(id);
+                                setProfileM.mutate(id);
+                            }}
+                            style={{
+                                background: A.bg, border: `1px solid ${A.border}`,
+                                color: A.text, fontFamily: A.mono, fontSize: 12,
+                                padding: '8px 10px', borderRadius: 2, outline: 'none',
+                            }}>
+                            <option value="">— profil seç —</option>
+                            {installedModpacks.map(mp => {
+                                const isUsedElsewhere = mp._usedByServerId && mp._usedByServerId !== server.id;
+                                return (
+                                    <option key={mp.id} value={mp.id} disabled={isUsedElsewhere}>
+                                        {mp.name} {isUsedElsewhere ? `(sunucu ${mp._usedByName})` : ''}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                        <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, lineHeight: 1.5 }}>
+                            Her profil aynı anda yalnızca bir sunucuda kullanılabilir.
+                        </div>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+// ─── Ana Dashboard ──────────────────────────────────────────────────────
+export default function DashboardPage() {
+    const { user } = useAuth();
+    const qc = useQueryClient();
+    const { servers, series } = useLiveSeries();
+    const [selectedServerId, setSelectedServerId] = useState(null);
+
     const { data: installedData } = useQuery({
-        queryKey: ['modpackInstalled'],
+        queryKey: ['modpacks-installed'],
         queryFn: () => api.get('/modpacks/installed').then(r => r.data),
     });
 
-    const { data: updateInfo } = useQuery({
-        queryKey: ['modpackUpdate'],
-        queryFn: () => api.post('/modpacks/check-update', {}).then(r => r.data),
-        refetchInterval: 300000,
-        retry: false,
-    });
-
-    const repairMutation = useMutation({
-        mutationFn: () => api.post('/minecraft/repair'),
-        onSuccess: (res) => { toast.success(res.data.message); qc.invalidateQueries({ queryKey: ['servers-status'] }); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Onarım başarısız'),
-    });
-
-    const servers = serversData?.servers || [];
-
-    // Her modpack'e "hangi sunucuda aktif" bilgisini ekle
-    const installedModpacks = (installedData?.modpacks || []).map(mp => {
-        const usedBy = servers.find(s => s.active_modpack_id === mp.id);
-        return { ...mp, _usedByServerId: usedBy?.id || null, _usedByName: usedBy?.name || null };
-    });
+    const installedModpacks = useMemo(() => {
+        const list = installedData?.modpacks || [];
+        return list.map(mp => {
+            const usedBy = servers.find(s => s.active_modpack_id === mp.id);
+            return { ...mp, _usedByServerId: usedBy?.id || null, _usedByName: usedBy?.name || null };
+        });
+    }, [installedData, servers]);
 
     // İlk yüklemede ilk sunucuyu seç
     useEffect(() => {
-        if (servers.length > 0 && !selectedId) {
-            setSelectedId(servers[0].id);
+        if (!selectedServerId && servers.length > 0) {
+            setSelectedServerId(servers[0].id);
         }
-    }, [servers, selectedId]);
+    }, [servers, selectedServerId]);
 
-    const selected = servers.find(s => s.id === selectedId) || servers[0] || null;
-    const onStatusChange = () => qc.invalidateQueries({ queryKey: ['servers-status'] });
+    const selectedServer = servers.find(s => s.id === selectedServerId) || servers[0];
+    const onStatusChange = () => qc.invalidateQueries({ queryKey: ['servers-status-dash'] });
+
+    if (!servers.length) {
+        return (
+            <Card title="Sunucu yok" padding={24}>
+                <div style={{ color: A.faint, fontSize: 13, fontFamily: A.mono, lineHeight: 1.6 }}>
+                    Henüz tanımlı bir sunucu yok. <a href="/servers" style={{ color: 'var(--accent)' }}>Sunucular sayfasından</a> ilk sunucuyu ekleyin.
+                </div>
+            </Card>
+        );
+    }
+
+    if (!selectedServer) return null;
 
     return (
-        <div className="space-y-5">
-            {/* Başlık */}
-            <div className="fade-in flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">
-                        {t('dashboard.title')}
-                    </h1>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">{t('dashboard.subtitle')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Server tabs + kontrol stripi */}
+            <div style={{
+                background: A.bgDeeper, border: `1px solid ${A.border}`, borderRadius: 4,
+                display: 'flex', alignItems: 'center', gap: 0,
+            }}>
+                <div style={{ display: 'flex', overflowX: 'auto', flex: 1 }}>
+                    {servers.map((s, i) => (
+                        <ServerTab key={s.id} server={s} index={i}
+                            active={s.id === selectedServerId}
+                            onClick={() => setSelectedServerId(s.id)}/>
+                    ))}
                 </div>
-                <a href="/servers"
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
-                    <HiOutlinePlus className="w-4 h-4" /> Sunucu Yönet
-                </a>
+                <div style={{ padding: '8px 16px', borderLeft: `1px solid ${A.border}` }}>
+                    <ServerControls server={selectedServer} onStatusChange={onStatusChange}/>
+                </div>
             </div>
 
-            {/* Çöküm Uyarısı */}
-            {crashAlert && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-3">
-                    <HiOutlineExclamationTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 dark:text-white text-sm">
-                            {crashAlert.autoRestarted
-                                ? '⚡ Sunucu çöktü ve otomatik yeniden başlatıldı'
-                                : '🔴 Sunucu çöktü — manuel başlatma gerekiyor'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                            {new Date(crashAlert.timestamp).toLocaleString('tr-TR')} · Exit code: {crashAlert.code} · Çöküm #{crashAlert.crashCount}
-                        </p>
-                    </div>
-                    <button onClick={() => setCrashAlert(null)} className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0">
-                        <HiOutlineXMark className="w-5 h-5" />
-                    </button>
-                </div>
-            )}
-
-            {/* Modpack güncelleme uyarısı */}
-            {updateInfo?.hasUpdate && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                        <div>
-                            <p className="font-semibold text-gray-900 dark:text-white text-sm">Yeni Modpack Güncellemesi!</p>
-                            <p className="text-xs text-gray-500">{updateInfo.currentVersion} → {updateInfo.latestVersion}</p>
-                        </div>
-                    </div>
-                    <a href="/modpacks"
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700 transition-colors flex-shrink-0">
-                        <HiOutlineArrowDownTray className="w-3.5 h-3.5" /> Güncelle
-                    </a>
-                </div>
-            )}
-
-            {/* Sunucu paneli — tab seçici + detay */}
-            {isLoading ? (
-                <div className="h-72 rounded-2xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            ) : servers.length === 0 ? (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-16 text-center">
-                    <HiOutlineServer className="w-14 h-14 mx-auto mb-4 text-gray-200 dark:text-gray-700" />
-                    <p className="font-semibold text-gray-600 dark:text-gray-300 mb-1">Henüz sunucu yok</p>
-                    <p className="text-sm text-gray-400 mb-5">Sunucu ekleyerek başlayın</p>
-                    <a href="/servers"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-                        <HiOutlinePlus className="w-4 h-4" /> Sunucu Ekle
-                    </a>
-                </div>
-            ) : (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                    {/* Tab bar — sunucu seçici */}
-                    <div className="flex border-b border-gray-100 dark:border-gray-800 overflow-x-auto scrollbar-hide">
-                        {servers.map((server, idx) => {
-                            const isRunning  = server.status === 'running';
-                            const isStarting = server.status === 'starting';
-                            const isSelected = selected?.id === server.id;
-                            return (
-                                <button
-                                    key={server.id}
-                                    onClick={() => setSelectedId(server.id)}
-                                    className={`flex items-center gap-2.5 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
-                                        isSelected
-                                            ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10'
-                                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50'
-                                    }`}
-                                >
-                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
-                                        isRunning  ? 'bg-emerald-500' :
-                                        isStarting ? 'bg-amber-400 animate-pulse' :
-                                                     'bg-gray-300 dark:bg-gray-600'
-                                    }`} />
-                                    <span>Sunucu {idx + 1}</span>
-                                    <span className="hidden sm:inline text-xs font-normal text-gray-400">
-                                        — {server.name}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Seçili sunucu detayı */}
-                    {selected && (
-                        <ServerPanel
-                            server={selected}
-                            user={user}
-                            onStatusChange={onStatusChange}
-                            installedModpacks={installedModpacks}
-                        />
-                    )}
-                </div>
-            )}
-
-            {/* Onar butonu (modpack yüklüyse) */}
-            {installedModpacks.length > 0 && user?.role === 'admin' && (
-                <div className="flex justify-end">
-                    <button
-                        onClick={() => { if (confirm('Aktif sunucunun modpack dosyaları onarılsın mı?')) repairMutation.mutate(); }}
-                        disabled={servers.some(s => s.status === 'running') || repairMutation.isPending}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50 transition-colors">
-                        <HiOutlineWrenchScrewdriver className="w-3.5 h-3.5" /> Modpack Onar
-                    </button>
-                </div>
-            )}
+            <ServerPanel server={selectedServer} series={series} installedModpacks={installedModpacks}/>
         </div>
     );
 }
