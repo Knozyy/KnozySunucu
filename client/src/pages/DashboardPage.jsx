@@ -220,8 +220,9 @@ export default function DashboardPage() {
     const qc = useQueryClient();
     const { user, token } = useAuth();
     const { t } = useI18n();
-    const [crashAlert,  setCrashAlert]  = useState(null);
-    const [selectedId,  setSelectedId]  = useState(null);
+    const [crashAlert,       setCrashAlert]       = useState(null);
+    const [selectedId,       setSelectedId]       = useState(null);
+    const [selectedProfileId, setSelectedProfileId] = useState(null); // Anlık dropdown değeri
 
     // WebSocket — crash eventi dinle
     useEffect(() => {
@@ -267,9 +268,15 @@ export default function DashboardPage() {
         mutationFn: (id) => api.post(`/modpacks/activate/${id}`),
         onSuccess: (res) => {
             toast.success(res.data.message);
-            qc.invalidateQueries({ queryKey: ['modpackInstalled', 'activeProfile', 'servers-status'] });
+            // Her query ayrı ayrı invalidate edilmeli — dizi geçmek çalışmıyor
+            qc.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            qc.invalidateQueries({ queryKey: ['activeProfile'] });
+            qc.invalidateQueries({ queryKey: ['servers-status'] });
         },
-        onError: (e) => toast.error(e.response?.data?.error || 'Profil değişimi başarısız'),
+        onError: (e) => {
+            toast.error(e.response?.data?.error || 'Profil değişimi başarısız');
+            setSelectedProfileId(null); // Hata durumunda local state'i sıfırla
+        },
     });
 
     const repairMutation = useMutation({
@@ -408,11 +415,12 @@ export default function DashboardPage() {
                     </span>
                     <select
                         className="flex-1 min-w-0 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={activeProfileData?.profile?.id || ''}
+                        value={selectedProfileId ?? activeProfileData?.profile?.id ?? ''}
                         onChange={(e) => {
                             if (!e.target.value) return;
                             const isAnyRunning = servers.some(s => s.status === 'running');
-                            if (isAnyRunning && !window.confirm('Çalışan sunucu kapatılıp yeni profil ile başlatılacak. Emin misiniz?')) return;
+                            if (isAnyRunning && !window.confirm('Çalışan sunucular durdurulup yeni profil aktif edilecek. Emin misiniz?')) return;
+                            setSelectedProfileId(e.target.value); // Hemen dropdown'ı güncelle
                             activateMutation.mutate(e.target.value);
                         }}
                         disabled={user?.role !== 'admin' || activateMutation.isPending}
