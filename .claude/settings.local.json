@@ -53,7 +53,16 @@
       "Bash(npm run *)",
       "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" add -A)",
       "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" push)",
-      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" push origin HEAD:main)"
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" push origin HEAD:main)",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" status --short)",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" log --oneline -5)",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" tag -a \"before-hodo-redesign\" -m \"Frontend Hodo Panel redesign öncesi checkpoint — geri dönmek için: git reset --hard before-hodo-redesign\")",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" push origin before-hodo-redesign)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cd \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" && mkdir -p /tmp/hodo-design && file \"C:\\\\Users\\\\kanad\\\\.claude\\\\projects\\\\C--Users-kanad-Downloads-Kolem-KnozySunucu--claude-worktrees-admiring-keller-de4491\\\\b2e26dc0-6636-452d-b75a-0f7d49bd6a41\\\\tool-results\\\\webfetch-1779399127387-mxjax4.bin\")",
+      "Bash(cp \"C:\\\\Users\\\\kanad\\\\.claude\\\\projects\\\\C--Users-kanad-Downloads-Kolem-KnozySunucu--claude-worktrees-admiring-keller-de4491\\\\b2e26dc0-6636-452d-b75a-0f7d49bd6a41\\\\tool-results\\\\webfetch-1779399127387-mxjax4.bin\" /tmp/hodo.tar.gz)",
+      "Bash(tar -tzf /tmp/hodo.tar.gz)",
+      "Bash(tar -xzf /tmp/hodo.tar.gz -C /tmp/hodo-design)"
     ]
   }
 }
