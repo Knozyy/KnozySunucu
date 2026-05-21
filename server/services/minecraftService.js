@@ -82,10 +82,10 @@ class MinecraftService extends EventEmitter {
     _findJavaPid() {
         try {
             const serverPath = this.getServerPath();
-            // Önce sunucu yoluna göre ara
+            // Sunucu yoluna göre ara (spesifik — başka sunucularla karışmaz)
             let result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            if (!result) {
-                // Fallback: genel java server arama
+            if (!result && !this._serverConfig) {
+                // Fallback: sadece birincil (singleton) sunucu için genel java arama
                 result = execSync(`pgrep -f "java.*nogui" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
             }
             const pids = result.split('\n').filter(Boolean).map(Number);
@@ -471,7 +471,7 @@ class MinecraftService extends EventEmitter {
 
             // Screen başlat — çıktıyı log dosyasına yönlendir
             const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${this._logFile}'`;
-            execSync(`screen -dmS ${SCREEN_NAME} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
+            execSync(`screen -dmS ${this._screenName} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
 
             this.addLog(`[System] Sunucu başlatılıyor (screen: ${this._screenName})`);
             this.status = 'starting';

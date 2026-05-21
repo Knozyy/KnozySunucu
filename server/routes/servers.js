@@ -50,11 +50,6 @@ router.post('/:id/activate', authMiddleware, requireRole('admin'), (req, res) =>
         const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
         if (!server) return res.status(404).json({ error: 'Sunucu bulunamadı' });
 
-        const minecraftService = require('../services/minecraftService');
-        if (minecraftService.status === 'running') {
-            return res.status(400).json({ error: 'Sunucu çalışırken geçiş yapamazsınız. Önce durdurun.' });
-        }
-
         db.prepare('UPDATE servers SET is_active = 0').run();
         db.prepare('UPDATE servers SET is_active = 1 WHERE id = ?').run(req.params.id);
         logAudit(req.user?.username || 'admin', 'sunucu_gecis', server.name, req.ip);
