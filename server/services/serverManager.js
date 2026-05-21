@@ -60,9 +60,18 @@ class ServerManager {
         return servers.map(server => {
             const instance = this._instances.get(server.id);
             const status = instance ? instance.getStatus() : { status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } };
+            // Atanmış modpack bilgisini ekle
+            let activeModpack = null;
+            if (server.active_modpack_id) {
+                try {
+                    activeModpack = db.prepare('SELECT id, name, version, logo_url FROM installed_modpacks WHERE id = ?')
+                        .get(server.active_modpack_id) || null;
+                } catch { /* ignore */ }
+            }
             return {
                 ...server,
                 ...status,
+                activeModpack,
             };
         });
     }

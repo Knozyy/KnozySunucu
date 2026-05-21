@@ -148,6 +148,37 @@ router.get('/recommendations', authMiddleware, (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/servers/:id/set-profile — sunucuya modpack profili ata
+router.post('/:id/set-profile', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const db = getDb();
+        const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+        if (!server) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+
+        const { modpack_id } = req.body; // null ise profil kaldır
+
+        if (modpack_id) {
+            // Aynı profil başka bir sunucuda zaten açıksa engelle
+            const conflict = db.prepare(
+                'SELECT s.name FROM servers s WHERE s.active_modpack_id = ? AND s.id != ?'
+            ).get(modpack_id, req.params.id);
+            if (conflict) {
+                return res.status(400).json({
+                    error: `Bu profil "${conflict.name}" sunucusunda zaten aktif. Önce o sunucudan kaldırın.`
+                });
+            }
+            const pack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(modpack_id);
+            if (!pack) return res.status(404).json({ error: 'Modpack bulunamadı' });
+        }
+
+        db.prepare('UPDATE servers SET active_modpack_id = ? WHERE id = ?')
+            .run(modpack_id || null, req.params.id);
+
+        logAudit(req.user?.username || 'admin', 'sunucu_profil_ata', server.name, req.ip);
+        res.json({ message: modpack_id ? 'Profil atandı' : 'Profil kaldırıldı' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/servers/status-all — tüm sunucuların durumu
 router.get('/status-all', authMiddleware, (req, res) => {
     try {

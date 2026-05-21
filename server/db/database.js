@@ -192,6 +192,12 @@ function initDatabase() {
     if (!userColNames.includes('category_id')) {
       database.exec("ALTER TABLE users ADD COLUMN category_id INTEGER NULL REFERENCES permission_categories(id)");
     }
+    // servers tablosuna active_modpack_id kolonu ekle
+    const serverCols = database.prepare("PRAGMA table_info(servers)").all().map(c => c.name);
+    if (!serverCols.includes('active_modpack_id')) {
+      database.exec("ALTER TABLE servers ADD COLUMN active_modpack_id INTEGER NULL REFERENCES installed_modpacks(id)");
+    }
+
     // servers tablosu boşsa mevcut env ayarlarından ilk sunucuyu oluştur
     const serverCount = database.prepare('SELECT COUNT(*) as c FROM servers').get();
     if (serverCount.c === 0) {
