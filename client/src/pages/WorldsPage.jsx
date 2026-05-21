@@ -4,8 +4,9 @@ import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
 import {
     HiOutlineGlobeAlt, HiOutlineTrash, HiOutlineArchiveBox,
-    HiOutlineCircleStack,
+    HiOutlineCircleStack, HiOutlineHashtag, HiOutlineClipboard,
 } from 'react-icons/hi2';
+import toast from 'react-hot-toast';
 
 export default function WorldsPage() {
     const queryClient = useQueryClient();
@@ -29,6 +30,11 @@ export default function WorldsPage() {
 
     const worlds = data?.worlds || [];
     const totalSize = data?.totalSize;
+
+    const { data: seedData } = useQuery({
+        queryKey: ['world-seed'],
+        queryFn: () => api.get('/worlds/seed').then(r => r.data),
+    });
 
     const { t } = useI18n();
 
@@ -82,18 +88,41 @@ export default function WorldsPage() {
                 )}
             </div>
 
-            {/* Total Size */}
-            {totalSize && (
-                <div className="glass-card p-5 flex items-center gap-4 fade-in">
-                    <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                        <HiOutlineCircleStack className="w-6 h-6 text-blue-600" />
+            {/* Seed + Total Size */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 fade-in">
+                <div className="glass-card p-5 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                        <HiOutlineHashtag className="w-6 h-6 text-emerald-600" />
                     </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Toplam Dünya Boyutu</p>
-                        <p className="text-xl font-bold text-gray-900">{totalSize.formatted}</p>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-500">Dünya Seed</p>
+                        <p className="text-lg font-bold text-gray-900 dark:text-white truncate">
+                            {seedData?.seed ?? '—'}
+                        </p>
                     </div>
+                    {seedData?.seed && seedData.seed !== '(rastgele)' && seedData.seed !== '(bulunamadı)' && (
+                        <button
+                            onClick={() => { navigator.clipboard.writeText(seedData.seed); toast.success('Seed kopyalandı!'); }}
+                            className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            title="Kopyala"
+                        >
+                            <HiOutlineClipboard className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
-            )}
+
+                {totalSize && (
+                    <div className="glass-card p-5 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                            <HiOutlineCircleStack className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Toplam Dünya Boyutu</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-white">{totalSize.formatted}</p>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

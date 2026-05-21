@@ -316,10 +316,21 @@ class MinecraftService extends EventEmitter {
     getServerPath() {
         try {
             const db = getDb();
+            // Önce servers tablosundaki aktif sunucuya bak
+            const activeServer = db.prepare('SELECT path FROM servers WHERE is_active = 1 LIMIT 1').get();
+            if (activeServer?.path && fs.existsSync(activeServer.path)) return activeServer.path;
+            // Fallback: installed_modpacks
             const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
             if (active?.install_path && fs.existsSync(active.install_path)) return active.install_path;
         } catch { /* fallback */ }
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+    }
+
+    getActiveServer() {
+        try {
+            const db = getDb();
+            return db.prepare('SELECT * FROM servers WHERE is_active = 1 LIMIT 1').get() || null;
+        } catch { return null; }
     }
 
     getActiveProfile() {

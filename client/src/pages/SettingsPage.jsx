@@ -975,6 +975,22 @@ function AuditLogPanel() {
         refetchInterval: 15000,
     });
 
+    // Kullanıcı bazlı aktivite özeti
+    const userSummary = (() => {
+        const logs = data?.logs || [];
+        const map = new Map();
+        for (const log of logs) {
+            if (!map.has(log.user)) map.set(log.user, { user: log.user, count: 0, lastAction: log.action, lastAt: log.created_at });
+            const entry = map.get(log.user);
+            entry.count++;
+            if (new Date(log.created_at) > new Date(entry.lastAt)) {
+                entry.lastAction = log.action;
+                entry.lastAt = log.created_at;
+            }
+        }
+        return Array.from(map.values()).sort((a, b) => b.count - a.count);
+    })();
+
     const clearMutation = useMutation({
         mutationFn: () => api.delete('/audit'),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['audit-log'] }); toast.success('Log temizlendi'); },
@@ -995,6 +1011,24 @@ function AuditLogPanel() {
 
     return (
         <div className="space-y-4 fade-in">
+            {/* Kullanıcı aktivite özeti */}
+            {userSummary.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {userSummary.map(u => (
+                        <div key={u.user} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3 space-y-1">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.user}</span>
+                                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">{u.count}</span>
+                            </div>
+                            <p className="text-xs text-gray-400 truncate">{u.lastAction.replace(/_/g, ' ')}</p>
+                            <p className="text-xs text-gray-300 dark:text-gray-600">
+                                {new Date(u.lastAt).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             <div className="flex items-center gap-3">
                 <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Kullanıcıya göre filtrele..."

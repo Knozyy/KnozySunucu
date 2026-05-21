@@ -139,6 +139,18 @@ function initDatabase() {
       config TEXT NOT NULL DEFAULT '{}',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS servers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      port INTEGER DEFAULT 25565,
+      min_ram TEXT DEFAULT '2G',
+      max_ram TEXT DEFAULT '4G',
+      jvm_args TEXT DEFAULT '',
+      is_active INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle
@@ -179,6 +191,17 @@ function initDatabase() {
     }
     if (!userColNames.includes('category_id')) {
       database.exec("ALTER TABLE users ADD COLUMN category_id INTEGER NULL REFERENCES permission_categories(id)");
+    }
+    // servers tablosu boşsa mevcut env ayarlarından ilk sunucuyu oluştur
+    const serverCount = database.prepare('SELECT COUNT(*) as c FROM servers').get();
+    if (serverCount.c === 0) {
+        const defaultPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        database.prepare(`INSERT INTO servers (name, path, port, min_ram, max_ram, jvm_args, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)`)
+            .run('Varsayılan Sunucu', defaultPath, 25565,
+                process.env.MINECRAFT_MIN_RAM || '2G',
+                process.env.MINECRAFT_MAX_RAM || '4G',
+                process.env.JVM_ARGS || '', );
     }
   } catch (err) { console.error('Migration error:', err.message) }
 
