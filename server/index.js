@@ -67,9 +67,10 @@ app.use('/api/tokens', apiTokenRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/templates', templateRoutes);
 
-// Health check
+// Health check — startTime sunucu yeniden başlayınca değişir, frontend bunu algılar
+const SERVER_START_TIME = Date.now();
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', startTime: SERVER_START_TIME, timestamp: new Date().toISOString() });
 });
 
 // Production: Serve frontend build files
