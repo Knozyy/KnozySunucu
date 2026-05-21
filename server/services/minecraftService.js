@@ -23,8 +23,8 @@ class MinecraftService extends EventEmitter {
         super();
         // Sunucu config — null ise birincil sunucu davranışı
         this._serverConfig = serverConfig;
-        this._screenName   = serverConfig ? `knozy-mc-${serverConfig.id}` : DEFAULT_SCREEN_NAME;
-        this._logFile      = serverConfig ? `/tmp/knozy-mc-${serverConfig.id}.log` : DEFAULT_LOG_FILE;
+        this._screenName   = serverConfig ? `knozy-mc${serverConfig.id}` : DEFAULT_SCREEN_NAME;
+        this._logFile      = serverConfig ? `/tmp/knozy-mc${serverConfig.id}.log` : DEFAULT_LOG_FILE;
         this._isPrimary    = serverConfig ? (serverConfig.isPrimary === true) : true;
 
         this._tailProcess = null;   // tail -f process (log okuma)

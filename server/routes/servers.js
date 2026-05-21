@@ -103,6 +103,56 @@ router.post('/:id/restart', authMiddleware, requireRole('admin'), async (req, re
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/servers/recommendations — yeni sunucu için kaynak önerileri
+router.get('/recommendations', authMiddleware, (req, res) => {
+    try {
+        const os = require('os');
+        const db = getDb();
+        const servers = db.prepare('SELECT * FROM servers ORDER BY id ASC').all();
+
+        // Port önerisi
+        const usedPorts = servers.map(s => s.port);
+        let suggestedPort = 25565;
+        while (usedPorts.includes(suggestedPort)) suggestedPort++;
+
+        // RAM hesabı
+        const totalRamGB = Math.floor(os.totalmem() / (1024 ** 3));
+        const parseGB = (str) => {
+            if (!str) return 0;
+            const m = str.match(/^(\d+)([GgMm])$/);
+            if (!m) return 0;
+            return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : Math.ceil(parseInt(m[1]) / 1024);
+        };
+        const usedRamGB = servers.reduce((acc, s) => acc + parseGB(s.max_ram), 0);
+        const freeRamGB = Math.max(0, totalRamGB - 2 - usedRamGB); // 2GB OS için ayrıldı
+        const recMaxGB  = Math.max(2, freeRamGB);
+        const recMinGB  = Math.max(1, Math.floor(recMaxGB * 0.6));
+
+        // CPU önerisi
+        const totalCores  = os.cpus().length;
+        const serverCount = servers.length;
+        // Java büyük ölçüde tek çekirdekte çalışır; çekirdekleri eşit böl
+        const coresEach   = serverCount > 0 ? Math.floor(totalCores / (serverCount + 1)) : totalCores;
+        // Yeni sunucu için başlangıç çekirdeği (0-indexed)
+        const startCore   = serverCount > 0 ? serverCount * Math.floor(totalCores / (serverCount + 1)) : 0;
+        const endCore     = Math.min(totalCores - 1, startCore + coresEach - 1);
+
+        res.json({
+            suggestedPort,
+            usedPorts,
+            totalRamGB,
+            usedRamGB,
+            freeRamGB,
+            recommendedMaxRam: `${recMaxGB}G`,
+            recommendedMinRam: `${recMinGB}G`,
+            totalCores,
+            suggestedCores: coresEach,
+            suggestedCoreRange: serverCount > 0 ? `${startCore}-${endCore}` : `0-${totalCores - 1}`,
+            serverCount,
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/servers/status-all — tüm sunucuların durumu
 router.get('/status-all', authMiddleware, (req, res) => {
     try {

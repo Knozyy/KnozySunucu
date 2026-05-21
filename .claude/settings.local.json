@@ -40,7 +40,17 @@
       "Bash(dir \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Yeni klasör\\\\KnozyBot\")",
       "Bash(Get-ChildItem -Recurse \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Yeni klasör\\\\KnozyBot\" -Filter \"*.py\")",
       "Bash(Select-Object FullName, Length)",
-      "Bash(Sort-Object FullName)"
+      "Bash(Sort-Object FullName)",
+      "Bash(gh pr *)",
+      "Bash(gh auth *)",
+      "Bash(dir \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\\\\server\\\\services\")",
+      "Bash(npm install *)",
+      "Bash(git reset *)",
+      "Bash(git commit *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)",
+      "Bash(git stash *)",
+      "Bash(npm run *)"
     ]
   }
 }
