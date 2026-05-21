@@ -9,6 +9,7 @@ import {
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
     HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt, HiOutlineChartBar, HiOutlineUsers,
+    HiOutlineArrowPath,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
@@ -205,6 +206,13 @@ export default function Sidebar({ isOpen, onClose }) {
                     >
                         <HiOutlineLanguage className="w-5 h-5" />
                         {locale === 'tr' ? 'English' : 'Türkçe'}
+                    </button>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    >
+                        <HiOutlineArrowPath className="w-5 h-5" />
+                        Sayfayı Yenile
                     </button>
                     <div className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors group">
                         <div
