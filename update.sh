@@ -34,12 +34,14 @@ cd "$SCRIPT_DIR"
 rm -rf "$SCRIPT_DIR/server/public"
 cp -r "$SCRIPT_DIR/client/dist" "$SCRIPT_DIR/server/public"
 
-# 4. Restart
+# 4. Restart — 2 saniye bekleyip arka planda yeniden başlat
+# (Terminali kesmemek için restart, script bittikten sonra tetikleniyor)
 echo -e "${YELLOW}[4/4]${NC} Panel yeniden başlatılıyor..."
 if command -v pm2 &> /dev/null; then
-    pm2 restart knozy-sunucu
+    nohup bash -c "sleep 2 && pm2 restart knozy-sunucu" > /dev/null 2>&1 &
+    echo -e "  → Restart 2 saniye içinde arka planda gerçekleşecek."
 else
     echo "PM2 bulunamadı, manuel restart gerekli."
 fi
 
-echo -e "\n${GREEN}${BOLD}✓ Güncelleme tamamlandı!${NC}\n"
+echo -e "\n${GREEN}${BOLD}✓ Güncelleme tamamlandı! Panel birkaç saniye içinde yeniden başlayacak.${NC}\n"
