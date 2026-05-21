@@ -3,19 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const authMiddleware = require('../middleware/authMiddleware');
+const serverRegistry = require('../services/serverRegistry');
 
 const router = express.Router();
 
-function getServerPath() {
-    // Aktif profili kontrol et
-    try {
-        const { getDb } = require('../db/database');
-        const db = getDb();
-        const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
-        if (active?.install_path && fs.existsSync(active.install_path)) {
-            return active.install_path;
-        }
-    } catch { /* fallback */ }
+function getServerPath(req) {
+    const sid = req?.query?.serverId || req?.body?.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    if (inst) return inst.getServerPath(req);
     return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
 }
 
@@ -41,7 +36,7 @@ function findLogsDir(serverPath) {
 // GET /api/logs/files
 router.get('/files', authMiddleware, (req, res) => {
     try {
-        const logsDir = findLogsDir(getServerPath());
+        const logsDir = findLogsDir(getServerPath(req));
 
         if (!fs.existsSync(logsDir)) {
             return res.json({ files: [] });
@@ -74,7 +69,7 @@ router.get('/files', authMiddleware, (req, res) => {
 router.get('/latest', authMiddleware, (req, res) => {
     try {
         const lines = parseInt(req.query.lines) || 200;
-        const serverPath = getServerPath();
+        const serverPath = getServerPath(req);
         const logsDir = findLogsDir(serverPath);
         const logFile = path.join(logsDir, 'latest.log');
 
@@ -107,7 +102,7 @@ router.get('/file/:filename', authMiddleware, (req, res) => {
             return res.status(400).json({ error: 'Geçersiz dosya adı' });
         }
 
-        const logsDir = findLogsDir(getServerPath());
+        const logsDir = findLogsDir(getServerPath(req));
         const filePath = path.join(logsDir, filename);
 
         if (!fs.existsSync(filePath)) {
@@ -142,7 +137,7 @@ router.get('/search', authMiddleware, (req, res) => {
         const fileName = req.query.file || 'latest.log';
         if (!query) return res.json({ results: [], count: 0 });
 
-        const logsDir = findLogsDir(getServerPath());
+        const logsDir = findLogsDir(getServerPath(req));
         const filePath = path.join(logsDir, fileName);
         if (!fs.existsSync(filePath)) return res.json({ results: [], count: 0 });
 
@@ -179,7 +174,7 @@ router.get('/search-all', authMiddleware, (req, res) => {
         const limit = Math.min(parseInt(req.query.limit) || 300, 500);
         if (!query) return res.json({ results: [], total: 0 });
 
-        const logsDir = findLogsDir(getServerPath());
+        const logsDir = findLogsDir(getServerPath(req));
         if (!fs.existsSync(logsDir)) return res.json({ results: [], total: 0 });
 
         const files = fs.readdirSync(logsDir)
@@ -230,7 +225,7 @@ router.get('/search-all', authMiddleware, (req, res) => {
 // GET /api/logs/crash-reports - crash-reports klasöründeki raporları listele ve özetle
 router.get('/crash-reports', authMiddleware, (req, res) => {
     try {
-        const serverPath = getServerPath();
+        const serverPath = getServerPath(req);
         const crashDir = path.join(serverPath, 'crash-reports');
         if (!fs.existsSync(crashDir)) return res.json({ reports: [] });
 
@@ -269,7 +264,7 @@ router.get('/crash-reports/:filename', authMiddleware, (req, res) => {
         const filename = req.params.filename;
         if (filename.includes('..') || filename.includes('/') || filename.includes('\\'))
             return res.status(400).json({ error: 'Geçersiz dosya adı' });
-        const fp = path.join(getServerPath(), 'crash-reports', filename);
+        const fp = path.join(getServerPath(req), 'crash-reports', filename);
         if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Dosya bulunamadı' });
         res.json({ filename, content: fs.readFileSync(fp, 'utf-8') });
     } catch (err) { res.status(500).json({ error: err.message }); }
