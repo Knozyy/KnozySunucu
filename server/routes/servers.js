@@ -62,6 +62,55 @@ router.post('/:id/activate', authMiddleware, requireRole('admin'), (req, res) =>
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/servers/:id/start
+router.post('/:id/start', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const { serverManager } = require('../services/serverManager');
+        const instance = serverManager.getInstance(parseInt(req.params.id));
+        if (!instance) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        // CPU auto-split
+        const os = require('os');
+        const runningCount = serverManager.getRunningCount() + 1;
+        const coresPerServer = Math.max(1, Math.floor(os.cpus().length / runningCount));
+        instance._cpuFlag = runningCount > 1 ? ` -XX:ActiveProcessorCount=${coresPerServer}` : '';
+        instance.start();
+        logAudit(req.user?.username || 'admin', 'sunucu_baslat', instance._serverConfig?.name || '', req.ip);
+        res.json({ message: 'Sunucu başlatılıyor' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/servers/:id/stop
+router.post('/:id/stop', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const { serverManager } = require('../services/serverManager');
+        const instance = serverManager.getInstance(parseInt(req.params.id));
+        if (!instance) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        await instance.stop();
+        logAudit(req.user?.username || 'admin', 'sunucu_durdur', instance._serverConfig?.name || '', req.ip);
+        res.json({ message: 'Sunucu durduruluyor' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/servers/:id/restart
+router.post('/:id/restart', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const { serverManager } = require('../services/serverManager');
+        const instance = serverManager.getInstance(parseInt(req.params.id));
+        if (!instance) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        await instance.restart();
+        logAudit(req.user?.username || 'admin', 'sunucu_yeniden_baslat', instance._serverConfig?.name || '', req.ip);
+        res.json({ message: 'Yeniden başlatılıyor' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/servers/status-all — tüm sunucuların durumu
+router.get('/status-all', authMiddleware, (req, res) => {
+    try {
+        const { serverManager } = require('../services/serverManager');
+        res.json({ servers: serverManager.getAllStatus() });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // DELETE /api/servers/:id
 router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {

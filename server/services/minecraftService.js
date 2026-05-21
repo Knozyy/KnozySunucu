@@ -4,13 +4,29 @@ const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
 
-// ── Screen ayarları ───────────────────────────────────────────────────────────
-const SCREEN_NAME = process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
-const LOG_FILE   = '/tmp/knozy-mc.log';
+// ── Screen ayarları (varsayılan — birincil sunucu) ────────────────────────────
+const DEFAULT_SCREEN_NAME = process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
+const DEFAULT_LOG_FILE    = '/tmp/knozy-mc.log';
 
 class MinecraftService extends EventEmitter {
-    constructor() {
+    /**
+     * @param {Object} [serverConfig] - Opsiyonel sunucu config (çoklu sunucu desteği için)
+     * @param {number}  serverConfig.id
+     * @param {string}  serverConfig.name
+     * @param {string}  serverConfig.path
+     * @param {string}  serverConfig.min_ram
+     * @param {string}  serverConfig.max_ram
+     * @param {string}  serverConfig.jvm_args
+     * @param {boolean} serverConfig.isPrimary - true ise SIGTERM/SIGINT dinler
+     */
+    constructor(serverConfig = null) {
         super();
+        // Sunucu config — null ise birincil sunucu davranışı
+        this._serverConfig = serverConfig;
+        this._screenName   = serverConfig ? `knozy-mc-${serverConfig.id}` : DEFAULT_SCREEN_NAME;
+        this._logFile      = serverConfig ? `/tmp/knozy-mc-${serverConfig.id}.log` : DEFAULT_LOG_FILE;
+        this._isPrimary    = serverConfig ? (serverConfig.isPrimary === true) : true;
+
         this._tailProcess = null;   // tail -f process (log okuma)
         this._javaPid     = null;   // gerçek Java PID
         this.process      = null;   // Windows compat. (eski API) — Linux'ta null
@@ -34,17 +50,18 @@ class MinecraftService extends EventEmitter {
             setTimeout(() => this._reconnectIfRunning(), 500);
         }
 
-        // Panel kapanırken MC screen'ini ÖLDÜRME — sadece interval/tail temizle
-        const _gracefulShutdown = () => {
-            this._shuttingDown = true;
-            this._stopStatusWatch();
-            this._stopStatsTracking();
-            this._stopLogTail();
-            // Kasıtlı olarak screen veya Java'ya dokunmuyoruz
-            process.exit(0);
-        };
-        process.once('SIGTERM', _gracefulShutdown);
-        process.once('SIGINT',  _gracefulShutdown);
+        // Sadece birincil sunucu SIGTERM/SIGINT dinler
+        if (this._isPrimary) {
+            const _gracefulShutdown = () => {
+                this._shuttingDown = true;
+                this._stopStatusWatch();
+                this._stopStatsTracking();
+                this._stopLogTail();
+                process.exit(0);
+            };
+            process.once('SIGTERM', _gracefulShutdown);
+            process.once('SIGINT',  _gracefulShutdown);
+        }
     }
 
     // ── Platform yardımcıları ─────────────────────────────────────────────────
@@ -58,7 +75,7 @@ class MinecraftService extends EventEmitter {
     _isScreenRunning() {
         try {
             const out = execSync(`screen -ls 2>/dev/null || true`, { encoding: 'utf8' });
-            return out.includes(SCREEN_NAME);
+            return out.includes(this._screenName);
         } catch { return false; }
     }
 
@@ -103,13 +120,13 @@ class MinecraftService extends EventEmitter {
         this._stopLogTail();
 
         // Log dosyası yoksa oluştur
-        if (!fs.existsSync(LOG_FILE)) {
-            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+        if (!fs.existsSync(this._logFile)) {
+            try { fs.writeFileSync(this._logFile, ''); } catch { /* ignore */ }
         }
 
         // -n 0: sadece yeni satırları oku (reconnect için) | -n +1: baştan oku
         const nArg = fromEnd ? '0' : '+1';
-        this._tailProcess = spawn('tail', [`-n`, nArg, '-f', LOG_FILE], {
+        this._tailProcess = spawn('tail', [`-n`, nArg, '-f', this._logFile], {
             stdio: ['ignore', 'pipe', 'ignore'],
         });
 
@@ -314,6 +331,8 @@ class MinecraftService extends EventEmitter {
     // ── Temel metodlar ───────────────────────────────────────────────────────
 
     getServerPath() {
+        // Eğer bu instance bir sunucu config'e bağlıysa, o config'in path'ini kullan
+        if (this._serverConfig?.path) return this._serverConfig.path;
         try {
             const db = getDb();
             // Önce servers tablosundaki aktif sunucuya bak
@@ -418,15 +437,18 @@ class MinecraftService extends EventEmitter {
             } else {
                 const db = getDb();
                 const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
-                const maxRam = (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
-                const minRam = (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
-                const jvmArgs = (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
+                // Önce instance config, sonra modpack, sonra env
+                const maxRam  = this._serverConfig?.max_ram  || (pack && pack.max_ram)  || process.env.MINECRAFT_MAX_RAM || '4G';
+                const minRam  = this._serverConfig?.min_ram  || (pack && pack.min_ram)  || process.env.MINECRAFT_MIN_RAM || '2G';
+                const jvmArgs = this._serverConfig?.jvm_args || (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
                 const jvmStr = jvmArgs || `-Xmx${maxRam} -Xms${minRam}`;
-                runCmd = `java ${jvmStr} -jar server.jar nogui`;
+                // CPU flag dışarıdan enjekte edilebilir (ServerManager tarafından)
+                const cpuFlag = this._cpuFlag || '';
+                runCmd = `java ${jvmStr}${cpuFlag} -jar server.jar nogui`;
             }
 
             // Log dosyasını temizle
-            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+            try { fs.writeFileSync(this._logFile, ''); } catch { /* ignore */ }
 
             // Eski screen'i temizle — ama SADECE içinde Java yoksa.
             // Eğer Java çalışıyorsa paneli yeniden başlatmak sunucuyu öldürmesin.
@@ -443,15 +465,15 @@ class MinecraftService extends EventEmitter {
                     throw new Error('Sunucu zaten çalışıyor (screen + java mevcut)');
                 }
                 // Screen var ama Java yok — ölü screen oturumunu temizle
-                try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+                try { execSync(`screen -S ${this._screenName} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
                 try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
             }
 
             // Screen başlat — çıktıyı log dosyasına yönlendir
-            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${LOG_FILE}'`;
+            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${this._logFile}'`;
             execSync(`screen -dmS ${SCREEN_NAME} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
 
-            this.addLog(`[System] Sunucu başlatılıyor (screen: ${SCREEN_NAME})`);
+            this.addLog(`[System] Sunucu başlatılıyor (screen: ${this._screenName})`);
             this.status = 'starting';
             this.emit('status', this.status);
 
@@ -551,7 +573,7 @@ class MinecraftService extends EventEmitter {
 
     _forceKill() {
         if (this._useScreen()) {
-            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+            try { execSync(`screen -S ${this._screenName} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
             if (this._javaPid) {
                 try { process.kill(this._javaPid, 'SIGKILL'); } catch { /* ignore */ }
             }
@@ -611,7 +633,7 @@ class MinecraftService extends EventEmitter {
 
         if (this._useScreen()) {
             const escaped = command.replace(/'/g, "'\\''");
-            execSync(`screen -S ${SCREEN_NAME} -X stuff '${escaped}\r'`, { timeout: 3000 });
+            execSync(`screen -S ${this._screenName} -X stuff '${escaped}\r'`, { timeout: 3000 });
         } else {
             if (this.process?.stdin) {
                 this.process.stdin.write(command + '\n');
@@ -794,4 +816,6 @@ class MinecraftService extends EventEmitter {
     }
 }
 
-module.exports = new MinecraftService();
+const primaryInstance = new MinecraftService();
+module.exports = primaryInstance;
+module.exports.MinecraftService = MinecraftService;
