@@ -5,8 +5,11 @@ const path = require('path');
  * Dünya Yöneticisi - Dünya boyutu, sıfırlama, yönetim
  */
 class WorldManager {
-    constructor() {
-        this.serverPath = require('./minecraftService').getServerPath();
+    /**
+     * @param {string} [serverPath] - Sunucu kök dizini. Verilmezse default sunucudan alır.
+     */
+    constructor(serverPath) {
+        this.serverPath = serverPath || require('./minecraftService').getServerPath();
     }
 
     /**

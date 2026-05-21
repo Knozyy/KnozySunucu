@@ -5,8 +5,11 @@ const path = require('path');
  * Mod Yöneticisi - mods klasöründeki modları yönet
  */
 class ModManager {
-    constructor() {
-        this.serverPath = require('./minecraftService').getServerPath();
+    /**
+     * @param {string} [serverPath] - Sunucu kök dizini. Verilmezse default sunucudan alır.
+     */
+    constructor(serverPath) {
+        this.serverPath = serverPath || require('./minecraftService').getServerPath();
     }
 
     get modsDir() {

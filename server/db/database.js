@@ -198,6 +198,12 @@ function initDatabase() {
       database.exec("ALTER TABLE servers ADD COLUMN active_modpack_id INTEGER NULL REFERENCES installed_modpacks(id)");
     }
 
+    // backups tablosuna server_id kolonu ekle (hangi sunucuya ait)
+    const backupCols = database.prepare("PRAGMA table_info(backups)").all().map(c => c.name);
+    if (!backupCols.includes('server_id')) {
+      database.exec("ALTER TABLE backups ADD COLUMN server_id INTEGER NULL REFERENCES servers(id)");
+    }
+
     // servers tablosu boşsa mevcut env ayarlarından ilk sunucuyu oluştur
     const serverCount = database.prepare('SELECT COUNT(*) as c FROM servers').get();
     if (serverCount.c === 0) {
