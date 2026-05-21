@@ -5,6 +5,7 @@ const archiver = require('archiver');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const { getDb } = require('../db/database');
+const serverRegistry = require('../services/serverRegistry');
 
 const router = express.Router();
 
@@ -12,15 +13,20 @@ function getBackupPath() {
     return process.env.BACKUP_PATH || '/home/minecraft/backups';
 }
 
-function getServerPath() {
-    return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+function instanceFor(req) {
+    const sid = req.query.serverId || req.body?.serverId || null;
+    if (sid) return serverRegistry.get(sid);
+    return serverRegistry.getDefault();
 }
 
-// GET /api/backup/list
+// GET /api/backup/list?serverId=X — verilirse o sunucuya ait, yoksa tüm yedekler
 router.get('/list', authMiddleware, (req, res) => {
     try {
         const db = getDb();
-        const backups = db.prepare('SELECT * FROM backups ORDER BY created_at DESC').all();
+        const sid = req.query.serverId ? parseInt(req.query.serverId) : null;
+        const backups = sid
+            ? db.prepare('SELECT * FROM backups WHERE server_id = ? ORDER BY created_at DESC').all(sid)
+            : db.prepare('SELECT * FROM backups ORDER BY created_at DESC').all();
         res.json({ backups });
     } catch (error) {
         console.error('[Backup] List error:', error.message);
@@ -28,19 +34,21 @@ router.get('/list', authMiddleware, (req, res) => {
     }
 });
 
-// POST /api/backup/create
+// POST /api/backup/create  body: { name, serverId? }
 router.post('/create', authMiddleware, requireRole('admin'), (req, res) => {
     try {
+        const inst = instanceFor(req);
+        if (!inst) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        const serverId = inst._serverConfig.id;
+        const serverDir = inst.getServerPath();
         const backupDir = getBackupPath();
-        const serverDir = getServerPath();
 
-        if (!fs.existsSync(backupDir)) {
-            fs.mkdirSync(backupDir, { recursive: true });
-        }
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupName = req.body.name || `backup-${timestamp}`;
-        const filename = `${backupName}.tar.gz`;
+        // Dosya adına serverId ekleyerek karışıklığı önle
+        const backupName = req.body.name || `srv${serverId}-backup-${timestamp}`;
+        const filename = `srv${serverId}-${backupName}.tar.gz`;
         const backupPath = path.join(backupDir, filename);
 
         const output = fs.createWriteStream(backupPath);
@@ -49,15 +57,10 @@ router.post('/create', authMiddleware, requireRole('admin'), (req, res) => {
         output.on('close', () => {
             const db = getDb();
             const size = archive.pointer();
-            db.prepare('INSERT INTO backups (name, filename, size) VALUES (?, ?, ?)')
-                .run(backupName, filename, size);
+            db.prepare('INSERT INTO backups (name, filename, size, server_id) VALUES (?, ?, ?, ?)')
+                .run(backupName, filename, size, serverId);
 
-            res.json({
-                message: 'Yedekleme oluşturuldu',
-                name: backupName,
-                filename,
-                size,
-            });
+            res.json({ message: 'Yedekleme oluşturuldu', name: backupName, filename, size, serverId });
         });
 
         archive.on('error', (err) => {
@@ -67,24 +70,17 @@ router.post('/create', authMiddleware, requireRole('admin'), (req, res) => {
 
         archive.pipe(output);
 
-        // Backup the world folder and key config files
         const worldDir = path.join(serverDir, 'world');
-        if (fs.existsSync(worldDir)) {
-            archive.directory(worldDir, 'world');
-        }
+        if (fs.existsSync(worldDir)) archive.directory(worldDir, 'world');
 
         const configFiles = ['server.properties', 'ops.json', 'whitelist.json', 'banned-players.json'];
-        configFiles.forEach(file => {
-            const filePath = path.join(serverDir, file);
-            if (fs.existsSync(filePath)) {
-                archive.file(filePath, { name: file });
-            }
-        });
+        for (const file of configFiles) {
+            const fp = path.join(serverDir, file);
+            if (fs.existsSync(fp)) archive.file(fp, { name: file });
+        }
 
         const modsDir = path.join(serverDir, 'mods');
-        if (fs.existsSync(modsDir)) {
-            archive.directory(modsDir, 'mods');
-        }
+        if (fs.existsSync(modsDir)) archive.directory(modsDir, 'mods');
 
         archive.finalize();
     } catch (error) {
@@ -98,15 +94,10 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
         const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id);
-
-        if (!backup) {
-            return res.status(404).json({ error: 'Yedek bulunamadı' });
-        }
+        if (!backup) return res.status(404).json({ error: 'Yedek bulunamadı' });
 
         const backupPath = path.join(getBackupPath(), backup.filename);
-        if (fs.existsSync(backupPath)) {
-            fs.unlinkSync(backupPath);
-        }
+        if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
 
         db.prepare('DELETE FROM backups WHERE id = ?').run(req.params.id);
         res.json({ message: 'Yedek silindi' });
@@ -116,27 +107,30 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     }
 });
 
-// POST /api/backup/restore/:id
+// POST /api/backup/restore/:id — yedek kaydındaki server_id'ye geri yükler
 router.post('/restore/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
         const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id);
-
-        if (!backup) {
-            return res.status(404).json({ error: 'Yedek bulunamadı' });
-        }
+        if (!backup) return res.status(404).json({ error: 'Yedek bulunamadı' });
 
         const backupPath = path.join(getBackupPath(), backup.filename);
-        if (!fs.existsSync(backupPath)) {
-            return res.status(404).json({ error: 'Yedek dosyası bulunamadı' });
-        }
+        if (!fs.existsSync(backupPath)) return res.status(404).json({ error: 'Yedek dosyası bulunamadı' });
 
-        // Extract backup using tar
+        // Hangi sunucuya yüklenecek? Önce backup'taki server_id, yoksa body.serverId, yoksa default
+        let inst = null;
+        if (backup.server_id) inst = serverRegistry.get(backup.server_id);
+        if (!inst) inst = instanceFor(req);
+        if (!inst) return res.status(404).json({ error: 'Hedef sunucu bulunamadı' });
+
+        const serverDir = inst.getServerPath();
         const { execSync } = require('child_process');
-        const serverDir = getServerPath();
         execSync(`tar -xzf "${backupPath}" -C "${serverDir}"`, { stdio: 'pipe' });
 
-        res.json({ message: 'Yedek geri yüklendi. Sunucuyu yeniden başlatmanız gerekebilir.' });
+        res.json({
+            message: `Yedek "${inst._serverConfig.name}" sunucusuna geri yüklendi. Sunucuyu yeniden başlatmanız gerekebilir.`,
+            serverId: inst._serverConfig.id,
+        });
     } catch (error) {
         console.error('[Backup] Restore error:', error.message);
         res.status(500).json({ error: 'Geri yükleme başarısız' });

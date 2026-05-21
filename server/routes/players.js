@@ -2,11 +2,19 @@ const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const PlayerManager = require('../services/playerManager');
 const { getDb } = require('../db/database');
-const mcService = require('../services/minecraftService');
+const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
 
 const router = express.Router();
-const pm = new PlayerManager();
+
+/**
+ * Sunucu bazlı PlayerManager — `?serverId=X` veya body.serverId
+ */
+function pmFor(req) {
+    const sid = req.query.serverId || req.body?.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    return new PlayerManager(inst?.getServerPath());
+}
 
 function logBan(username, action, reason, bannedBy) {
     try {
@@ -15,58 +23,65 @@ function logBan(username, action, reason, bannedBy) {
     } catch { /* ignore */ }
 }
 
-// Whitelist
-router.get('/whitelist', authMiddleware, (req, res) => { res.json({ players: pm.getWhitelist() }); });
+// ── Whitelist ────────────────────────────────────────────────────────────────
+router.get('/whitelist', authMiddleware, (req, res) => {
+    res.json({ players: pmFor(req).getWhitelist() });
+});
 router.post('/whitelist', authMiddleware, (req, res) => {
-    try { pm.addToWhitelist(req.body.name, req.body.uuid); res.json({ message: 'Whitelist\'e eklendi' }); }
+    try { pmFor(req).addToWhitelist(req.body.name, req.body.uuid); res.json({ message: 'Whitelist\'e eklendi' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/whitelist/:name', authMiddleware, (req, res) => {
-    pm.removeFromWhitelist(req.params.name); res.json({ message: 'Whitelist\'ten çıkarıldı' });
+    pmFor(req).removeFromWhitelist(req.params.name); res.json({ message: 'Whitelist\'ten çıkarıldı' });
 });
 
-// Ops
-router.get('/ops', authMiddleware, (req, res) => { res.json({ players: pm.getOps() }); });
+// ── Ops ──────────────────────────────────────────────────────────────────────
+router.get('/ops', authMiddleware, (req, res) => {
+    res.json({ players: pmFor(req).getOps() });
+});
 router.post('/ops', authMiddleware, (req, res) => {
-    try { pm.addOp(req.body.name, req.body.uuid); res.json({ message: 'OP yapıldı' }); }
+    try { pmFor(req).addOp(req.body.name, req.body.uuid); res.json({ message: 'OP yapıldı' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ops/:name', authMiddleware, (req, res) => {
-    pm.removeOp(req.params.name); res.json({ message: 'OP kaldırıldı' });
+    pmFor(req).removeOp(req.params.name); res.json({ message: 'OP kaldırıldı' });
 });
 
-// Ban
-router.get('/banned', authMiddleware, (req, res) => { res.json({ players: pm.getBannedPlayers(), ips: pm.getBannedIps() }); });
+// ── Ban ──────────────────────────────────────────────────────────────────────
+router.get('/banned', authMiddleware, (req, res) => {
+    const pm = pmFor(req);
+    res.json({ players: pm.getBannedPlayers(), ips: pm.getBannedIps() });
+});
 router.post('/ban', authMiddleware, (req, res) => {
     try {
-        pm.banPlayer(req.body.name, req.body.reason);
+        pmFor(req).banPlayer(req.body.name, req.body.reason);
         logBan(req.body.name, 'ban', req.body.reason, req.user?.username);
         logAudit(req.user?.username, 'oyuncu_ban', `${req.body.name} — ${req.body.reason || ''}`, req.ip);
         res.json({ message: 'Banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban/:name', authMiddleware, (req, res) => {
-    pm.unbanPlayer(req.params.name);
+    pmFor(req).unbanPlayer(req.params.name);
     logBan(req.params.name, 'unban', '', req.user?.username);
     logAudit(req.user?.username, 'oyuncu_ban_kaldir', req.params.name, req.ip);
     res.json({ message: 'Ban kaldırıldı' });
 });
 router.post('/ban-ip', authMiddleware, (req, res) => {
     try {
-        pm.banIp(req.body.ip, req.body.reason);
+        pmFor(req).banIp(req.body.ip, req.body.reason);
         logBan(req.body.ip, 'ban-ip', req.body.reason, req.user?.username);
         logAudit(req.user?.username, 'ip_ban', `${req.body.ip} — ${req.body.reason || ''}`, req.ip);
         res.json({ message: 'IP banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/ban-ip/:ip', authMiddleware, (req, res) => {
-    pm.unbanIp(req.params.ip);
+    pmFor(req).unbanIp(req.params.ip);
     logBan(req.params.ip, 'unban-ip', '', req.user?.username);
     logAudit(req.user?.username, 'ip_ban_kaldir', req.params.ip, req.ip);
     res.json({ message: 'IP ban kaldırıldı' });
 });
 
-// GET /api/players/banlog
+// GET /api/players/banlog — global ban log (sunucu bağımsız)
 router.get('/banlog', authMiddleware, (req, res) => {
     try {
         const rows = getDb().prepare('SELECT * FROM ban_log ORDER BY id DESC LIMIT 200').all();
@@ -74,12 +89,15 @@ router.get('/banlog', authMiddleware, (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/players/online - anlık online oyuncular
+// GET /api/players/online?serverId=X — anlık online oyuncular
 router.get('/online', authMiddleware, (req, res) => {
-    res.json({ players: mcService.players, count: mcService.players.length, status: mcService.status });
+    const sid = req.query.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    if (!inst) return res.json({ players: [], count: 0, status: 'stopped' });
+    res.json({ players: inst.players, count: inst.players.length, status: inst.status });
 });
 
-// GET /api/players/sessions?limit=50&username=xxx
+// GET /api/players/sessions?limit=50&username=xxx — DB global, sunucu bağımsız
 router.get('/sessions', authMiddleware, (req, res) => {
     try {
         const db = getDb();
@@ -101,7 +119,7 @@ router.get('/sessions', authMiddleware, (req, res) => {
     }
 });
 
-// GET /api/players/stats - oyuncu bazlı toplam süre ve oturum sayısı
+// GET /api/players/stats — DB global
 router.get('/stats', authMiddleware, (req, res) => {
     try {
         const db = getDb();
@@ -122,9 +140,8 @@ router.get('/stats', authMiddleware, (req, res) => {
     }
 });
 
-// ── Oyuncu notları ────────────────────────────────────────────────────────────
+// ── Oyuncu notları (DB global) ────────────────────────────────────────────────
 
-// GET /api/players/notes/:username
 router.get('/notes/:username', authMiddleware, (req, res) => {
     try {
         const rows = getDb().prepare(
@@ -134,7 +151,6 @@ router.get('/notes/:username', authMiddleware, (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/players/notes/:username
 router.post('/notes/:username', authMiddleware, (req, res) => {
     try {
         const { note, color } = req.body;
@@ -146,7 +162,6 @@ router.post('/notes/:username', authMiddleware, (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/players/notes/:id
 router.delete('/notes/:id', authMiddleware, (req, res) => {
     try {
         getDb().prepare('DELETE FROM player_notes WHERE id = ?').run(req.params.id);

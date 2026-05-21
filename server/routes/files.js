@@ -1,69 +1,75 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const FileManager = require('../services/fileManager');
+const serverRegistry = require('../services/serverRegistry');
 
 const router = express.Router();
 
-// GET /api/files/list?path=
+/**
+ * Sunucuya özel FileManager üret.
+ * `?serverId=X` varsa o sunucunun path'i kullanılır, yoksa default sunucu.
+ */
+function fmFor(req) {
+    const sid = req.query.serverId || req.body?.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    const basePath = inst?.getServerPath();
+    return new FileManager(basePath);
+}
+
+// GET /api/files/list?path=&serverId=X
 router.get('/list', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        const items = fm.list(req.query.path || '');
+        const items = fmFor(req).list(req.query.path || '');
         res.json({ items });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// GET /api/files/read?path=
+// GET /api/files/read?path=&serverId=X
 router.get('/read', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        const content = fm.read(req.query.path);
+        const content = fmFor(req).read(req.query.path);
         res.json({ content, path: req.query.path });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// PUT /api/files/write
+// PUT /api/files/write   body: { path, content, serverId? }
 router.put('/write', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        fm.write(req.body.path, req.body.content);
+        fmFor(req).write(req.body.path, req.body.content);
         res.json({ message: 'Dosya kaydedildi' });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// POST /api/files/create
+// POST /api/files/create   body: { path, isDirectory, serverId? }
 router.post('/create', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        fm.create(req.body.path, req.body.isDirectory);
+        fmFor(req).create(req.body.path, req.body.isDirectory);
         res.json({ message: 'Oluşturuldu' });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// DELETE /api/files/delete
+// DELETE /api/files/delete?path=&serverId=X
 router.delete('/delete', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        fm.remove(req.query.path);
+        fmFor(req).remove(req.query.path);
         res.json({ message: 'Silindi' });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// PUT /api/files/rename
+// PUT /api/files/rename   body: { path, newName, serverId? }
 router.put('/rename', authMiddleware, (req, res) => {
     try {
-        const fm = new FileManager();
-        fm.rename(req.body.path, req.body.newName);
+        fmFor(req).rename(req.body.path, req.body.newName);
         res.json({ message: 'Yeniden adlandırıldı' });
     } catch (error) {
         res.status(400).json({ error: error.message });

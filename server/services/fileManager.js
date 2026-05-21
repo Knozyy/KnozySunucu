@@ -5,8 +5,11 @@ const path = require('path');
  * Dosya Yöneticisi - Sunucu dosyalarını görüntüleme, düzenleme, yükleme, silme
  */
 class FileManager {
-    constructor() {
-        this.basePath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+    /**
+     * @param {string} [basePath] - Sunucu kök dizini. Verilmezse env'den alır.
+     */
+    constructor(basePath) {
+        this.basePath = basePath || process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
 
     /**

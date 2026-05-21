@@ -3,19 +3,25 @@ const fs = require('fs');
 const path = require('path');
 const authMiddleware = require('../middleware/authMiddleware');
 const WorldManager = require('../services/worldManager');
+const serverRegistry = require('../services/serverRegistry');
 
 const router = express.Router();
 
+function wmFor(req) {
+    const sid = req.query.serverId || req.body?.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    return new WorldManager(inst?.getServerPath());
+}
+
 router.get('/', authMiddleware, (req, res) => {
-    const wm = new WorldManager();
+    const wm = wmFor(req);
     res.json({ worlds: wm.list(), totalSize: wm.totalSize() });
 });
 
 router.post('/reset', authMiddleware, (req, res) => {
     try {
         if (!req.body.worldName) return res.status(400).json({ error: 'Dünya adı gerekli' });
-        const wm = new WorldManager();
-        const result = wm.reset(req.body.worldName);
+        const result = wmFor(req).reset(req.body.worldName);
         res.json(result);
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -23,16 +29,15 @@ router.post('/reset', authMiddleware, (req, res) => {
 router.post('/backup', authMiddleware, (req, res) => {
     try {
         if (!req.body.worldName) return res.status(400).json({ error: 'Dünya adı gerekli' });
-        const wm = new WorldManager();
-        const result = wm.backup(req.body.worldName);
+        const result = wmFor(req).backup(req.body.worldName);
         res.json(result);
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// GET /api/worlds/seed - server.properties'ten level-seed okur
+// GET /api/worlds/seed?serverId=X
 router.get('/seed', authMiddleware, (req, res) => {
     try {
-        const wm = new WorldManager();
+        const wm = wmFor(req);
         const propsPath = path.join(wm.serverPath, 'server.properties');
         if (!fs.existsSync(propsPath)) return res.json({ seed: null, message: 'server.properties bulunamadı' });
         const content = fs.readFileSync(propsPath, 'utf-8');
@@ -42,11 +47,10 @@ router.get('/seed', authMiddleware, (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/worlds/disk - sunucu klasörü boyut dökümü
+// GET /api/worlds/disk?serverId=X
 router.get('/disk', authMiddleware, async (req, res) => {
     try {
-        const wm = new WorldManager();
-        const serverPath = wm.serverPath;
+        const serverPath = wmFor(req).serverPath;
 
         function dirSize(p) {
             let s = 0;
@@ -94,7 +98,6 @@ router.get('/disk', authMiddleware, async (req, res) => {
             return `${(b / Math.pow(1024, i)).toFixed(1)} ${u[i]}`;
         };
 
-        // Sistem diski bilgisi
         let sysDisk = null;
         try {
             const si = require('systeminformation');

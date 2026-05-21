@@ -5,8 +5,11 @@ const path = require('path');
  * Oyuncu Yöneticisi - Whitelist, ops, ban yönetimi
  */
 class PlayerManager {
-    constructor() {
-        this.serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+    /**
+     * @param {string} [serverPath] - Sunucu kök dizini. Verilmezse env'den alır.
+     */
+    constructor(serverPath) {
+        this.serverPath = serverPath || process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
 
     _readJsonFile(fileName) {
