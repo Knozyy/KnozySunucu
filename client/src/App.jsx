@@ -21,6 +21,7 @@ import DiscordPage from '@/pages/DiscordPage';
 import AutomationPage from '@/pages/AutomationPage';
 import PerformancePage from '@/pages/PerformancePage';
 import PlayersPage from '@/pages/PlayersPage';
+import ServersPage from '@/pages/ServersPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -103,6 +104,7 @@ function App() {
                   <Route path="automation" element={<AutomationPage />} />
                   <Route path="performance" element={<PerformancePage />} />
                   <Route path="players" element={<PlayersPage />} />
+                  <Route path="servers" element={<ServersPage />} />
                 </Route>
                 {/* Eski URL'ler → yenilere yönlendir */}
                 <Route path="/server" element={<Navigate to="/" replace />} />

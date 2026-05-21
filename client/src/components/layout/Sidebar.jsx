@@ -9,7 +9,7 @@ import {
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
     HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt, HiOutlineChartBar, HiOutlineUsers,
-    HiOutlineArrowPath,
+    HiOutlineArrowPath, HiOutlineServerStack,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
 
@@ -62,6 +62,7 @@ const navGroups = [
         id: 'system',
         label: 'Sistem',
         items: [
+            { path: '/servers',  label: 'Sunucular', icon: HiOutlineServerStack, adminOnly: true },
             { path: '/settings', i18nKey: 'nav.settings', icon: HiOutlineCog6Tooth, adminOnly: true },
         ],
     },
