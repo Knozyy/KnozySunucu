@@ -17,16 +17,40 @@ function verifyToken(req) {
     catch { return null; }
 }
 
-// ─── Sunucu için log dosyası yolu ─────────────────────────────────────────
-function logFileFor(serverId) {
-    if (!serverId) return '/tmp/knozy-mc.log';
-    return `/tmp/knozy-mc${serverId}.log`;
-}
-
-// ─── Sunucu için screen adı ───────────────────────────────────────────────
-function screenNameFor(serverId) {
-    if (!serverId) return process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
-    return `knozy-mc${serverId}`;
+// ─── Sunucu instance'ından gerçek screen/log yollarını çöz ────────────────
+// Birincil singleton constructor'da `knozy-mc` (numarasız) olarak kilitleniyor;
+// id'ye göre tahmin yürütmek yerine instance'ın kendi _screenName/_logFile'ını kullan.
+function resolvePaths(serverId) {
+    try {
+        if (!serverId) {
+            return {
+                screenName: minecraftService._screenName || process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc',
+                logFile:    minecraftService._logFile    || '/tmp/knozy-mc.log',
+            };
+        }
+        const id = parseInt(serverId);
+        const { serverManager } = require('./serverManager');
+        // Birincil mi?
+        const primary = serverManager.getPrimary?.();
+        if (primary && primary._serverConfig?.id === id) {
+            return {
+                screenName: primary._screenName || 'knozy-mc',
+                logFile:    primary._logFile    || '/tmp/knozy-mc.log',
+            };
+        }
+        // İkincil instance — yoksa oluştur
+        const inst = serverManager.getInstance(id);
+        if (inst) {
+            return {
+                screenName: inst._screenName || `knozy-mc${id}`,
+                logFile:    inst._logFile    || `/tmp/knozy-mc${id}.log`,
+            };
+        }
+    } catch { /* ignore */ }
+    return {
+        screenName: serverId ? `knozy-mc${serverId}` : 'knozy-mc',
+        logFile:    serverId ? `/tmp/knozy-mc${serverId}.log` : '/tmp/knozy-mc.log',
+    };
 }
 
 // ─── Screen var mı? ───────────────────────────────────────────────────────
@@ -60,8 +84,7 @@ function getServiceStatus(serverId) {
 
 // ─── /ws/console handler — log dosyasını doğrudan tail et ─────────────────
 function handleConsole(ws, serverId) {
-    const logFile  = logFileFor(serverId);
-    const screenNm = screenNameFor(serverId);
+    const { screenName: screenNm, logFile } = resolvePaths(serverId);
 
     // 1) Anlık durum gönder
     ws.send(JSON.stringify({ type: 'status', data: getServiceStatus(serverId) }));
