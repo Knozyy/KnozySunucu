@@ -197,16 +197,43 @@ function handleConsole(ws, serverId) {
 }
 
 // ─── /ws/terminal handler ─────────────────────────────────────────────────
+// Her WebSocket bağlantısı kendi izole PTY oturumuna sahiptir.
+// Sekmeler / sayfalar arası state karışması yok.
 function handleTerminal(ws) {
-    terminalService.addClient(ws);
+    const sessionId = terminalService.createSession(ws);
+    if (!sessionId) {
+        // PTY açılamadı — bağlantıyı kapat
+        try { ws.close(); } catch { /* */ }
+        return;
+    }
+
+    // İstemciye session id'sini bildir (debug / log için)
+    try { ws.send(JSON.stringify({ type: 'session', id: sessionId })); } catch { /* */ }
+
     ws.on('message', (message) => {
         try {
             const parsed = JSON.parse(message.toString());
-            if (parsed.type === 'input') terminalService.write(parsed.data);
-            else if (parsed.type === 'resize') terminalService.resize(parsed.cols, parsed.rows);
+            switch (parsed.type) {
+                case 'input':
+                    terminalService.write(sessionId, parsed.data);
+                    break;
+                case 'resize':
+                    terminalService.resize(sessionId, parsed.cols, parsed.rows);
+                    break;
+                case 'attach':
+                    // Bu oturumdan ilgili screen'e attach
+                    if (parsed.name) terminalService.attachScreenInSession(sessionId, parsed.name);
+                    break;
+                case 'run':
+                    if (parsed.command) terminalService.runInSession(sessionId, parsed.command);
+                    break;
+                default: /* yoksay */
+            }
         } catch { /* ignore */ }
     });
-    ws.on('close', () => terminalService.removeClient(ws));
+
+    ws.on('close', () => terminalService.destroySession(sessionId));
+    ws.on('error', () => terminalService.destroySession(sessionId));
 }
 
 // ─── Upgrade Router ───────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ const terminalService = require('../services/terminalService');
 
 const router = express.Router();
 
-// Screen listesi
+// Screen listesi (filesystem seviyesi — herhangi bir oturumdan bağımsız)
 router.get('/screens', authMiddleware, (req, res) => {
     try {
         res.json({ screens: terminalService.listScreens() });
@@ -28,13 +28,13 @@ router.post('/screens', authMiddleware, requireRole('admin'), (req, res) => {
     }
 });
 
-// Screen'e attach (terminal PTY'sine komut yazar)
+// Screen'e attach — artık WebSocket üzerinden yapılıyor (her sekme kendi PTY'sinde).
+// Bu endpoint geriye dönük uyumluluk için no-op olarak duruyor.
 router.post('/screens/:name/attach', authMiddleware, requireRole('admin'), (req, res) => {
-    terminalService.attachScreen(req.params.name);
-    res.json({ message: `Screen '${req.params.name}' attach komutu gönderildi` });
+    res.json({ message: 'Attach artık WebSocket üzerinden yapılıyor', via: 'ws' });
 });
 
-// Screen'e doğrudan komut gönder (stuff)
+// Screen'e doğrudan komut gönder (attach gerekmez, screen -X stuff)
 router.post('/screens/:name/send', authMiddleware, requireRole('admin'), (req, res) => {
     const { command } = req.body;
     if (!command) return res.status(400).json({ error: 'Komut gerekli' });
@@ -56,12 +56,10 @@ router.delete('/screens/:name', authMiddleware, requireRole('admin'), (req, res)
     }
 });
 
-// Terminale komut çalıştır (FTB / modpack kurulum yönlendirme için)
+// Eski "tek paylaşımlı PTY'de çalıştır" endpoint'i — artık WS üzerinden yapılıyor.
+// FTB yönlendirmesi de WS'ye `?run=...` parametresi ile gönderiyor.
 router.post('/run', authMiddleware, requireRole('admin'), (req, res) => {
-    const { command } = req.body;
-    if (!command) return res.status(400).json({ error: 'Komut gerekli' });
-    terminalService.runInTerminal(command);
-    res.json({ message: 'Komut terminale gönderildi' });
+    res.json({ message: 'Komutlar artık WebSocket üzerinden çalıştırılıyor', via: 'ws' });
 });
 
 module.exports = router;
