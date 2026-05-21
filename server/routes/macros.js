@@ -67,11 +67,21 @@ router.post('/:id/execute', authMiddleware, async (req, res) => {
         const commands = JSON.parse(macro.commands || '[]');
         if (commands.length === 0) return res.status(400).json({ error: 'Makroda komut yok' });
 
-        if (mcService.status !== 'running') {
+        // serverId varsa o sunucu instance'ını kullan
+        let targetService = mcService;
+        const { delayMs = 500, serverId } = req.body;
+        if (serverId) {
+            try {
+                const { serverManager } = require('../services/serverManager');
+                const inst = serverManager.getInstance(parseInt(serverId));
+                if (inst) targetService = inst;
+            } catch { /* fallback to primary */ }
+        }
+
+        if (targetService.status !== 'running') {
             return res.status(400).json({ error: 'Sunucu çalışmıyor' });
         }
 
-        const { delayMs = 500 } = req.body;
         const sent = [];
 
         for (let i = 0; i < commands.length; i++) {
@@ -80,7 +90,7 @@ router.post('/:id/execute', authMiddleware, async (req, res) => {
             if (i > 0 && delayMs > 0) {
                 await new Promise(r => setTimeout(r, Math.min(delayMs, 5000)));
             }
-            mcService.sendCommand(cmd);
+            targetService.sendCommand(cmd);
             sent.push(cmd);
         }
 

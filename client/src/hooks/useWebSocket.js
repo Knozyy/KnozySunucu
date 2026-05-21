@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export function useWebSocket(token) {
+export function useWebSocket(token, serverId = null) {
     const [logs, setLogs] = useState([]);
     const [status, setStatus] = useState(null);
     const [connected, setConnected] = useState(false);
@@ -12,7 +12,8 @@ export function useWebSocket(token) {
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/console?token=${token}`;
+        const serverParam = serverId ? `&serverId=${serverId}` : '';
+        const wsUrl = `${protocol}//${host}/ws/console?token=${token}${serverParam}`;
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
@@ -24,35 +25,24 @@ export function useWebSocket(token) {
         ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-
                 if (message.type === 'log') {
                     setLogs(prev => {
                         const newLogs = [...prev, message.data];
-                        if (newLogs.length > 500) {
-                            return newLogs.slice(-500);
-                        }
-                        return newLogs;
+                        return newLogs.length > 500 ? newLogs.slice(-500) : newLogs;
                     });
                 } else if (message.type === 'status') {
                     setStatus(message.data);
                 }
-            } catch {
-                // Ignore malformed messages
-            }
+            } catch { /* ignore */ }
         };
 
         ws.onclose = () => {
             setConnected(false);
-            // Reconnect after 3 seconds
-            reconnectRef.current = setTimeout(() => {
-                connect();
-            }, 3000);
+            reconnectRef.current = setTimeout(() => connect(), 3000);
         };
 
-        ws.onerror = () => {
-            ws.close();
-        };
-    }, [token]);
+        ws.onerror = () => { ws.close(); };
+    }, [token, serverId]);
 
     const sendCommand = useCallback((command) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -60,20 +50,13 @@ export function useWebSocket(token) {
         }
     }, []);
 
-    const clearLogs = useCallback(() => {
-        setLogs([]);
-    }, []);
+    const clearLogs = useCallback(() => setLogs([]), []);
 
     useEffect(() => {
         connect();
-
         return () => {
-            if (reconnectRef.current) {
-                clearTimeout(reconnectRef.current);
-            }
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
+            if (reconnectRef.current) clearTimeout(reconnectRef.current);
+            if (wsRef.current) wsRef.current.close();
         };
     }, [connect]);
 
