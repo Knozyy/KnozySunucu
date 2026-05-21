@@ -59,11 +59,20 @@ export default function PlayersPage() {
         refetchInterval: 5000,
     });
 
-    const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
+    const { data: sessionsRaw = [], isLoading: sessionsLoading } = useQuery({
         queryKey: ['player-sessions', search],
-        queryFn: () => api(`/players/sessions?limit=100${search ? `&username=${encodeURIComponent(search)}` : ''}`),
+        queryFn: () => api(`/players/sessions?limit=500${search ? `&username=${encodeURIComponent(search)}` : ''}`),
         refetchInterval: 15000,
     });
+
+    // Her oyuncunun sadece en son oturumunu göster (tekrar eden oyuncuları gizle)
+    const sessions = (() => {
+        const seen = new Map();
+        for (const s of sessionsRaw) {
+            if (!seen.has(s.username)) seen.set(s.username, s);
+        }
+        return Array.from(seen.values());
+    })();
 
     const { data: stats = [], isLoading: statsLoading } = useQuery({
         queryKey: ['player-stats'],
