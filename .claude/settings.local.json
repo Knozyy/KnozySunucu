@@ -50,7 +50,9 @@
       "Bash(git fetch *)",
       "Bash(git rebase *)",
       "Bash(git stash *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" add -A)",
+      "Bash(git -C \"C:\\\\Users\\\\kanad\\\\Downloads\\\\Kolem\\\\KnozySunucu\\\\.claude\\\\worktrees\\\\admiring-keller-de4491\" push)"
     ]
   }
 }
