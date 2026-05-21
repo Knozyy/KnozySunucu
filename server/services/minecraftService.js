@@ -4,28 +4,26 @@ const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
 
-// ── Screen ayarları (varsayılan — birincil sunucu) ────────────────────────────
-const DEFAULT_SCREEN_NAME = process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
-const DEFAULT_LOG_FILE    = '/tmp/knozy-mc.log';
-
 class MinecraftService extends EventEmitter {
     /**
-     * @param {Object} [serverConfig] - Opsiyonel sunucu config (çoklu sunucu desteği için)
+     * @param {Object} serverConfig - DB'deki `servers` kaydı (id zorunlu)
      * @param {number}  serverConfig.id
      * @param {string}  serverConfig.name
      * @param {string}  serverConfig.path
      * @param {string}  serverConfig.min_ram
      * @param {string}  serverConfig.max_ram
      * @param {string}  serverConfig.jvm_args
-     * @param {boolean} serverConfig.isPrimary - true ise SIGTERM/SIGINT dinler
+     *
+     * SIGTERM/SIGINT yönetimi artık serverRegistry seviyesinde.
      */
-    constructor(serverConfig = null) {
+    constructor(serverConfig) {
         super();
-        // Sunucu config — null ise birincil sunucu davranışı
+        if (!serverConfig || !serverConfig.id) {
+            throw new Error('MinecraftService: serverConfig.id zorunlu (eşit sunucu mimarisi)');
+        }
         this._serverConfig = serverConfig;
-        this._screenName   = serverConfig ? `knozy-mc${serverConfig.id}` : DEFAULT_SCREEN_NAME;
-        this._logFile      = serverConfig ? `/tmp/knozy-mc${serverConfig.id}.log` : DEFAULT_LOG_FILE;
-        this._isPrimary    = serverConfig ? (serverConfig.isPrimary === true) : true;
+        this._screenName   = `knozy-mc${serverConfig.id}`;
+        this._logFile      = `/tmp/knozy-mc${serverConfig.id}.log`;
 
         this._tailProcess = null;   // tail -f process (log okuma)
         this._javaPid     = null;   // gerçek Java PID
@@ -49,19 +47,6 @@ class MinecraftService extends EventEmitter {
         if (this._useScreen()) {
             setTimeout(() => this._reconnectIfRunning(), 500);
         }
-
-        // Sadece birincil sunucu SIGTERM/SIGINT dinler
-        if (this._isPrimary) {
-            const _gracefulShutdown = () => {
-                this._shuttingDown = true;
-                this._stopStatusWatch();
-                this._stopStatsTracking();
-                this._stopLogTail();
-                process.exit(0);
-            };
-            process.once('SIGTERM', _gracefulShutdown);
-            process.once('SIGINT',  _gracefulShutdown);
-        }
     }
 
     // ── Platform yardımcıları ─────────────────────────────────────────────────
@@ -82,12 +67,8 @@ class MinecraftService extends EventEmitter {
     _findJavaPid() {
         try {
             const serverPath = this.getServerPath();
-            // Sunucu yoluna göre ara (spesifik — başka sunucularla karışmaz)
-            let result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            if (!result && !this._serverConfig) {
-                // Fallback: sadece birincil (singleton) sunucu için genel java arama
-                result = execSync(`pgrep -f "java.*nogui" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            }
+            // Sunucu yoluna göre ara — her sunucu kendi path'inden tanınır
+            const result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
             const pids = result.split('\n').filter(Boolean).map(Number);
             return pids.length > 0 ? pids[0] : null;
         } catch { return null; }
@@ -333,25 +314,17 @@ class MinecraftService extends EventEmitter {
     getServerPath() {
         try {
             const db = getDb();
-            // Eğer bu instance bir sunucu config'e bağlıysa
-            if (this._serverConfig?.id) {
-                const srv = db.prepare('SELECT path, active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
-                // 1) Sunucunun kendi path'i varsa kullan
-                if (srv?.path && fs.existsSync(srv.path)) return srv.path;
-                // 2) Sunucuya atanmış modpack install_path'i
-                if (srv?.active_modpack_id) {
-                    const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
-                    if (pack?.install_path && fs.existsSync(pack.install_path)) return pack.install_path;
-                }
-            }
-            // Birincil sunucu: önce aktif servers kaydı, sonra global aktif modpack
-            const activeServer = db.prepare('SELECT path, active_modpack_id FROM servers WHERE is_active = 1 LIMIT 1').get();
-            if (activeServer?.path && fs.existsSync(activeServer.path)) return activeServer.path;
-            if (activeServer?.active_modpack_id) {
-                const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(activeServer.active_modpack_id);
+            const srv = db.prepare('SELECT path, active_modpack_id FROM servers WHERE id = ?')
+                .get(this._serverConfig.id);
+            // 1) Sunucunun kendi path'i varsa kullan
+            if (srv?.path && fs.existsSync(srv.path)) return srv.path;
+            // 2) Sunucuya atanmış modpack install_path'i
+            if (srv?.active_modpack_id) {
+                const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?')
+                    .get(srv.active_modpack_id);
                 if (pack?.install_path && fs.existsSync(pack.install_path)) return pack.install_path;
             }
-            // Global fallback: herhangi bir aktif modpack
+            // 3) Global fallback: herhangi bir aktif modpack (geriye dönük uyumluluk)
             const globalPack = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
             if (globalPack?.install_path && fs.existsSync(globalPack.install_path)) return globalPack.install_path;
         } catch { /* fallback */ }
@@ -829,6 +802,40 @@ class MinecraftService extends EventEmitter {
     }
 }
 
-const primaryInstance = new MinecraftService();
-module.exports = primaryInstance;
+// ─── Modül export: legacy tek-sunuculu çağrıları default sunucuya yönlendir ────
+// Eski kod (örn: `minecraftService.getStatus()`, `minecraftService.on('crash', ...)`)
+// otomatik olarak DB'deki ilk sunucunun instance'ına yönlenir.
+//
+// Yeni kod ÇOKLU sunucu için doğrudan registry kullanmalı:
+//   const registry = require('./serverRegistry');
+//   registry.get(serverId).start();
+const MS_PROXY = new Proxy(function () {}, {
+    get(_, prop) {
+        if (prop === 'MinecraftService') return MinecraftService;
+        // Lazy require — döngüsel bağımlılık olmasın
+        const registry = require('./serverRegistry');
+        const def = registry.getDefault();
+        if (!def) {
+            // Sunucu yoksa: getStatus için makul varsayılan, diğerleri için undefined
+            if (prop === 'getStatus') return () => ({ status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } });
+            if (prop === 'status') return 'stopped';
+            if (prop === 'players') return [];
+            if (prop === 'on' || prop === 'off' || prop === 'once' || prop === 'emit' ||
+                prop === 'addListener' || prop === 'removeListener') return () => {};
+            return undefined;
+        }
+        const val = def[prop];
+        return typeof val === 'function' ? val.bind(def) : val;
+    },
+    set(target, prop, value) {
+        // MinecraftService class export'unu Proxy üzerine yapıştır
+        if (prop === 'MinecraftService') { target[prop] = value; return true; }
+        const registry = require('./serverRegistry');
+        const def = registry.getDefault();
+        if (def) def[prop] = value;
+        return true;
+    },
+});
+
+module.exports = MS_PROXY;
 module.exports.MinecraftService = MinecraftService;

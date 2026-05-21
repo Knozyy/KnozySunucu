@@ -34,7 +34,7 @@ const auditRoutes = require('./routes/audit');
 const templateRoutes = require('./routes/templates');
 const serverListRoutes = require('./routes/servers');
 const minecraftService = require('./services/minecraftService');
-const { serverManager } = require('./services/serverManager');
+const serverRegistry = require('./services/serverRegistry');
 
 const app = express();
 const server = http.createServer(app);
@@ -48,8 +48,9 @@ app.use(express.urlencoded({ extended: true }));
 // Database
 initDatabase();
 
-// ServerManager — birincil sunucuyu kaydet
-serverManager.setPrimary(minecraftService);
+// ServerRegistry — DB'deki tüm sunucular için instance hazırla
+// (panel yeniden başlasa bile çalışan screen'leri yakalar)
+serverRegistry.initialize();
 
 // Routes
 app.use('/api/auth', authRoutes);
