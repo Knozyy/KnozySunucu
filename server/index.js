@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const http = require('http');
 const { initDatabase } = require('./db/database');
 const { setupWebSockets } = require('./services/wsRouter');
@@ -36,6 +37,7 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware
+app.use(compression()); // Gzip sıkıştırma — JS/CSS boyutunu ~%70 azaltır
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
