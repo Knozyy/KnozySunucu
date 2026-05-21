@@ -6,7 +6,6 @@ import {
     HiOutlineGlobeAlt, HiOutlineTrash, HiOutlineArchiveBox,
     HiOutlineCircleStack, HiOutlineHashtag, HiOutlineClipboard,
 } from 'react-icons/hi2';
-import toast from 'react-hot-toast';
 
 export default function WorldsPage() {
     const queryClient = useQueryClient();
