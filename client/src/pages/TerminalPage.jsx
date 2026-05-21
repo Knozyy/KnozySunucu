@@ -78,23 +78,28 @@ export default function TerminalPage() {
     };
 
     const attachScreen = async (name) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            toast.error('Terminal bağlı değil');
+            return;
+        }
         try {
-            // Önce Ctrl+A D ile mevcut screen'den çık (bash'taysa etki etmez)
-            if (activeScreen && wsRef.current?.readyState === WebSocket.OPEN) {
+            // Bu sekmenin kendi PTY oturumundan screen'e attach — diğer sekmeleri etkilemez
+            if (activeScreen) {
+                // Mevcut screen'den çık (Ctrl+A D)
                 wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
-                await new Promise(r => setTimeout(r, 300));
+                await new Promise(r => setTimeout(r, 250));
             }
-            await api.post(`/terminal/screens/${name}/attach`);
+            wsRef.current.send(JSON.stringify({ type: 'attach', name }));
             setActiveScreen(name);
             setCmdTarget(name);
             queryClient.invalidateQueries({ queryKey: ['terminalScreens'] });
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Bağlanılamadı');
+            toast.error(err.message || 'Bağlanılamadı');
         }
     };
 
     const detachScreen = () => {
-        // Ctrl+A D gönder — screen'den çık, bash'e dön
+        // Ctrl+A D gönder — screen'den çık, bash'e dön (sadece bu sekme)
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
         }
