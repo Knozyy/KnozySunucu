@@ -24,13 +24,29 @@ function verifyToken(req) {
     }
 }
 
+// ─── Belirli sunucu instance'ını getir ───────────────────────────────────
+function getServiceInstance(serverId) {
+    if (!serverId) return minecraftService; // Birincil (legacy)
+    try {
+        const { serverManager } = require('./serverManager');
+        const id = parseInt(serverId);
+        if (isNaN(id)) return minecraftService;
+        const instance = serverManager.getInstance(id);
+        return instance || minecraftService;
+    } catch {
+        return minecraftService;
+    }
+}
+
 // ─── /ws/console handler ─────────────────────────────────────────────────
-function handleConsole(ws) {
-    const recentLogs = minecraftService.getRecentLogs(100);
+function handleConsole(ws, serverId) {
+    const service = getServiceInstance(serverId);
+
+    const recentLogs = service.getRecentLogs ? service.getRecentLogs(100) : [];
     recentLogs.forEach(log => {
         ws.send(JSON.stringify({ type: 'log', data: log.message }));
     });
-    ws.send(JSON.stringify({ type: 'status', data: minecraftService.getStatus() }));
+    ws.send(JSON.stringify({ type: 'status', data: service.getStatus() }));
 
     const logHandler = (line) => {
         if (ws.readyState === WebSocket.OPEN)
@@ -49,24 +65,24 @@ function handleConsole(ws) {
             ws.send(JSON.stringify({ type: 'crash', data }));
     };
 
-    minecraftService.on('log', logHandler);
-    minecraftService.on('status', statusHandler);
-    minecraftService.on('players', playersHandler);
-    minecraftService.on('crash', crashHandler);
+    service.on('log', logHandler);
+    service.on('status', statusHandler);
+    service.on('players', playersHandler);
+    service.on('crash', crashHandler);
 
     ws.on('message', (message) => {
         try {
             const parsed = JSON.parse(message.toString());
             if (parsed.type === 'command' && parsed.data)
-                minecraftService.sendCommand(parsed.data);
+                service.sendCommand(parsed.data);
         } catch { /* ignore */ }
     });
 
     ws.on('close', () => {
-        minecraftService.off('log', logHandler);
-        minecraftService.off('status', statusHandler);
-        minecraftService.off('players', playersHandler);
-        minecraftService.off('crash', crashHandler);
+        service.off('log', logHandler);
+        service.off('status', statusHandler);
+        service.off('players', playersHandler);
+        service.off('crash', crashHandler);
     });
 }
 
@@ -88,7 +104,8 @@ function handleTerminal(ws) {
 // ─── Upgrade Router ───────────────────────────────────────────────────────
 function setupWebSockets(server) {
     server.on('upgrade', (req, socket, head) => {
-        const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
+        const urlObj = new URL(req.url, `http://${req.headers.host}`);
+        const pathname = urlObj.pathname;
 
         if (pathname !== '/ws/console' && pathname !== '/ws/terminal') {
             socket.destroy();
@@ -102,8 +119,10 @@ function setupWebSockets(server) {
             return;
         }
 
+        const serverId = urlObj.searchParams.get('serverId') || null;
+
         wss.handleUpgrade(req, socket, head, (ws) => {
-            if (pathname === '/ws/console') handleConsole(ws);
+            if (pathname === '/ws/console') handleConsole(ws, serverId);
             else handleTerminal(ws);
         });
     });

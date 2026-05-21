@@ -11,13 +11,32 @@ import {
     HiOutlineMagnifyingGlass, HiOutlineFunnel,
     HiOutlineRectangleGroup, HiOutlinePlus, HiOutlinePencil,
     HiOutlinePlay, HiOutlineXMark, HiOutlineArchiveBox,
-    HiOutlineExclamationTriangle,
+    HiOutlineExclamationTriangle, HiOutlineServer,
 } from 'react-icons/hi2';
 
 export default function ConsolePage() {
     const { token } = useAuth();
-    const { logs, status, connected, sendCommand, clearLogs } = useWebSocket(token);
     const { t } = useI18n();
+    const [selectedServerId, setSelectedServerId] = useState(null);
+
+    // Sunucu listesi
+    const { data: serversData } = useQuery({
+        queryKey: ['servers-status'],
+        queryFn: () => api.get('/servers/status-all').then(r => r.data),
+        refetchInterval: 5000,
+    });
+    const servers = serversData?.servers || [];
+
+    // İlk sunucuyu varsayılan seç
+    useEffect(() => {
+        if (servers.length > 0 && !selectedServerId) {
+            setSelectedServerId(servers[0].id);
+        }
+    }, [servers, selectedServerId]);
+
+    const selectedServer = servers.find(s => s.id === selectedServerId) || servers[0] || null;
+
+    const { logs, status, connected, sendCommand, clearLogs } = useWebSocket(token, selectedServerId);
     const [activeTab, setActiveTab] = useState('console');
     const [command, setCommand] = useState('');
     const [commandHistory, setCommandHistory] = useState([]);
@@ -68,33 +87,68 @@ export default function ConsolePage() {
     ];
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             <div className="flex items-center justify-between fade-in">
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('console.title')}</h1>
-                    <p className="text-gray-500">{t('console.subtitle')}</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">{t('console.title')}</h1>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">{t('console.subtitle')}</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className={`flex items-center gap-2 text-sm ${connected ? 'text-green-600' : 'text-red-500'}`}>
-                        <HiOutlineSignal className="w-4 h-4" />
-                        {connected ? t('console.connected') : t('console.disconnected')}
-                    </span>
-                </div>
+                <span className={`flex items-center gap-2 text-sm ${connected ? 'text-emerald-600' : 'text-red-500'}`}>
+                    <HiOutlineSignal className="w-4 h-4" />
+                    {connected ? t('console.connected') : t('console.disconnected')}
+                </span>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 fade-in">
+            {/* Sunucu seçici — sadece 2+ sunucu varsa göster */}
+            {servers.length > 1 && (
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    <div className="flex border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
+                        {servers.map((server, idx) => {
+                            const isRunning  = server.status === 'running';
+                            const isStarting = server.status === 'starting';
+                            const isSelected = selectedServer?.id === server.id;
+                            return (
+                                <button
+                                    key={server.id}
+                                    onClick={() => { setSelectedServerId(server.id); clearLogs(); }}
+                                    className={`flex items-center gap-2.5 px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
+                                        isSelected
+                                            ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                                    }`}
+                                >
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                        isRunning  ? 'bg-emerald-500' :
+                                        isStarting ? 'bg-amber-400 animate-pulse' :
+                                                     'bg-gray-300 dark:bg-gray-600'
+                                    }`} />
+                                    <span>Sunucu {idx + 1}</span>
+                                    <span className="hidden sm:inline text-xs font-normal text-gray-400">
+                                        — {server.name}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* Konsol içerik sekmeleri */}
+            <div className="flex gap-2 fade-in flex-wrap">
                 {tabs.map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                            }`}>
+                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                            activeTab === tab.id
+                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
+                                : 'text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                        }`}>
                         <tab.icon className="w-4 h-4" /> {tab.label}
                     </button>
                 ))}
             </div>
 
             {activeTab === 'macros' ? (
-                <MacrosPanel mcStatus={status?.status} sendCommand={sendCommand} />
+                <MacrosPanel mcStatus={status?.status} sendCommand={sendCommand} serverId={selectedServerId} />
             ) : activeTab === 'archive' ? (
                 <LogArchivePanel />
             ) : activeTab === 'crash' ? (
@@ -102,12 +156,14 @@ export default function ConsolePage() {
             ) : activeTab === 'console' ? (
                 <div className="glass-card overflow-hidden fade-in">
                     {/* Terminal header */}
-                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2">
                             <div className="w-3 h-3 rounded-full bg-red-400" />
                             <div className="w-3 h-3 rounded-full bg-amber-400" />
                             <div className="w-3 h-3 rounded-full bg-green-400" />
-                            <span className="ml-2 text-xs text-gray-400 font-mono">minecraft-server-console</span>
+                            <span className="ml-2 text-xs text-gray-400 font-mono">
+                                {selectedServer ? `knozy-mc${selectedServer.id} — ${selectedServer.name}` : 'minecraft-server-console'}
+                            </span>
                         </div>
                         <button onClick={clearLogs} className="btn-secondary text-xs py-1.5 px-3">
                             <HiOutlineTrash className="w-4 h-4" /> {t('console.clear')}
@@ -432,7 +488,7 @@ function MacroModal({ initial, onClose, onSave }) {
     );
 }
 
-function MacrosPanel({ mcStatus, sendCommand }) {
+function MacrosPanel({ mcStatus, sendCommand, serverId }) {
     const { user } = useAuth();
     const isAdmin = user?.role === 'admin';
     const qc = useQueryClient();
@@ -466,7 +522,8 @@ function MacrosPanel({ mcStatus, sendCommand }) {
         if (mcStatus !== 'running') { toast.error('Sunucu çalışmıyor'); return; }
         setExecuting(macro.id);
         try {
-            await api.post(`/macros/${macro.id}/execute`);
+            // serverId varsa o sunucuya gönder, yoksa birincil sunucu
+            await api.post(`/macros/${macro.id}/execute`, { serverId: serverId || null });
             toast.success(`"${macro.name}" çalıştırıldı (${macro.commands.length} komut)`);
         } catch (e) {
             toast.error(e.response?.data?.error || 'Çalıştırılamadı');
