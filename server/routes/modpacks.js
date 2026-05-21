@@ -48,15 +48,28 @@ router.get('/installed', authMiddleware, (req, res) => {
     }
 });
 
-// Aktif profil bilgisi
+// Aktif profil bilgisi — sunucu bazlı (?serverId=X)
 router.get('/active', authMiddleware, (req, res) => {
     try {
-        const mcService = require('../services/minecraftService');
-        const profile = mcService.getActiveProfile();
-        res.json({
-            profile,
-            serverStatus: mcService.status,
-        });
+        const serverRegistry = require('../services/serverRegistry');
+        const sid = req.query.serverId || null;
+        const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+        if (!inst) return res.json({ profile: null, serverStatus: 'stopped' });
+
+        // Önce sunucuya atanmış modpack
+        const db = getDb();
+        const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?')
+            .get(inst._serverConfig.id);
+        let profile = null;
+        if (srv?.active_modpack_id) {
+            profile = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?')
+                .get(srv.active_modpack_id) || null;
+        }
+        // Geriye dönük: hâlâ atama yoksa global is_active'i göster
+        if (!profile) {
+            profile = db.prepare('SELECT * FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get() || null;
+        }
+        res.json({ profile, serverStatus: inst.status });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -144,11 +157,16 @@ router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => 
     }
 });
 
-// Profil aktif et
+// Profil aktif et — body.serverId hedef sunucuyu belirtir (yoksa default)
+// NOT: Yeni mimaride sunucu-başına profil atama POST /api/servers/:id/set-profile ile yapılır.
+// Bu endpoint legacy "global is_active" davranışını destekler.
 router.post('/activate/:id', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
-        const mcService = require('../services/minecraftService');
-        const result = await mcService.switchProfile(parseInt(req.params.id));
+        const serverRegistry = require('../services/serverRegistry');
+        const sid = req.body?.serverId || null;
+        const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+        if (!inst) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        const result = await inst.switchProfile(parseInt(req.params.id));
         res.json(result);
     } catch (err) {
         res.status(500).json({ error: err.message });

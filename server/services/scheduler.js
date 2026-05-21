@@ -32,6 +32,12 @@ class Scheduler {
                 )
             `);
 
+            // Migration: server_id sütunu (hangi sunucu için çalışacak)
+            const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all().map(c => c.name);
+            if (!cols.includes('server_id')) {
+                db.exec("ALTER TABLE scheduled_tasks ADD COLUMN server_id INTEGER NULL REFERENCES servers(id)");
+            }
+
             const tasks = db.prepare('SELECT * FROM scheduled_tasks WHERE enabled = 1').all();
             for (const task of tasks) {
                 this._scheduleTask(task);
@@ -69,13 +75,17 @@ class Scheduler {
         const db = getDb();
         const nextRun = Date.now() + (data.intervalMinutes * 60 * 1000);
         const stmt = db.prepare(`
-            INSERT INTO scheduled_tasks (name, type, interval_minutes, action, action_data, enabled, next_run)
-            VALUES (?, ?, ?, ?, ?, 1, ?)
+            INSERT INTO scheduled_tasks (name, type, interval_minutes, action, action_data, enabled, next_run, server_id)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
         `);
-        const result = stmt.run(data.name, data.type, data.intervalMinutes, data.action, JSON.stringify(data.actionData || {}), nextRun.toString());
+        const result = stmt.run(
+            data.name, data.type, data.intervalMinutes, data.action,
+            JSON.stringify(data.actionData || {}), nextRun.toString(),
+            data.serverId || null
+        );
         const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(result.lastInsertRowid);
         this._scheduleTask(task);
-        this._addLog(task.name, `Görev oluşturuldu (${task.action}, her ${task.interval_minutes} dk)`);
+        this._addLog(task.name, `Görev oluşturuldu (${task.action}, her ${task.interval_minutes} dk${task.server_id ? `, sunucu #${task.server_id}` : ''})`);
         return task;
     }
 
@@ -168,8 +178,15 @@ class Scheduler {
 
             db.prepare(`UPDATE scheduled_tasks SET last_run = datetime('now'), next_run = ? WHERE id = ?`).run(nextRun.toString(), task.id);
 
-            // minecraftService singleton'ını al
-            const mcService = require('./minecraftService');
+            // Görevin hedef sunucusunu çöz (task.server_id varsa, yoksa default)
+            const serverRegistry = require('./serverRegistry');
+            const mcService = task.server_id
+                ? serverRegistry.get(task.server_id)
+                : serverRegistry.getDefault();
+            if (!mcService) {
+                this._addLog(task.name, 'Hedef sunucu bulunamadı, görev atlandı');
+                return;
+            }
 
             switch (task.action) {
                 case 'restart': {
@@ -201,7 +218,7 @@ class Scheduler {
                         }
 
                         const WorldManager = require('./worldManager');
-                        const wm = new WorldManager();
+                        const wm = new WorldManager(mcService.getServerPath());
                         const worlds = wm.list();
                         let backedUp = 0;
                         for (const world of worlds) {
