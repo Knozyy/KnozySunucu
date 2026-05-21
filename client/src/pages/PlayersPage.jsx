@@ -6,7 +6,7 @@ import {
     HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
     HiOutlineMagnifyingGlass, HiOutlineTrophy, HiOutlineNoSymbol,
     HiOutlineCheckCircle, HiOutlineChatBubbleLeftEllipsis,
-    HiOutlinePlus, HiOutlineTrash,
+    HiOutlinePlus, HiOutlineTrash, HiOutlineArrowPath,
 } from 'react-icons/hi2';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
@@ -53,7 +53,7 @@ export default function PlayersPage() {
     const [search, setSearch] = useState('');
     const [activeTab, setActiveTab] = useState('sessions');
 
-    const { data: online } = useQuery({
+    const { data: online, isFetching: onlineFetching, refetch: refetchOnline } = useQuery({
         queryKey: ['players-online'],
         queryFn: () => api('/players/online'),
         refetchInterval: 5000,
@@ -111,6 +111,13 @@ export default function PlayersPage() {
                     <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
                         {onlinePlayers.length}
                     </span>
+                    <button
+                        onClick={() => refetchOnline()}
+                        title="Yenile"
+                        className="ml-auto p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                        <HiOutlineArrowPath className={`w-4 h-4 ${onlineFetching ? 'animate-spin' : ''}`} />
+                    </button>
                 </div>
                 {onlinePlayers.length === 0 ? (
                     <p className="text-sm text-gray-400 dark:text-gray-500">
