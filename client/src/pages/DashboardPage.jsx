@@ -7,7 +7,7 @@ import {
     HiOutlineServer, HiOutlineUsers, HiOutlinePlay, HiOutlineStop,
     HiOutlineArrowPath, HiOutlineWrenchScrewdriver, HiOutlinePuzzlePiece,
     HiOutlineExclamationTriangle, HiOutlineXMark, HiOutlineArrowDownTray,
-    HiOutlineCpuChip, HiOutlineCircleStack, HiOutlinePlus,
+    HiOutlineCpuChip, HiOutlineCircleStack, HiOutlinePlus, HiOutlineCheck,
 } from 'react-icons/hi2';
 import { useState, useEffect } from 'react';
 
@@ -20,7 +20,7 @@ function parseRamGB(str) {
 }
 
 // ── Sunucu detay paneli ─────────────────────────────────────────────────────
-function ServerPanel({ server, user, onStatusChange }) {
+function ServerPanel({ server, user, onStatusChange, installedModpacks }) {
     const isRunning  = server.status === 'running';
     const isStarting = server.status === 'starting';
     const isStopping = server.status === 'stopping';
@@ -32,6 +32,14 @@ function ServerPanel({ server, user, onStatusChange }) {
     const maxRamGB    = parseRamGB(server.max_ram);
     const usedRamGB   = serverRamMB / 1024;
     const ramPct      = maxRamGB > 0 ? Math.min(100, (usedRamGB / maxRamGB) * 100) : 0;
+
+    const qc = useQueryClient();
+    const [selectedPack, setSelectedPack] = useState(server.active_modpack_id ?? null);
+
+    // server değişince (tab geçişi) lokal state'i güncelle
+    useEffect(() => {
+        setSelectedPack(server.active_modpack_id ?? null);
+    }, [server.id, server.active_modpack_id]);
 
     const startMutation = useMutation({
         mutationFn: () => api.post(`/servers/${server.id}/start`),
@@ -47,6 +55,14 @@ function ServerPanel({ server, user, onStatusChange }) {
         mutationFn: () => api.post(`/servers/${server.id}/restart`),
         onSuccess: () => { toast.success(`${server.name} yeniden başlatılıyor...`); onStatusChange(); },
         onError: (e) => toast.error(e.response?.data?.error || 'Yeniden başlatılamadı'),
+    });
+    const setProfileMutation = useMutation({
+        mutationFn: (modpack_id) => api.post(`/servers/${server.id}/set-profile`, { modpack_id }),
+        onSuccess: () => { toast.success('Profil atandı'); qc.invalidateQueries({ queryKey: ['servers-status'] }); },
+        onError: (e) => {
+            toast.error(e.response?.data?.error || 'Profil atanamadı');
+            setSelectedPack(server.active_modpack_id ?? null); // geri al
+        },
     });
 
     return (
@@ -211,6 +227,41 @@ function ServerPanel({ server, user, onStatusChange }) {
                     </div>
                 </div>
             )}
+
+            {/* Per-sunucu profil seçici */}
+            {installedModpacks?.length > 0 && user?.role === 'admin' && (
+                <div className="flex items-center gap-3 pt-1 border-t border-gray-100 dark:border-gray-800 flex-wrap">
+                    <HiOutlinePuzzlePiece className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-500 flex-shrink-0">Profil</span>
+                    <select
+                        className="flex-1 min-w-0 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={selectedPack ?? ''}
+                        onChange={(e) => {
+                            const val = e.target.value || null;
+                            setSelectedPack(val);
+                            setProfileMutation.mutate(val);
+                        }}
+                        disabled={setProfileMutation.isPending}
+                    >
+                        <option value="">— Profil seçilmedi —</option>
+                        {installedModpacks.map(mp => {
+                            // Bu profil başka sunucuda aktifse göster ama devre dışı
+                            const usedBy = mp._usedByServerId && mp._usedByServerId !== server.id;
+                            return (
+                                <option key={mp.id} value={mp.id} disabled={usedBy}>
+                                    {mp.name} {mp.version}{usedBy ? ` (${mp._usedByName}'da aktif)` : ''}
+                                </option>
+                            );
+                        })}
+                    </select>
+                    {server.activeModpack && (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 flex-shrink-0">
+                            <HiOutlineCheck className="w-3.5 h-3.5" />
+                            {server.activeModpack.name}
+                        </span>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -220,9 +271,8 @@ export default function DashboardPage() {
     const qc = useQueryClient();
     const { user, token } = useAuth();
     const { t } = useI18n();
-    const [crashAlert,       setCrashAlert]       = useState(null);
-    const [selectedId,       setSelectedId]       = useState(null);
-    const [selectedProfileId, setSelectedProfileId] = useState(null); // Anlık dropdown değeri
+    const [crashAlert, setCrashAlert] = useState(null);
+    const [selectedId, setSelectedId] = useState(null);
 
     // WebSocket — crash eventi dinle
     useEffect(() => {
@@ -252,31 +302,11 @@ export default function DashboardPage() {
         queryFn: () => api.get('/modpacks/installed').then(r => r.data),
     });
 
-    const { data: activeProfileData } = useQuery({
-        queryKey: ['activeProfile'],
-        queryFn: () => api.get('/modpacks/active').then(r => r.data),
-    });
-
     const { data: updateInfo } = useQuery({
         queryKey: ['modpackUpdate'],
         queryFn: () => api.post('/modpacks/check-update', {}).then(r => r.data),
         refetchInterval: 300000,
         retry: false,
-    });
-
-    const activateMutation = useMutation({
-        mutationFn: (id) => api.post(`/modpacks/activate/${id}`),
-        onSuccess: (res) => {
-            toast.success(res.data.message);
-            // Her query ayrı ayrı invalidate edilmeli — dizi geçmek çalışmıyor
-            qc.invalidateQueries({ queryKey: ['modpackInstalled'] });
-            qc.invalidateQueries({ queryKey: ['activeProfile'] });
-            qc.invalidateQueries({ queryKey: ['servers-status'] });
-        },
-        onError: (e) => {
-            toast.error(e.response?.data?.error || 'Profil değişimi başarısız');
-            setSelectedProfileId(null); // Hata durumunda local state'i sıfırla
-        },
     });
 
     const repairMutation = useMutation({
@@ -286,6 +316,12 @@ export default function DashboardPage() {
     });
 
     const servers = serversData?.servers || [];
+
+    // Her modpack'e "hangi sunucuda aktif" bilgisini ekle
+    const installedModpacks = (installedData?.modpacks || []).map(mp => {
+        const usedBy = servers.find(s => s.active_modpack_id === mp.id);
+        return { ...mp, _usedByServerId: usedBy?.id || null, _usedByName: usedBy?.name || null };
+    });
 
     // İlk yüklemede ilk sunucuyu seç
     useEffect(() => {
@@ -401,43 +437,21 @@ export default function DashboardPage() {
                             server={selected}
                             user={user}
                             onStatusChange={onStatusChange}
+                            installedModpacks={installedModpacks}
                         />
                     )}
                 </div>
             )}
 
-            {/* Modpack / Profil seçici */}
-            {installedData?.modpacks?.length > 0 && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 flex items-center gap-3 flex-wrap">
-                    <HiOutlinePuzzlePiece className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-300 flex-shrink-0">
-                        Aktif Profil
-                    </span>
-                    <select
-                        className="flex-1 min-w-0 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={selectedProfileId ?? activeProfileData?.profile?.id ?? ''}
-                        onChange={(e) => {
-                            if (!e.target.value) return;
-                            const isAnyRunning = servers.some(s => s.status === 'running');
-                            if (isAnyRunning && !window.confirm('Çalışan sunucular durdurulup yeni profil aktif edilecek. Emin misiniz?')) return;
-                            setSelectedProfileId(e.target.value); // Hemen dropdown'ı güncelle
-                            activateMutation.mutate(e.target.value);
-                        }}
-                        disabled={user?.role !== 'admin' || activateMutation.isPending}
-                    >
-                        <option value="" disabled>Profil Seçin</option>
-                        {installedData.modpacks.map(mp => (
-                            <option key={mp.id} value={mp.id}>{mp.name} {mp.version}</option>
-                        ))}
-                    </select>
-                    {user?.role === 'admin' && (
-                        <button
-                            onClick={() => { if (confirm('Onarım yapılsın mı?')) repairMutation.mutate(); }}
-                            disabled={servers.some(s => s.status === 'running') || repairMutation.isPending}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50 transition-colors flex-shrink-0">
-                            <HiOutlineWrenchScrewdriver className="w-3.5 h-3.5" /> Onar
-                        </button>
-                    )}
+            {/* Onar butonu (modpack yüklüyse) */}
+            {installedModpacks.length > 0 && user?.role === 'admin' && (
+                <div className="flex justify-end">
+                    <button
+                        onClick={() => { if (confirm('Aktif sunucunun modpack dosyaları onarılsın mı?')) repairMutation.mutate(); }}
+                        disabled={servers.some(s => s.status === 'running') || repairMutation.isPending}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                        <HiOutlineWrenchScrewdriver className="w-3.5 h-3.5" /> Modpack Onar
+                    </button>
                 </div>
             )}
         </div>

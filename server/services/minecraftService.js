@@ -331,16 +331,29 @@ class MinecraftService extends EventEmitter {
     // ── Temel metodlar ───────────────────────────────────────────────────────
 
     getServerPath() {
-        // Eğer bu instance bir sunucu config'e bağlıysa, o config'in path'ini kullan
-        if (this._serverConfig?.path) return this._serverConfig.path;
         try {
             const db = getDb();
-            // Önce servers tablosundaki aktif sunucuya bak
-            const activeServer = db.prepare('SELECT path FROM servers WHERE is_active = 1 LIMIT 1').get();
+            // Eğer bu instance bir sunucu config'e bağlıysa
+            if (this._serverConfig?.id) {
+                const srv = db.prepare('SELECT path, active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+                // 1) Sunucunun kendi path'i varsa kullan
+                if (srv?.path && fs.existsSync(srv.path)) return srv.path;
+                // 2) Sunucuya atanmış modpack install_path'i
+                if (srv?.active_modpack_id) {
+                    const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
+                    if (pack?.install_path && fs.existsSync(pack.install_path)) return pack.install_path;
+                }
+            }
+            // Birincil sunucu: önce aktif servers kaydı, sonra global aktif modpack
+            const activeServer = db.prepare('SELECT path, active_modpack_id FROM servers WHERE is_active = 1 LIMIT 1').get();
             if (activeServer?.path && fs.existsSync(activeServer.path)) return activeServer.path;
-            // Fallback: installed_modpacks
-            const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
-            if (active?.install_path && fs.existsSync(active.install_path)) return active.install_path;
+            if (activeServer?.active_modpack_id) {
+                const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(activeServer.active_modpack_id);
+                if (pack?.install_path && fs.existsSync(pack.install_path)) return pack.install_path;
+            }
+            // Global fallback: herhangi bir aktif modpack
+            const globalPack = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
+            if (globalPack?.install_path && fs.existsSync(globalPack.install_path)) return globalPack.install_path;
         } catch { /* fallback */ }
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
