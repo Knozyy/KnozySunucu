@@ -50,7 +50,7 @@ router.post('/:id/activate', authMiddleware, requireRole('admin'), (req, res) =>
         const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
         if (!server) return res.status(404).json({ error: 'Sunucu bulunamadı' });
 
-        const minecraftService = require('./minecraft').getService?.() || require('../services/minecraftService');
+        const minecraftService = require('../services/minecraftService');
         if (minecraftService.status === 'running') {
             return res.status(400).json({ error: 'Sunucu çalışırken geçiş yapamazsınız. Önce durdurun.' });
         }
