@@ -33,6 +33,8 @@ const apiTokenRoutes = require('./routes/apiTokens');
 const auditRoutes = require('./routes/audit');
 const templateRoutes = require('./routes/templates');
 const serverListRoutes = require('./routes/servers');
+const minecraftService = require('./services/minecraftService');
+const { serverManager } = require('./services/serverManager');
 
 const app = express();
 const server = http.createServer(app);
@@ -45,6 +47,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Database
 initDatabase();
+
+// ServerManager — birincil sunucuyu kaydet
+serverManager.setPrimary(minecraftService);
 
 // Routes
 app.use('/api/auth', authRoutes);
