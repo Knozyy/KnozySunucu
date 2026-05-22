@@ -231,6 +231,8 @@ export default function ModsPage() {
     const modsToShow = searchData?.mods || (searchQuery ? [] : popularData?.mods) || [];
     const mods = data?.mods || [];
     const count = data?.count || { active: 0, disabled: 0, total: 0 };
+    const modsResolvedPath = data?.resolvedPath;
+    const configsResolvedPath = configsData?.resolvedPath;
 
     const tabs = [
         { id: 'installed', label: `Yüklü (${count.total})` },
@@ -503,9 +505,22 @@ export default function ModsPage() {
                                 </button>
                             </div>
                         )) : (
-                            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
                                 <PuzzleIcon size={32} color={A.faint} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.3 }}/>
-                                <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>mods/ klasöründe mod bulunamadı</p>
+                                <p style={{ fontSize: 12, color: A.faint, margin: '0 0 10px' }}>mods/ klasöründe mod bulunamadı</p>
+                                {modsResolvedPath && (
+                                    <div style={{
+                                        display: 'inline-block',
+                                        background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                        borderRadius: 4, padding: '8px 14px', textAlign: 'left',
+                                    }}>
+                                        <p style={{ fontSize: 10, color: A.faint, margin: '0 0 3px', fontFamily: A.mono }}>Taranan yol:</p>
+                                        <code style={{ fontSize: 11, color: A.warn, fontFamily: A.mono }}>{modsResolvedPath}/mods</code>
+                                        <p style={{ fontSize: 10, color: A.faintest, margin: '5px 0 0', fontFamily: A.mono }}>
+                                            Sunucular sayfasından sunucu yolunu kontrol edin.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -575,11 +590,24 @@ export default function ModsPage() {
                                 </span>
                             </button>
                         )) : (
-                            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
                                 <DocTextIcon size={32} style={{ color: A.faint, margin: '0 auto 10px', display: 'block', opacity: 0.3 }}/>
-                                <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>
+                                <p style={{ fontSize: 12, color: A.faint, margin: '0 0 10px' }}>
                                     config/ klasöründe düzenlenebilir dosya bulunamadı
                                 </p>
+                                {configsResolvedPath && (
+                                    <div style={{
+                                        display: 'inline-block',
+                                        background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                        borderRadius: 4, padding: '8px 14px', textAlign: 'left',
+                                    }}>
+                                        <p style={{ fontSize: 10, color: A.faint, margin: '0 0 3px', fontFamily: A.mono }}>Taranan yol:</p>
+                                        <code style={{ fontSize: 11, color: A.warn, fontFamily: A.mono }}>{configsResolvedPath}/config</code>
+                                        <p style={{ fontSize: 10, color: A.faintest, margin: '5px 0 0', fontFamily: A.mono }}>
+                                            Sunucular sayfasından sunucu yolunu kontrol edin.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

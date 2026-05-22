@@ -171,13 +171,15 @@ export default function DashboardPage() {
                             onClick={() => setSelectedServerId(s.id)}/>
                     ))}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderLeft: `1px solid ${A.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderLeft: `1px solid ${A.border}`, flexShrink: 0 }}>
                     <ServerControls server={selectedServer} onStatusChange={onStatusChange}/>
                     <button onClick={toggleEditMode} style={{
                         ...btnGhost, fontSize: 10,
                         display: 'flex', alignItems: 'center', gap: 5,
-                        borderColor: editMode ? 'var(--accent)' : A.border,
-                        color: editMode ? 'var(--accent)' : A.dim,
+                        flexShrink: 0,
+                        borderColor: editMode ? 'var(--accent)' : A.borderHi,
+                        color: editMode ? 'var(--accent)' : A.text,
+                        background: editMode ? 'rgba(167,139,250,0.08)' : A.panel,
                     }}>
                         <I.Cog size={11}/>{editMode ? 'DÜZENLEME' : 'DÜZENLE'}
                     </button>

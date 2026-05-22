@@ -93,17 +93,18 @@ const tdStyle = {
 };
 
 export default function SettingsPage() {
-    const [activeTab, setActiveTab] = useState('tasks');
+    const [activeTab, setActiveTab] = useState('server');
 
     const tabs = [
-        { id: 'tasks',      label: 'Görev Yöneticisi',   icon: I.CPU },
-        { id: 'users',      label: 'Kullanıcılar',        icon: I.Users },
-        { id: 'categories', label: 'İzin Kategorileri',   icon: I.Stack },
-        { id: 'tokens',     label: 'API Tokenları',        icon: I.Signal },
-        { id: 'templates',  label: 'Şablonlar',            icon: I.Archive },
-        { id: 'alerts',     label: 'Kaynak Uyarıları',     icon: I.Alert },
-        { id: 'audit',      label: 'Audit Log',            icon: I.Folder },
-        { id: 'push',       label: 'Tarayıcı Bildirimleri', icon: I.Signal },
+        { id: 'server',     label: 'Sunucu',               icon: I.CPU },
+        { id: 'tasks',      label: 'Görev Yöneticisi',     icon: I.CPU },
+        { id: 'users',      label: 'Kullanıcılar',          icon: I.Users },
+        { id: 'categories', label: 'İzin Kategorileri',     icon: I.Stack },
+        { id: 'tokens',     label: 'API Tokenları',          icon: I.Signal },
+        { id: 'templates',  label: 'Şablonlar',              icon: I.Archive },
+        { id: 'alerts',     label: 'Kaynak Uyarıları',       icon: I.Alert },
+        { id: 'audit',      label: 'Audit Log',              icon: I.Folder },
+        { id: 'push',       label: 'Tarayıcı Bildirimleri',  icon: I.Signal },
     ];
 
     return (
@@ -133,6 +134,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Sekme içerikleri */}
+            {activeTab === 'server'     && <ServerSettingsPanel/>}
             {activeTab === 'tasks'      && <TaskManagerPanel/>}
             {activeTab === 'users'      && <PanelUsersPanel/>}
             {activeTab === 'categories' && <CategoriesPanel/>}
@@ -141,6 +143,78 @@ export default function SettingsPage() {
             {activeTab === 'alerts'     && <AlertsPanel/>}
             {activeTab === 'audit'      && <AuditLogPanel/>}
             {activeTab === 'push'       && <PushNotificationTab/>}
+        </div>
+    );
+}
+
+// ============================================================
+// SUNUCU AYARLARI (Oto-Yeniden Başlatma vb.)
+// ============================================================
+function ServerSettingsPanel() {
+    const qc = useQueryClient();
+
+    const { data: arData, isLoading: arLoading } = useQuery({
+        queryKey: ['auto-restart-setting'],
+        queryFn: () => api.get('/servers/auto-restart').then(r => r.data),
+    });
+
+    const arMutation = useMutation({
+        mutationFn: (enabled) => api.post('/servers/auto-restart', { enabled }),
+        onSuccess: (_, enabled) => {
+            qc.invalidateQueries({ queryKey: ['auto-restart-setting'] });
+            toast.success(enabled ? 'Otomatik yeniden başlatma aktif' : 'Otomatik yeniden başlatma kapalı');
+        },
+        onError: (e) => toast.error(e.response?.data?.error || 'Ayar kaydedilemedi'),
+    });
+
+    const enabled = arData?.enabled ?? true;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
+            <Cap>Sunucu Davranış Ayarları</Cap>
+
+            {/* Oto-Restart Toggle */}
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                padding: '16px', display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, color: A.text, fontWeight: 500, marginBottom: 4 }}>
+                            Otomatik Yeniden Başlatma
+                        </div>
+                        <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, lineHeight: 1.6 }}>
+                            Sunucu beklenmedik şekilde kapanırsa 10 saniye sonra otomatik olarak yeniden başlatılır.
+                            Kasıtlı durdurmalar bu kurala dahil değildir.
+                        </div>
+                    </div>
+                    <button
+                        disabled={arLoading || arMutation.isPending}
+                        onClick={() => arMutation.mutate(!enabled)}
+                        style={{
+                            width: 44, height: 24, borderRadius: 99, border: 'none',
+                            cursor: arLoading ? 'not-allowed' : 'pointer',
+                            background: enabled ? 'var(--accent)' : A.border,
+                            position: 'relative', flexShrink: 0, marginLeft: 16,
+                            transition: 'background 0.2s',
+                            opacity: arMutation.isPending ? 0.6 : 1,
+                        }}
+                    >
+                        <span style={{
+                            position: 'absolute', top: 3, left: enabled ? 22 : 3,
+                            width: 18, height: 18, borderRadius: 99,
+                            background: '#fff', transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                        }}/>
+                    </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Dot color={enabled ? A.ok : A.faint} size={6}/>
+                    <span style={{ fontFamily: A.mono, fontSize: 10, color: enabled ? A.ok : A.faint }}>
+                        {arLoading ? 'Yükleniyor...' : enabled ? 'AKTİF — Çöküş sonrası otomatik başlatma açık' : 'PASİF — Sunucu çökerse manuel başlatma gerekir'}
+                    </span>
+                </div>
+            </div>
         </div>
     );
 }

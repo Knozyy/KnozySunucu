@@ -26,7 +26,7 @@ function mmFor(req) {
 
 router.get('/', authMiddleware, (req, res) => {
     const mm = mmFor(req);
-    res.json({ mods: mm.listAll(), count: mm.count() });
+    res.json({ mods: mm.listAll(), count: mm.count(), resolvedPath: mm.serverPath });
 });
 
 router.post('/disable', authMiddleware, requireRole('admin'), (req, res) => {
@@ -251,10 +251,10 @@ router.get('/configs', authMiddleware, (req, res) => {
     try {
         const serverPath = serverPathFor(req);
         const configDir = path.join(serverPath, 'config');
-        if (!fs.existsSync(configDir)) return res.json({ files: [] });
+        if (!fs.existsSync(configDir)) return res.json({ files: [], resolvedPath: serverPath });
 
         const files = listConfigFiles(configDir, configDir);
-        res.json({ files });
+        res.json({ files, resolvedPath: serverPath });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

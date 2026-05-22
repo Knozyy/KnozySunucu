@@ -187,6 +187,27 @@ router.get('/status-all', authMiddleware, (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/servers/auto-restart
+router.get('/auto-restart', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
+        res.json({ enabled: !setting || setting.value === '1' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/servers/auto-restart
+router.post('/auto-restart', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const enabled = req.body.enabled ? '1' : '0';
+        const db = getDb();
+        db.prepare(`INSERT INTO app_settings (key, value) VALUES ('auto_restart_enabled', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`)
+            .run(enabled);
+        res.json({ enabled: enabled === '1' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // DELETE /api/servers/:id
 router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
