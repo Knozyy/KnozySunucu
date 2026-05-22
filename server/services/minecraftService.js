@@ -4,13 +4,27 @@ const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
 
-// ── Screen ayarları ───────────────────────────────────────────────────────────
-const SCREEN_NAME = process.env.MINECRAFT_SCREEN_NAME || 'knozy-mc';
-const LOG_FILE   = '/tmp/knozy-mc.log';
-
 class MinecraftService extends EventEmitter {
-    constructor() {
+    /**
+     * @param {Object} serverConfig - DB'deki `servers` kaydı (id zorunlu)
+     * @param {number}  serverConfig.id
+     * @param {string}  serverConfig.name
+     * @param {string}  serverConfig.path
+     * @param {string}  serverConfig.min_ram
+     * @param {string}  serverConfig.max_ram
+     * @param {string}  serverConfig.jvm_args
+     *
+     * SIGTERM/SIGINT yönetimi artık serverRegistry seviyesinde.
+     */
+    constructor(serverConfig) {
         super();
+        if (!serverConfig || !serverConfig.id) {
+            throw new Error('MinecraftService: serverConfig.id zorunlu (eşit sunucu mimarisi)');
+        }
+        this._serverConfig = serverConfig;
+        this._screenName   = `knozy-mc${serverConfig.id}`;
+        this._logFile      = `/tmp/knozy-mc${serverConfig.id}.log`;
+
         this._tailProcess = null;   // tail -f process (log okuma)
         this._javaPid     = null;   // gerçek Java PID
         this.process      = null;   // Windows compat. (eski API) — Linux'ta null
@@ -19,11 +33,15 @@ class MinecraftService extends EventEmitter {
         this.logs         = [];
         this.maxLogLines  = 500;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
+        this._lastTps = { one: null, five: null, fifteen: null };
+        this._tpsInterval        = null;
         this._statsInterval      = null;
         this._statusCheckInterval = null;
         // Çöküm takibi
         this._crashCount       = 0;
         this._crashWindowStart = 0;
+        // Panel kapanıyor mu? (bu flag true iken MC'ye dokunulmamalı)
+        this._shuttingDown = false;
 
         // Panel yeniden başlarsa çalışan sunucuya yeniden bağlan
         if (this._useScreen()) {
@@ -42,19 +60,15 @@ class MinecraftService extends EventEmitter {
     _isScreenRunning() {
         try {
             const out = execSync(`screen -ls 2>/dev/null || true`, { encoding: 'utf8' });
-            return out.includes(SCREEN_NAME);
+            return out.includes(this._screenName);
         } catch { return false; }
     }
 
     _findJavaPid() {
         try {
             const serverPath = this.getServerPath();
-            // Önce sunucu yoluna göre ara
-            let result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            if (!result) {
-                // Fallback: genel java server arama
-                result = execSync(`pgrep -f "java.*nogui" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            }
+            // Sunucu yoluna göre ara — her sunucu kendi path'inden tanınır
+            const result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
             const pids = result.split('\n').filter(Boolean).map(Number);
             return pids.length > 0 ? pids[0] : null;
         } catch { return null; }
@@ -87,13 +101,13 @@ class MinecraftService extends EventEmitter {
         this._stopLogTail();
 
         // Log dosyası yoksa oluştur
-        if (!fs.existsSync(LOG_FILE)) {
-            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+        if (!fs.existsSync(this._logFile)) {
+            try { fs.writeFileSync(this._logFile, ''); } catch { /* ignore */ }
         }
 
         // -n 0: sadece yeni satırları oku (reconnect için) | -n +1: baştan oku
         const nArg = fromEnd ? '0' : '+1';
-        this._tailProcess = spawn('tail', [`-n`, nArg, '-f', LOG_FILE], {
+        this._tailProcess = spawn('tail', [`-n`, nArg, '-f', this._logFile], {
             stdio: ['ignore', 'pipe', 'ignore'],
         });
 
@@ -149,16 +163,39 @@ class MinecraftService extends EventEmitter {
             this.sendCommand('I agree');
         }
 
+        // TPS (Paper/Spigot: "TPS from last 1m, 5m, 15m: X.XX, X.XX, X.XX")
+        const tpsMatch = line.match(/TPS from last 1m,\s*5m,\s*15m:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i);
+        if (tpsMatch) {
+            this._lastTps = {
+                one: parseFloat(tpsMatch[1]),
+                five: parseFloat(tpsMatch[2]),
+                fifteen: parseFloat(tpsMatch[3]),
+            };
+        }
+
         // Oyuncu giriş/çıkış
         const joinMatch = line.match(/(\w+) joined the game/);
         if (joinMatch && !this.players.includes(joinMatch[1])) {
             this.players.push(joinMatch[1]);
             this.emit('players', this.players);
+            try {
+                const db = getDb();
+                db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)').run(joinMatch[1], Date.now());
+            } catch { /* ignore */ }
         }
         const leaveMatch = line.match(/(\w+) left the game/);
         if (leaveMatch) {
             this.players = this.players.filter(p => p !== leaveMatch[1]);
             this.emit('players', this.players);
+            try {
+                const db = getDb();
+                const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE username = ? AND left_at IS NULL ORDER BY id DESC LIMIT 1').get(leaveMatch[1]);
+                if (open) {
+                    const now = Date.now();
+                    db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?')
+                        .run(now, Math.round((now - open.joined_at) / 1000), open.id);
+                }
+            } catch { /* ignore */ }
         }
     }
 
@@ -167,6 +204,9 @@ class MinecraftService extends EventEmitter {
     _startStatusWatch() {
         this._stopStatusWatch();
         this._statusCheckInterval = setInterval(() => {
+            // Panel kapanıyorsa hiçbir şey yapma
+            if (this._shuttingDown) { this._stopStatusWatch(); return; }
+
             if (this.status === 'stopped') {
                 this._stopStatusWatch();
                 return;
@@ -195,6 +235,16 @@ class MinecraftService extends EventEmitter {
         this.players      = [];
         this._javaPid     = null;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
+        this._lastTps     = { one: null, five: null, fifteen: null };
+
+        // Sunucu kapanınca açık oturumları kapat
+        try {
+            const db = getDb();
+            const now = Date.now();
+            const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE left_at IS NULL').all();
+            const stmt = db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?');
+            for (const s of open) stmt.run(now, Math.round((now - s.joined_at) / 1000), s.id);
+        } catch { /* ignore */ }
 
         this._stopStatsTracking();
         this._stopStatusWatch();
@@ -225,6 +275,9 @@ class MinecraftService extends EventEmitter {
             db.prepare('INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)')
                 .run(exitCode ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
         } catch { /* ignore */ }
+
+        // Panel kapanıyorsa otomatik yeniden başlatma yapma
+        if (this._shuttingDown) return;
 
         const MAX_CRASHES = 5;
         if (this._crashCount >= MAX_CRASHES) {
@@ -261,10 +314,28 @@ class MinecraftService extends EventEmitter {
     getServerPath() {
         try {
             const db = getDb();
-            const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
-            if (active?.install_path && fs.existsSync(active.install_path)) return active.install_path;
+            const srv = db.prepare('SELECT path, active_modpack_id FROM servers WHERE id = ?')
+                .get(this._serverConfig.id);
+            // 1) Sunucunun kendi path'i varsa kullan
+            if (srv?.path && fs.existsSync(srv.path)) return srv.path;
+            // 2) Sunucuya atanmış modpack install_path'i
+            if (srv?.active_modpack_id) {
+                const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?')
+                    .get(srv.active_modpack_id);
+                if (pack?.install_path && fs.existsSync(pack.install_path)) return pack.install_path;
+            }
+            // 3) Global fallback: herhangi bir aktif modpack (geriye dönük uyumluluk)
+            const globalPack = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
+            if (globalPack?.install_path && fs.existsSync(globalPack.install_path)) return globalPack.install_path;
         } catch { /* fallback */ }
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+    }
+
+    getActiveServer() {
+        try {
+            const db = getDb();
+            return db.prepare('SELECT * FROM servers WHERE is_active = 1 LIMIT 1').get() || null;
+        } catch { return null; }
     }
 
     getActiveProfile() {
@@ -352,25 +423,43 @@ class MinecraftService extends EventEmitter {
             } else {
                 const db = getDb();
                 const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
-                const maxRam = (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
-                const minRam = (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
-                const jvmArgs = (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
+                // Önce instance config, sonra modpack, sonra env
+                const maxRam  = this._serverConfig?.max_ram  || (pack && pack.max_ram)  || process.env.MINECRAFT_MAX_RAM || '4G';
+                const minRam  = this._serverConfig?.min_ram  || (pack && pack.min_ram)  || process.env.MINECRAFT_MIN_RAM || '2G';
+                const jvmArgs = this._serverConfig?.jvm_args || (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
                 const jvmStr = jvmArgs || `-Xmx${maxRam} -Xms${minRam}`;
-                runCmd = `java ${jvmStr} -jar server.jar nogui`;
+                // CPU flag dışarıdan enjekte edilebilir (ServerManager tarafından)
+                const cpuFlag = this._cpuFlag || '';
+                runCmd = `java ${jvmStr}${cpuFlag} -jar server.jar nogui`;
             }
 
             // Log dosyasını temizle
-            try { fs.writeFileSync(LOG_FILE, ''); } catch { /* ignore */ }
+            try { fs.writeFileSync(this._logFile, ''); } catch { /* ignore */ }
 
-            // Eski screen'i temizle
-            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
-            try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
+            // Eski screen'i temizle — ama SADECE içinde Java yoksa.
+            // Eğer Java çalışıyorsa paneli yeniden başlatmak sunucuyu öldürmesin.
+            if (this._isScreenRunning()) {
+                const existingPid = this._findJavaPid();
+                if (existingPid) {
+                    // Sunucu hâlâ çalışıyor; durumu düzelt ve başlatmayı iptal et
+                    this._javaPid = existingPid;
+                    this.status   = 'running';
+                    this.emit('status', this.status);
+                    this._startLogTail(true);
+                    this._startStatsTracking();
+                    this._startStatusWatch();
+                    throw new Error('Sunucu zaten çalışıyor (screen + java mevcut)');
+                }
+                // Screen var ama Java yok — ölü screen oturumunu temizle
+                try { execSync(`screen -S ${this._screenName} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+                try { execSync('sleep 0.3', { stdio: 'ignore' }); } catch { /* ignore */ }
+            }
 
             // Screen başlat — çıktıyı log dosyasına yönlendir
-            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${LOG_FILE}'`;
-            execSync(`screen -dmS ${SCREEN_NAME} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
+            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${this._logFile}'`;
+            execSync(`screen -dmS ${this._screenName} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
 
-            this.addLog(`[System] Sunucu başlatılıyor (screen: ${SCREEN_NAME})`);
+            this.addLog(`[System] Sunucu başlatılıyor (screen: ${this._screenName})`);
             this.status = 'starting';
             this.emit('status', this.status);
 
@@ -470,7 +559,7 @@ class MinecraftService extends EventEmitter {
 
     _forceKill() {
         if (this._useScreen()) {
-            try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
+            try { execSync(`screen -S ${this._screenName} -X quit 2>/dev/null; true`, { stdio: 'ignore' }); } catch { /* ignore */ }
             if (this._javaPid) {
                 try { process.kill(this._javaPid, 'SIGKILL'); } catch { /* ignore */ }
             }
@@ -530,7 +619,7 @@ class MinecraftService extends EventEmitter {
 
         if (this._useScreen()) {
             const escaped = command.replace(/'/g, "'\\''");
-            execSync(`screen -S ${SCREEN_NAME} -X stuff '${escaped}\r'`, { timeout: 3000 });
+            execSync(`screen -S ${this._screenName} -X stuff '${escaped}\r'`, { timeout: 3000 });
         } else {
             if (this.process?.stdin) {
                 this.process.stdin.write(command + '\n');
@@ -556,10 +645,12 @@ class MinecraftService extends EventEmitter {
                 }
             } catch { /* ignore */ }
         }, 5000);
+
     }
 
     _stopStatsTracking() {
         if (this._statsInterval) { clearInterval(this._statsInterval); this._statsInterval = null; }
+        if (this._tpsInterval)   { clearInterval(this._tpsInterval);   this._tpsInterval = null; }
     }
 
     // ── Yardımcı metodlar ─────────────────────────────────────────────────────
@@ -711,4 +802,40 @@ class MinecraftService extends EventEmitter {
     }
 }
 
-module.exports = new MinecraftService();
+// ─── Modül export: legacy tek-sunuculu çağrıları default sunucuya yönlendir ────
+// Eski kod (örn: `minecraftService.getStatus()`, `minecraftService.on('crash', ...)`)
+// otomatik olarak DB'deki ilk sunucunun instance'ına yönlenir.
+//
+// Yeni kod ÇOKLU sunucu için doğrudan registry kullanmalı:
+//   const registry = require('./serverRegistry');
+//   registry.get(serverId).start();
+const MS_PROXY = new Proxy(function () {}, {
+    get(_, prop) {
+        if (prop === 'MinecraftService') return MinecraftService;
+        // Lazy require — döngüsel bağımlılık olmasın
+        const registry = require('./serverRegistry');
+        const def = registry.getDefault();
+        if (!def) {
+            // Sunucu yoksa: getStatus için makul varsayılan, diğerleri için undefined
+            if (prop === 'getStatus') return () => ({ status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } });
+            if (prop === 'status') return 'stopped';
+            if (prop === 'players') return [];
+            if (prop === 'on' || prop === 'off' || prop === 'once' || prop === 'emit' ||
+                prop === 'addListener' || prop === 'removeListener') return () => {};
+            return undefined;
+        }
+        const val = def[prop];
+        return typeof val === 'function' ? val.bind(def) : val;
+    },
+    set(target, prop, value) {
+        // MinecraftService class export'unu Proxy üzerine yapıştır
+        if (prop === 'MinecraftService') { target[prop] = value; return true; }
+        const registry = require('./serverRegistry');
+        const def = registry.getDefault();
+        if (def) def[prop] = value;
+        return true;
+    },
+});
+
+module.exports = MS_PROXY;
+module.exports.MinecraftService = MinecraftService;

@@ -1,33 +1,248 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import Sidebar from './Sidebar';
-import { HiOutlineBars3 } from 'react-icons/hi2';
+import { useState, useEffect, useRef } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/context/AuthContext';
+import api from '@/services/api';
+import { A, btnGhost } from '@/hodo/tokens';
+import { Cap, Pill, NavItem, ServerStatus, TickStat } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
+
+// ── Panel yeniden başlama banner'ı ──────────────────────────────────────
+function useUpdateBanner() {
+    const [showBanner, setShowBanner] = useState(false);
+    const knownStartTime = useRef(null);
+    const wasOffline = useRef(false);
+
+    useEffect(() => {
+        const check = async () => {
+            try {
+                const res = await fetch('/api/health');
+                if (!res.ok) throw new Error('not ok');
+                const data = await res.json();
+                if (knownStartTime.current === null) knownStartTime.current = data.startTime;
+                else if (data.startTime !== knownStartTime.current) setShowBanner(true);
+                else if (wasOffline.current) setShowBanner(true);
+                wasOffline.current = false;
+            } catch {
+                wasOffline.current = true;
+            }
+        };
+        check();
+        const id = setInterval(check, 30000);
+        return () => clearInterval(id);
+    }, []);
+
+    return showBanner;
+}
+
+// ── Saat ────────────────────────────────────────────────────────────────
+function useClock() {
+    const [now, setNow] = useState(new Date());
+    useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(id);
+    }, []);
+    return now;
+}
+
+// ── Default sunucu durumu (topbar live ticker için) ─────────────────────
+function useDefaultServerStatus() {
+    const { data } = useQuery({
+        queryKey: ['mc-status'],
+        queryFn: () => api.get('/minecraft/status').then(r => r.data),
+        refetchInterval: 3000,
+    });
+    return data || { status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } };
+}
+
+// ── Nav haritası ────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'overview',  path: '/',          icon: I.Dashboard, label: 'Dashboard' },
+    { id: 'console',   path: '/console',   icon: I.Console,   label: 'Konsol', badge: 'LIVE' },
+    { id: 'terminal',  path: '/terminal',  icon: I.Terminal,  label: 'Terminal' },
+    { id: 'worlds',    path: '/worlds',    icon: I.World,     label: 'Dünyalar' },
+    { id: 'files',     path: '/files',     icon: I.Folder,    label: 'Dosyalar' },
+    { id: 'modpacks',  path: '/modpacks',  icon: I.Cube,      label: 'Modpackler' },
+    { id: 'mods',      path: '/mods',      icon: I.Stack,     label: 'Modlar' },
+    { id: 'players',   path: '/players',   icon: I.Users,     label: 'Oyuncular' },
+    { id: 'scheduler', path: '/scheduler', icon: I.Clock,     label: 'Zamanlayıcı' },
+    { id: 'backup',    path: '/backup',    icon: I.Archive,   label: 'Yedek' },
+    { id: 'servers',   path: '/servers',   icon: I.Server,    label: 'Sunucular' },
+    { id: 'settings',  path: '/settings',  icon: I.Cog,       label: 'Ayarlar' },
+];
 
 export default function MainLayout() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const showBanner = useUpdateBanner();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { user, logout } = useAuth();
+    const status = useDefaultServerStatus();
+    const clock = useClock();
+    const [collapsed, setCollapsed] = useState(false);
+
+    const cpu = status.processStats?.cpuPercent ?? 0;
+    const ramMB = status.processStats?.memoryMB ?? 0;
+    const ramPct = Math.min(100, (ramMB / 8192) * 100);
+    const playerCount = status.playerCount ?? 0;
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-[#0F172A]">
-            <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div style={{
+            minHeight: '100vh',
+            background: A.bg,
+            color: A.text,
+            fontFamily: A.sans,
+            display: 'flex',
+            position: 'relative',
+        }}>
+            {showBanner && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
+                    background: A.panel, borderBottom: `1px solid var(--accent)`,
+                    padding: '8px 16px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontFamily: A.mono, fontSize: 12,
+                }}>
+                    <span style={{ color: A.text }}>
+                        <span style={{ color: 'var(--accent)' }}>● </span>
+                        Panel güncellendi veya sunucu yeniden başladı. Yenileyin.
+                    </span>
+                    <button onClick={() => window.location.reload()}
+                        style={{
+                            ...btnGhost, color: 'var(--accent)',
+                            borderColor: 'var(--accent)',
+                        }}>
+                        Yenile
+                    </button>
+                </div>
+            )}
 
-            {/* Main content */}
-            <div className="lg:ml-64 min-h-screen">
-                {/* Mobile header */}
-                <header className="lg:hidden sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setSidebarOpen(true)}
-                            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                        >
-                            <HiOutlineBars3 className="w-6 h-6" />
-                        </button>
-                        <h1 className="text-lg font-bold text-gray-900 dark:text-white">Sunucu Paneli</h1>
+            {/* ── Sidebar ── */}
+            <aside style={{
+                width: collapsed ? 56 : 208,
+                background: A.bgDeeper,
+                borderRight: `1px solid ${A.border}`,
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 'none',
+                position: 'sticky',
+                top: 0,
+                height: '100vh',
+                transition: 'width 200ms ease',
+            }}>
+                {/* Logo */}
+                <div style={{
+                    padding: collapsed ? '18px 0' : '18px 18px',
+                    borderBottom: `1px solid ${A.border}`,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    cursor: 'pointer',
+                }} onClick={() => setCollapsed(c => !c)}>
+                    <div style={{
+                        width: 22, height: 22, background: 'var(--accent)',
+                        position: 'relative', borderRadius: 1, flex: 'none',
+                    }}>
+                        <div style={{ position: 'absolute', inset: 4, background: A.bg }}/>
+                        <div style={{ position: 'absolute', inset: 8, background: 'var(--accent)' }}/>
                     </div>
-                </header>
+                    {!collapsed && (
+                        <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', color: A.text }}>HODO</div>
+                            <div style={{ fontSize: 9, color: A.faint, fontFamily: A.mono, letterSpacing: '0.08em' }}>SERVER PANEL</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Nav */}
+                <nav style={{
+                    padding: '10px 0', flex: 1,
+                    display: 'flex', flexDirection: 'column', gap: 1,
+                    overflowY: 'auto',
+                }}>
+                    {NAV.map(n => (
+                        <NavItem key={n.id}
+                            icon={n.icon}
+                            label={n.label}
+                            badge={n.badge}
+                            active={
+                                n.path === '/'
+                                    ? location.pathname === '/'
+                                    : location.pathname.startsWith(n.path)
+                            }
+                            onClick={() => navigate(n.path)}
+                            collapsed={collapsed}/>
+                    ))}
+                </nav>
+
+                {/* User footer */}
+                {!collapsed && user && (
+                    <div style={{ borderTop: `1px solid ${A.border}`, padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                                width: 24, height: 24, borderRadius: 1, background: 'var(--accent)',
+                                display: 'grid', placeItems: 'center', color: A.bg,
+                                fontFamily: A.mono, fontWeight: 700, fontSize: 11,
+                                flex: 'none',
+                            }}>{(user.username || '?').slice(0, 1).toUpperCase()}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: A.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.username}</div>
+                                <div style={{
+                                    fontSize: 9, color: user.role === 'admin' ? A.warn : A.faint,
+                                    fontFamily: A.mono, letterSpacing: '0.06em',
+                                }}>{(user.role || 'user').toUpperCase()}</div>
+                            </div>
+                            <I.Logout size={14} style={{ color: A.faint, cursor: 'pointer' }} onClick={logout}/>
+                        </div>
+                    </div>
+                )}
+            </aside>
+
+            {/* ── Main column ── */}
+            <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
+                paddingTop: showBanner ? 38 : 0,
+            }}>
+                {/* Top bar */}
+                <div style={{
+                    height: 56,
+                    borderBottom: `1px solid ${A.border}`,
+                    display: 'flex', alignItems: 'center',
+                    padding: '0 20px', gap: 16,
+                    background: A.bgTop,
+                    position: 'sticky',
+                    top: showBanner ? 38 : 0,
+                    zIndex: 10,
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Cap>{NAV.find(n =>
+                            n.path === '/' ? location.pathname === '/' : location.pathname.startsWith(n.path)
+                        )?.label || 'Panel'}</Cap>
+                        <span style={{ color: A.faintest }}>/</span>
+                        <span style={{ fontSize: 13, color: A.text, fontFamily: A.mono }}>hodo-panel</span>
+                    </div>
+
+                    <div style={{ flex: 1 }}/>
+
+                    {/* Live metrics */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                        <TickStat label="CPU" value={`${cpu.toFixed(0)}%`} ok={cpu < 70}/>
+                        <TickStat label="RAM" value={`${ramPct.toFixed(0)}%`} ok={ramPct < 80}/>
+                        <TickStat label="PL"  value={`${playerCount}/20`} ok/>
+                    </div>
+
+                    <div style={{ width: 1, height: 24, background: A.border }}/>
+
+                    <ServerStatus status={status.status}/>
+
+                    <div style={{ width: 1, height: 24, background: A.border }}/>
+
+                    <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                        {clock.toTimeString().slice(0, 8)}
+                    </div>
+                </div>
 
                 {/* Page content */}
-                <main className="p-4 md:p-6 lg:p-8">
-                    <Outlet />
+                <main style={{ flex: 1, padding: 16, minWidth: 0, overflow: 'visible' }}>
+                    <Outlet/>
                 </main>
             </div>
         </div>

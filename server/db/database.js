@@ -58,6 +58,107 @@ function initDatabase() {
       crash_count INTEGER DEFAULT 1,
       occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS permission_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT DEFAULT '#6366f1',
+      pages TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS timed_whitelist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mc_nick TEXT NOT NULL,
+      added_by TEXT,
+      expires_at INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS player_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      joined_at INTEGER NOT NULL,
+      left_at INTEGER,
+      duration_seconds INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      token_prefix TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT DEFAULT 'admin',
+      last_used_at INTEGER,
+      expires_at INTEGER,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ban_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      banned_by TEXT DEFAULT 'admin',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS command_macros (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      commands TEXT NOT NULL DEFAULT '[]',
+      color TEXT DEFAULT '#6366f1',
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS player_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      note TEXT NOT NULL,
+      color TEXT DEFAULT '#6366f1',
+      created_by TEXT DEFAULT 'admin',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user TEXT NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT DEFAULT '',
+      ip TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS server_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      config TEXT NOT NULL DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      subscription TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS servers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      port INTEGER DEFAULT 25565,
+      min_ram TEXT DEFAULT '2G',
+      max_ram TEXT DEFAULT '4G',
+      jvm_args TEXT DEFAULT '',
+      is_active INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle
@@ -95,6 +196,32 @@ function initDatabase() {
       database.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
       // İlk admin varsa onu admin yap
       database.exec("UPDATE users SET role = 'admin' WHERE id = 1");
+    }
+    if (!userColNames.includes('category_id')) {
+      database.exec("ALTER TABLE users ADD COLUMN category_id INTEGER NULL REFERENCES permission_categories(id)");
+    }
+    // servers tablosuna active_modpack_id kolonu ekle
+    const serverCols = database.prepare("PRAGMA table_info(servers)").all().map(c => c.name);
+    if (!serverCols.includes('active_modpack_id')) {
+      database.exec("ALTER TABLE servers ADD COLUMN active_modpack_id INTEGER NULL REFERENCES installed_modpacks(id)");
+    }
+
+    // backups tablosuna server_id kolonu ekle (hangi sunucuya ait)
+    const backupCols = database.prepare("PRAGMA table_info(backups)").all().map(c => c.name);
+    if (!backupCols.includes('server_id')) {
+      database.exec("ALTER TABLE backups ADD COLUMN server_id INTEGER NULL REFERENCES servers(id)");
+    }
+
+    // servers tablosu boşsa mevcut env ayarlarından ilk sunucuyu oluştur
+    const serverCount = database.prepare('SELECT COUNT(*) as c FROM servers').get();
+    if (serverCount.c === 0) {
+        const defaultPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        database.prepare(`INSERT INTO servers (name, path, port, min_ram, max_ram, jvm_args, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)`)
+            .run('Varsayılan Sunucu', defaultPath, 25565,
+                process.env.MINECRAFT_MIN_RAM || '2G',
+                process.env.MINECRAFT_MAX_RAM || '4G',
+                process.env.JVM_ARGS || '');
     }
   } catch (err) { console.error('Migration error:', err.message) }
 

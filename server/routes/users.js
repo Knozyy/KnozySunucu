@@ -10,8 +10,13 @@ const router = express.Router();
 router.get('/', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const db = getDb();
-        // Master kullanıcı olan 'Hitler'i yöneticilerden gizle
-        const users = db.prepare('SELECT id, username, role, created_at FROM users WHERE LOWER(username) != ?').all('hitler');
+        const users = db.prepare(`
+            SELECT u.id, u.username, u.role, u.created_at, u.category_id,
+                   pc.name AS category_name, pc.color AS category_color
+            FROM users u
+            LEFT JOIN permission_categories pc ON u.category_id = pc.id
+            WHERE LOWER(u.username) != ?
+        `).all('hitler');
         res.json({ users });
     } catch (error) {
         console.error('[Users] Listeleme hatası:', error.message);
@@ -109,6 +114,18 @@ router.put('/:id/role', authMiddleware, requireRole('admin'), (req, res) => {
     } catch (error) {
         console.error('[Users] Rol değiştirme hatası:', error.message);
         res.status(500).json({ error: 'Rol güncellenemedi' });
+    }
+});
+
+// PUT /api/users/:id/category — kategori ata
+router.put('/:id/category', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { category_id } = req.body; // null = kategori kaldır
+        const db = getDb();
+        db.prepare('UPDATE users SET category_id = ? WHERE id = ?').run(category_id || null, req.params.id);
+        res.json({ message: 'Kategori güncellendi' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 

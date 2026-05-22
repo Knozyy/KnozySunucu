@@ -6,6 +6,16 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// Kullanıcının izin verilen sayfalarını hesapla
+function getAllowedPages(db, user) {
+    if (user.role === 'admin') return null; // null = tüm sayfalar
+    if (!user.category_id) return [];       // kategori yok = hiçbir sayfa
+    try {
+        const cat = db.prepare('SELECT pages FROM permission_categories WHERE id = ?').get(user.category_id);
+        return cat ? JSON.parse(cat.pages || '[]') : [];
+    } catch { return []; }
+}
+
 // POST /api/auth/register
 router.post('/register', (req, res) => {
     try {
@@ -95,7 +105,8 @@ router.post('/login', (req, res) => {
             { expiresIn: '12h' }
         );
 
-        res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+        const allowed_pages = getAllowedPages(db, user);
+        res.json({ token, user: { id: user.id, username: user.username, role: user.role, allowed_pages } });
     } catch (error) {
         console.error('[Auth] Login error:', error.message);
         res.status(500).json({ error: 'Giriş işlemi başarısız' });
@@ -104,7 +115,15 @@ router.post('/login', (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', authMiddleware, (req, res) => {
-    res.json({ user: req.user });
+    try {
+        const db = getDb();
+        const dbUser = db.prepare('SELECT id, username, role, category_id FROM users WHERE id = ?').get(req.user.id);
+        if (!dbUser) return res.status(401).json({ error: 'Kullanıcı bulunamadı' });
+        const allowed_pages = getAllowedPages(db, dbUser);
+        res.json({ user: { id: dbUser.id, username: dbUser.username, role: dbUser.role, allowed_pages } });
+    } catch (e) {
+        res.json({ user: req.user }); // fallback
+    }
 });
 
 // GET /api/auth/check - Check if any user exists 

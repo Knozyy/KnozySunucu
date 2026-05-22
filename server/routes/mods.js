@@ -2,6 +2,7 @@ const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const ModManager = require('../services/modManager');
+const serverRegistry = require('../services/serverRegistry');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -11,45 +12,43 @@ const CF_API = 'https://api.curseforge.com';
 const CF_KEY = process.env.CURSEFORGE_API_KEY;
 
 /**
- * Aktif profil varsa onun yolunu, yoksa env'deki yolu döner
+ * Sunucu yolunu çöz (req.query.serverId veya body.serverId)
  */
-function getActiveServerPath() {
-    try {
-        const { getDb } = require('../db/database');
-        const db = getDb();
-        const active = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
-        if (active?.install_path && fs.existsSync(active.install_path)) {
-            return active.install_path;
-        }
-    } catch { /* fallback */ }
-    return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+function serverPathFor(req) {
+    const sid = req.query.serverId || req.body?.serverId || null;
+    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+    return inst?.getServerPath() || process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+}
+
+function mmFor(req) {
+    return new ModManager(serverPathFor(req));
 }
 
 router.get('/', authMiddleware, (req, res) => {
-    const mm = new ModManager();
+    const mm = mmFor(req);
     res.json({ mods: mm.listAll(), count: mm.count() });
 });
 
 router.post('/disable', authMiddleware, requireRole('admin'), (req, res) => {
-    try { const mm = new ModManager(); mm.disable(req.body.name); res.json({ message: 'Mod devre dışı bırakıldı' }); }
+    try { mmFor(req).disable(req.body.name); res.json({ message: 'Mod devre dışı bırakıldı' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 router.post('/enable', authMiddleware, requireRole('admin'), (req, res) => {
-    try { const mm = new ModManager(); mm.enable(req.body.name); res.json({ message: 'Mod aktif edildi' }); }
+    try { mmFor(req).enable(req.body.name); res.json({ message: 'Mod aktif edildi' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 router.delete('/:name', authMiddleware, requireRole('admin'), (req, res) => {
-    try { const mm = new ModManager(); mm.remove(req.params.name); res.json({ message: 'Mod silindi' }); }
+    try { mmFor(req).remove(req.params.name); res.json({ message: 'Mod silindi' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// Drag & Drop mod yükleme
+// ── Drag & Drop mod yükleme (per-server) ──────────────────────────────────────
 const multer = require('multer');
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const modsDir = path.join(process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server', 'mods');
+        const modsDir = path.join(serverPathFor(req), 'mods');
         if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
         cb(null, modsDir);
     },
@@ -76,7 +75,7 @@ router.post('/upload', authMiddleware, requireRole('admin'), upload.array('mods'
     res.json({ message: `${names.length} mod yüklendi`, files: names });
 });
 
-// CurseForge mod arama (q boşsa popüler modları döndür)
+// CurseForge mod arama
 router.get('/search', authMiddleware, async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
@@ -86,19 +85,17 @@ router.get('/search', authMiddleware, async (req, res) => {
         if (query) {
             url = `${CF_API}/v1/mods/search?gameId=432&classId=6&searchFilter=${encodeURIComponent(query)}&pageSize=20&sortField=2&sortOrder=desc`;
         } else {
-            // Popüler modlar (query olmadan)
             url = `${CF_API}/v1/mods/search?gameId=432&classId=6&pageSize=20&sortField=2&sortOrder=desc`;
         }
 
         const data = await cfRequest(url);
 
-        // Yüklü modları al (dosya isimleriyle karşılaştırma için)
-        const mm = new ModManager();
+        // Yüklü modları kontrol et (per-server)
+        const mm = mmFor(req);
         const installedMods = mm.listAll();
         const installedNames = installedMods.map(m => m.name.toLowerCase().replace(/\.jar$/, '').replace(/-[\d.]+.*$/, '').replace(/[_-]/g, ''));
 
         const mods = (data.data || []).map(m => {
-            // Yüklü kontrol: slug veya isim karşılaştırması
             const slug = (m.slug || '').toLowerCase();
             const modName = (m.name || '').toLowerCase().replace(/\s+/g, '');
             const isInstalled = installedNames.some(iName => {
@@ -127,26 +124,24 @@ router.get('/search', authMiddleware, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// CurseForge mod indirme
+// CurseForge mod indirme — body.serverId desteklenir
 router.post('/download', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const { modId, fileId, fileName } = req.body;
         if (!modId || !fileId) return res.status(400).json({ error: 'modId ve fileId gerekli' });
 
-        // İndirme URL'sini al
         const url = `${CF_API}/v1/mods/${modId}/files/${fileId}/download-url`;
         const data = await cfRequest(url);
         const downloadUrl = data.data;
         if (!downloadUrl) return res.status(400).json({ error: 'İndirme URL bulunamadı' });
 
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const serverPath = serverPathFor(req);
         const modsDir = path.join(serverPath, 'mods');
         if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
 
         const filePath = path.join(modsDir, fileName || `mod-${modId}-${fileId}.jar`);
 
-        // İndir
         await new Promise((resolve, reject) => {
             const download = (u) => {
                 https.get(u, { headers: { 'x-api-key': CF_KEY } }, (response) => {
@@ -167,23 +162,19 @@ router.post('/download', authMiddleware, requireRole('admin'), async (req, res) 
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// CurseForge'dan mod sürümlerini getir (mod adıyla arama)
 router.get('/versions/:modName', authMiddleware, async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const modName = req.params.modName.replace(/\.jar$/, '').replace(/-[\d.]+.*$/, '').replace(/[_-]/g, ' ');
 
-        // CurseForge'dan mod ara
         const searchUrl = `${CF_API}/v1/mods/search?gameId=432&classId=6&searchFilter=${encodeURIComponent(modName)}&pageSize=5&sortField=2&sortOrder=desc`;
         const searchData = await cfRequest(searchUrl);
         const mods = searchData.data || [];
 
         if (mods.length === 0) return res.json({ mod: null, files: [] });
 
-        // En iyi eşleşmeyi bul
         const bestMatch = mods[0];
 
-        // Dosyaları getir
         const filesUrl = `${CF_API}/v1/mods/${bestMatch.id}/files?pageSize=20`;
         const filesData = await cfRequest(filesUrl);
         const files = (filesData.data || []).map(f => ({
@@ -208,27 +199,24 @@ router.get('/versions/:modName', authMiddleware, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Mod güncelleme (eski sil, yeni indir)
+// Mod güncelleme — body.serverId desteklenir
 router.post('/update', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         if (!CF_KEY) return res.status(400).json({ error: 'CurseForge API key ayarlanmamış' });
         const { oldFileName, modId, fileId, newFileName } = req.body;
         if (!modId || !fileId) return res.status(400).json({ error: 'modId ve fileId gerekli' });
 
-        const serverPath = process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
+        const serverPath = serverPathFor(req);
         const modsDir = path.join(serverPath, 'mods');
 
-        // Eski dosyayı sil (varsa)
         if (oldFileName) {
             const oldPath = path.join(modsDir, oldFileName);
             if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-            // Disabled'da da kontrol et
             const disabledDir = path.join(serverPath, 'mods_disabled');
             const oldDisabledPath = path.join(disabledDir, oldFileName);
             if (fs.existsSync(oldDisabledPath)) fs.unlinkSync(oldDisabledPath);
         }
 
-        // Yeni sürümü indir
         const url = `${CF_API}/v1/mods/${modId}/files/${fileId}/download-url`;
         const data = await cfRequest(url);
         const downloadUrl = data.data;
@@ -257,10 +245,11 @@ router.post('/update', authMiddleware, requireRole('admin'), async (req, res) =>
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Config editorü - config/ klasöründeki dosyaları listele
+// ── Config editorü (per-server) ───────────────────────────────────────────────
+
 router.get('/configs', authMiddleware, (req, res) => {
     try {
-        const serverPath = getActiveServerPath();
+        const serverPath = serverPathFor(req);
         const configDir = path.join(serverPath, 'config');
         if (!fs.existsSync(configDir)) return res.json({ files: [] });
 
@@ -269,10 +258,9 @@ router.get('/configs', authMiddleware, (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Config dosyası okuma
 router.get('/configs/read', authMiddleware, (req, res) => {
     try {
-        const serverPath = getActiveServerPath();
+        const serverPath = serverPathFor(req);
         const filePath = path.join(serverPath, 'config', req.query.path || '');
         if (!filePath.startsWith(path.join(serverPath, 'config'))) return res.status(403).json({ error: 'Geçersiz yol' });
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Dosya bulunamadı' });
@@ -285,10 +273,9 @@ router.get('/configs/read', authMiddleware, (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Config dosyası yazma
 router.put('/configs/write', authMiddleware, requireRole('admin'), (req, res) => {
     try {
-        const serverPath = getActiveServerPath();
+        const serverPath = serverPathFor(req);
         const filePath = path.join(serverPath, 'config', req.body.path || '');
         if (!filePath.startsWith(path.join(serverPath, 'config'))) return res.status(403).json({ error: 'Geçersiz yol' });
 

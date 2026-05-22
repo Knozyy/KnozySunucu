@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Num, Dot, Pill, Input } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
@@ -10,44 +12,41 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [checkingAuth, setCheckingAuth] = useState(true);
     const [isSetupMode, setIsSetupMode] = useState(false);
+    const [clock, setClock] = useState(new Date());
 
     const { login, register, checkAdmin, user } = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (user) {
-            navigate('/');
-            return;
-        }
-
+        if (user) { navigate('/'); return; }
         const verifyDb = async () => {
             try {
                 const hasAdmin = await checkAdmin();
-                setIsSetupMode(!hasAdmin); // Admin yoksa setup modunu aç
+                setIsSetupMode(!hasAdmin);
             } catch (err) {
-                console.error("DB kontrol hatası:", err);
+                console.error('DB kontrol hatası:', err);
             } finally {
                 setCheckingAuth(false);
             }
         };
-
         verifyDb();
     }, [user, navigate, checkAdmin]);
+
+    useEffect(() => {
+        const id = setInterval(() => setClock(new Date()), 1000);
+        return () => clearInterval(id);
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setLoading(true);
-
         try {
             if (isSetupMode) {
-                // Kayıt ol
                 await register(username, password);
-                // Kayıt sonrası otomatik giriş yap
                 await login(username, password);
                 navigate('/');
             } else {
-                // Giriş yap
                 await login(username, password);
                 navigate('/');
             }
@@ -60,89 +59,186 @@ export default function LoginPage() {
 
     if (checkingAuth) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+            <div style={{
+                minHeight: '100vh', background: A.bg, color: A.text,
+                fontFamily: A.sans, display: 'grid', placeItems: 'center',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: A.faint }}>
+                    <div style={{
+                        width: 16, height: 16, border: `2px solid ${A.border}`,
+                        borderTopColor: 'var(--accent)', borderRadius: 99,
+                        animation: 'hodo-spin 0.8s linear infinite',
+                    }}/>
+                    <span style={{ fontFamily: A.mono, fontSize: 12 }}>Bağlanılıyor...</span>
+                </div>
+                <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
-            <div className="relative w-full max-w-md">
+        <div style={{
+            minHeight: '100vh', background: A.bg, color: A.text,
+            fontFamily: A.sans, display: 'grid', gridTemplateColumns: '1fr 480px',
+        }}>
+            {/* ── Sol: brand + sistem durumu ── */}
+            <div style={{
+                padding: '40px 56px', display: 'flex', flexDirection: 'column',
+                gap: 40, borderRight: `1px solid ${A.border}`,
+                background: A.bgDeeper,
+            }}>
                 {/* Logo */}
-                <div className="text-center mb-8 fade-in">
-                    <img src="/logo.png" alt="Logo" className="w-20 h-20 rounded-2xl shadow-lg mb-4 mx-auto object-cover" />
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">Sunucu Paneli</h1>
-                    <p className="text-gray-500">Minecraft Sunucu Yönetim Paneli</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                        width: 32, height: 32, background: 'var(--accent)',
+                        position: 'relative', borderRadius: 1, flex: 'none',
+                    }}>
+                        <div style={{ position: 'absolute', inset: 6, background: A.bg }}/>
+                        <div style={{ position: 'absolute', inset: 12, background: 'var(--accent)' }}/>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '0.02em' }}>HODO</div>
+                        <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, letterSpacing: '0.12em' }}>
+                            SERVER CONTROL PANEL
+                        </div>
+                    </div>
                 </div>
 
-                {/* Login/Setup form */}
-                <div className="glass-card p-8 fade-in" style={{ animationDelay: '0.1s' }}>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                        {isSetupMode ? 'İlk Kurulum: Admin Hesabı Oluştur' : 'Giriş Yap'}
+                {/* Hero */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 40 }}>
+                    <Cap style={{ fontSize: 11 }}>knozy / minecraft</Cap>
+                    <h1 style={{
+                        fontSize: 38, lineHeight: 1.15, fontWeight: 600,
+                        color: A.text, letterSpacing: '-0.02em', margin: 0,
+                    }}>
+                        Sunucunuzu<br/>
+                        <span style={{ color: 'var(--accent)' }}>tek panelden</span> yönetin.
+                    </h1>
+                    <p style={{
+                        fontSize: 14, color: A.dim, lineHeight: 1.6,
+                        maxWidth: 440, marginTop: 8,
+                    }}>
+                        Çoklu sunucu, canlı konsol, modpack yönetimi,
+                        zamanlanmış görevler, oyuncu izleme — hepsi tek bir
+                        koyu temalı, veri yoğun arayüzde.
+                    </p>
+                </div>
+
+                {/* Sistem durumu */}
+                <div style={{
+                    background: A.panel, border: `1px solid ${A.border}`,
+                    padding: 16, borderRadius: 4,
+                }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        marginBottom: 12, paddingBottom: 10,
+                        borderBottom: `1px solid ${A.border}`,
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Dot color={A.ok} size={6}/>
+                            <Cap>Sistem durumu</Cap>
+                        </div>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                            {clock.toTimeString().slice(0, 8)}
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <SysRow label="api" status="online" detail="200 OK · 12ms"/>
+                        <SysRow label="db" status="online" detail="sqlite · ready"/>
+                        <SysRow label="ws" status="online" detail="/ws/console · /ws/terminal"/>
+                        <SysRow label="ver" status="info"   detail="hodo-panel v2.0"/>
+                    </div>
+                </div>
+
+                <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, letterSpacing: '0.04em' }}>
+                    © 2026 hodo · knozy.dev
+                </div>
+            </div>
+
+            {/* ── Sağ: form ── */}
+            <div style={{
+                padding: '40px 48px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'center',
+            }}>
+                <div style={{ maxWidth: 360, width: '100%', margin: '0 auto' }}>
+                    <Cap style={{ fontSize: 10 }}>
+                        {isSetupMode ? 'İlk kurulum' : 'Giriş'}
+                    </Cap>
+                    <h2 style={{
+                        fontSize: 26, fontWeight: 600, color: A.text,
+                        marginTop: 6, marginBottom: 8, letterSpacing: '-0.01em',
+                    }}>
+                        {isSetupMode ? 'Admin oluştur' : 'Hoş geldin'}
                     </h2>
-                    {isSetupMode && (
-                        <p className="text-sm text-gray-500 mb-6">Sisteme erişim için ilk yönetici hesabını oluşturun.</p>
-                    )}
-                    {!isSetupMode && <div className="mb-6"></div>}
+                    <p style={{ fontSize: 13, color: A.dim, lineHeight: 1.5, marginBottom: 28 }}>
+                        {isSetupMode
+                            ? 'Sistemde henüz admin yok. İlk yöneticiyi şimdi oluştur.'
+                            : 'Sunucu paneline erişmek için kimlik bilgilerini gir.'}
+                    </p>
 
-                    {error && (
-                        <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">
-                            {error}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div>
-                            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                                Kullanıcı Adı
-                            </label>
-                            <input
-                                id="username"
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className="input-field"
-                                placeholder="admin"
-                                required
-                                autoFocus
-                            />
+                            <Cap style={{ marginBottom: 6, display: 'block' }}>Kullanıcı adı</Cap>
+                            <Input value={username} onChange={(e) => setUsername(e.target.value)}
+                                mono placeholder="knozy"/>
                         </div>
-
                         <div>
-                            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                                Şifre
-                            </label>
-                            <input
-                                id="password"
-                                type="password"
-                                value={password}
+                            <Cap style={{ marginBottom: 6, display: 'block' }}>Şifre</Cap>
+                            <Input type="password" value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="input-field"
-                                placeholder="••••••••"
-                                required
-                                minLength={5}
-                            />
+                                mono placeholder="••••••••"/>
                         </div>
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="btn-primary w-full justify-center py-3 text-base mt-2"
-                        >
-                            {loading ? (
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            ) : (
-                                isSetupMode ? 'Hesap Oluştur ve Başla' : 'Giriş Yap'
-                            )}
+                        {error && (
+                            <div style={{
+                                background: 'rgba(248,113,113,0.06)',
+                                border: `1px solid rgba(248,113,113,0.2)`,
+                                color: A.err, fontFamily: A.mono, fontSize: 11,
+                                padding: '8px 12px', borderRadius: 2,
+                                display: 'flex', alignItems: 'center', gap: 8,
+                            }}>
+                                <I.Alert size={12}/>
+                                {error}
+                            </div>
+                        )}
+
+                        <button type="submit" disabled={loading || !username || !password}
+                            style={{
+                                ...btnPrimary, padding: '10px 16px', fontSize: 12,
+                                marginTop: 6, opacity: (loading || !username || !password) ? 0.5 : 1,
+                                cursor: (loading || !username || !password) ? 'not-allowed' : 'pointer',
+                            }}>
+                            {loading
+                                ? (isSetupMode ? 'OLUŞTURULUYOR...' : 'GİRİŞ YAPILIYOR...')
+                                : (isSetupMode ? 'ADMIN OLUŞTUR' : 'GİRİŞ YAP')}
                         </button>
                     </form>
-                </div>
 
-                <p className="text-center text-gray-400 text-sm mt-6">
-                    {isSetupMode ? 'Bu hesap tüm panel yetkilerine sahip olacaktır.' : 'Panel erişimi yetkilendirilmiş kullanıcılara açıktır.'}
-                </p>
+                    <div style={{
+                        marginTop: 32, paddingTop: 20,
+                        borderTop: `1px solid ${A.border}`,
+                        fontSize: 11, color: A.faint, fontFamily: A.mono, lineHeight: 1.6,
+                    }}>
+                        <div>
+                            {isSetupMode ? '✓ ' : '↑ '}
+                            {isSetupMode ? 'Bu kullanıcı süperadmin olarak atanacak.' : 'Şifrenizi unuttuysanız admin ile iletişime geçin.'}
+                        </div>
+                    </div>
+                </div>
             </div>
+        </div>
+    );
+}
+
+function SysRow({ label, status, detail }) {
+    const c = status === 'online' ? A.ok : status === 'error' ? A.err : A.faint;
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, fontFamily: A.mono }}>
+            <Dot color={c} size={5}/>
+            <span style={{ color: A.dim, letterSpacing: '0.06em', minWidth: 32 }}>{label.toUpperCase()}</span>
+            <span style={{ color: c, letterSpacing: '0.04em' }}>{status.toUpperCase()}</span>
+            <span style={{ flex: 1 }}/>
+            <span style={{ color: A.faint }}>{detail}</span>
         </div>
     );
 }

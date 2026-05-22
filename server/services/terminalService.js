@@ -1,5 +1,6 @@
 const { execSync } = require('child_process');
 const os = require('os');
+const crypto = require('crypto');
 
 let pty;
 try {
@@ -10,84 +11,144 @@ try {
 }
 
 /**
- * Tek PTY oturumu + screen yönetimi
- * Tüm WebSocket istemcileri aynı PTY'ye bağlanır
+ * Session tabanlı terminal yönetimi
+ * Her WebSocket bağlantısı kendi izole PTY'sine (bash) sahiptir.
+ * Sekmeler / sayfalar birbirini etkilemez.
  */
 class TerminalService {
     constructor() {
-        this.ptyProcess = null;
-        this.outputBuffer = [];
-        this.clients = new Set();
-        if (pty) this._spawn();
+        this.sessions = new Map(); // sessionId → { pty, ws, buffer }
     }
 
-    _spawn() {
+    isAvailable() { return !!pty; }
+
+    /**
+     * Yeni izole PTY oturumu oluştur ve bir WebSocket'e bağla.
+     * @returns {string|null} sessionId veya pty yoksa null
+     */
+    createSession(ws) {
+        if (!pty) {
+            try {
+                ws.send(JSON.stringify({
+                    type: 'output',
+                    data: '\r\n\x1b[31mTerminal kullanılamıyor: node-pty yüklü değil.\x1b[0m\r\n',
+                }));
+            } catch { /* ignore */ }
+            return null;
+        }
+
+        const sessionId = crypto.randomBytes(8).toString('hex');
         const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+
+        let ptyProcess;
         try {
-            this.ptyProcess = pty.spawn(shell, [], {
+            ptyProcess = pty.spawn(shell, [], {
                 name: 'xterm-256color',
-                cols: 220,
-                rows: 50,
+                cols: 120,
+                rows: 30,
                 cwd: os.homedir(),
                 env: { ...process.env, TERM: 'xterm-256color' },
             });
-
-            this.ptyProcess.onData(data => {
-                this.outputBuffer.push(data);
-                if (this.outputBuffer.length > 2000) this.outputBuffer.shift();
-                for (const ws of this.clients) {
-                    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'output', data }));
-                }
-            });
-
-            this.ptyProcess.onExit(() => {
-                this.ptyProcess = null;
-                setTimeout(() => {
-                    if (pty) this._spawn();
-                }, 1500);
-            });
         } catch (err) {
             console.error('[Terminal] PTY başlatılamadı:', err.message);
+            try {
+                ws.send(JSON.stringify({
+                    type: 'output',
+                    data: `\r\n\x1b[31mPTY başlatılamadı: ${err.message}\x1b[0m\r\n`,
+                }));
+            } catch { /* ignore */ }
+            return null;
+        }
+
+        const session = {
+            id: sessionId,
+            pty: ptyProcess,
+            ws,
+            buffer: [],
+            disposed: false,
+        };
+
+        ptyProcess.onData(data => {
+            if (session.disposed) return;
+            // Yalnızca son ekran replay'i için küçük bir buffer tut
+            session.buffer.push(data);
+            if (session.buffer.length > 500) session.buffer.shift();
+            if (session.ws.readyState === 1) {
+                try { session.ws.send(JSON.stringify({ type: 'output', data })); } catch { /* */ }
+            }
+        });
+
+        ptyProcess.onExit(() => {
+            if (session.disposed) return;
+            session.disposed = true;
+            if (session.ws.readyState === 1) {
+                try {
+                    session.ws.send(JSON.stringify({
+                        type: 'output',
+                        data: '\r\n\x1b[33m[oturum sonlandı]\x1b[0m\r\n',
+                    }));
+                } catch { /* */ }
+            }
+            this.sessions.delete(sessionId);
+        });
+
+        this.sessions.set(sessionId, session);
+        return sessionId;
+    }
+
+    /**
+     * Oturumu kapat — PTY'yi öldür, listeden sil
+     */
+    destroySession(sessionId) {
+        const s = this.sessions.get(sessionId);
+        if (!s) return;
+        s.disposed = true;
+        try { s.pty.kill(); } catch { /* ignore */ }
+        this.sessions.delete(sessionId);
+    }
+
+    write(sessionId, data) {
+        const s = this.sessions.get(sessionId);
+        if (s && !s.disposed) {
+            try { s.pty.write(data); } catch { /* ignore */ }
         }
     }
 
-    isAvailable() {
-        return !!pty && !!this.ptyProcess;
-    }
-
-    addClient(ws) {
-        this.clients.add(ws);
-        if (!this.isAvailable()) {
-            ws.send(JSON.stringify({ type: 'output', data: '\r\n\x1b[31mTerminal kullanılamıyor: node-pty yüklü değil.\x1b[0m\r\n' }));
-            return;
-        }
-        // Son çıktıyı gönder (bağlantı yenilemede ekranı korur)
-        const recent = this.outputBuffer.slice(-300).join('');
-        if (recent) ws.send(JSON.stringify({ type: 'output', data: recent }));
-    }
-
-    removeClient(ws) {
-        this.clients.delete(ws);
-    }
-
-    write(data) {
-        if (this.ptyProcess) this.ptyProcess.write(data);
-    }
-
-    resize(cols, rows) {
-        if (this.ptyProcess) {
-            try { this.ptyProcess.resize(Math.max(cols, 10), Math.max(rows, 5)); } catch { /* ignore */ }
+    resize(sessionId, cols, rows) {
+        const s = this.sessions.get(sessionId);
+        if (s && !s.disposed) {
+            try { s.pty.resize(Math.max(cols, 10), Math.max(rows, 5)); } catch { /* ignore */ }
         }
     }
 
-    // ─── Screen Yönetimi ──────────────────────────────────────────────────────
+    /**
+     * Belirli oturumun PTY'sine "screen -D -r <name>" yaz → o oturumdan screen'e attach.
+     * Sadece o sekmeyi etkiler, diğer sekmeleri etkilemez.
+     */
+    attachScreenInSession(sessionId, name) {
+        const s = this.sessions.get(sessionId);
+        if (s && !s.disposed) {
+            try { s.pty.write(`screen -D -r ${name}\r`); } catch { /* ignore */ }
+        }
+    }
+
+    /**
+     * Belirli oturumun PTY'sinde komut çalıştır (FTB / modpack kurulum için)
+     */
+    runInSession(sessionId, command) {
+        const s = this.sessions.get(sessionId);
+        if (s && !s.disposed) {
+            try { s.pty.write(`${command}\r`); } catch { /* ignore */ }
+        }
+    }
+
+    // ─── Screen yönetimi (filesystem seviyesi — oturumdan bağımsız) ───────────
 
     listScreens() {
         try {
             const out = execSync('screen -ls 2>&1', { timeout: 3000 }).toString();
             const screens = [];
             for (const line of out.split('\n')) {
-                // "	12345.minecraft	(05/17/2026 16:42:00)	(Detached)"
                 const match = line.match(/^\s+(\d+)\.(\S+)\s+\(([^)]+)\)\s+\(([^)]+)\)/);
                 if (match) {
                     screens.push({
@@ -109,35 +170,16 @@ class TerminalService {
         execSync(`screen -dmS ${name}`, { timeout: 5000 });
     }
 
-    attachScreen(name) {
-        // Mevcut bash PTY'ye screen attach komutunu yaz.
-        // PTY öldürmek yerine bash içinden screen'e giriyoruz:
-        // bash zaten çalışıyor → "screen -D -r <name>" komutu → screen
-        // Ctrl+A D ile screen'den çıkınca bash prompt'una geri döner,
-        // bir sonraki attachScreen() çağrısında tekrar screen'e girilebilir.
-        if (this.ptyProcess) {
-            this.ptyProcess.write(`screen -D -r ${name}\r`);
-        }
-    }
-
     killScreen(name) {
         execSync(`screen -S ${name} -X quit 2>&1 || true`, { timeout: 5000 });
     }
 
     /**
-     * Screen içindeki prosese doğrudan komut gönder (bağlı olmaya gerek yok)
-     * screen -S <name> -X stuff "<komut>\r"
+     * Screen içindeki prosese doğrudan komut yaz (attach gerekmez)
      */
     sendToScreen(name, command) {
-        // Tek tırnak içindeki tek tırnakları escape et
         const escaped = command.replace(/'/g, "'\\''");
         execSync(`screen -S ${name} -X stuff '${escaped}\r'`, { timeout: 5000 });
-    }
-
-    runInTerminal(command) {
-        if (this.ptyProcess) {
-            this.ptyProcess.write(`${command}\r`);
-        }
     }
 }
 

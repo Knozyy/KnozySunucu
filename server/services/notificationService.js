@@ -49,26 +49,36 @@ class NotificationService {
     }
 
     async send(type, message, extra = {}) {
+        // Discord webhook (Discord etkinse)
         const db = getDb();
         const setting = db.prepare('SELECT * FROM notification_settings WHERE type = ?').get('discord');
-        if (!setting || !setting.enabled) return;
+        if (setting?.enabled) {
+            const config = JSON.parse(setting.config || '{}');
+            if (config.webhookUrl) {
+                const embed = {
+                    title: this._getTitle(type),
+                    description: message,
+                    color: this._getColor(type),
+                    timestamp: new Date().toISOString(),
+                    footer: { text: 'Sunucu Paneli' },
+                    ...extra,
+                };
+                try {
+                    await this._sendDiscord(config.webhookUrl, { embeds: [embed] });
+                } catch (err) {
+                    console.error('[Notification] Discord error:', err.message);
+                }
+            }
+        }
 
-        const config = JSON.parse(setting.config || '{}');
-        if (!config.webhookUrl) return;
-
-        const embed = {
-            title: this._getTitle(type),
-            description: message,
-            color: this._getColor(type),
-            timestamp: new Date().toISOString(),
-            footer: { text: 'Sunucu Paneli' },
-            ...extra,
-        };
-
-        try {
-            await this._sendDiscord(config.webhookUrl, { embeds: [embed] });
-        } catch (err) {
-            console.error('[Notification] Discord error:', err.message);
+        // Push bildirimi — kritik event'ler için (Discord ayarından bağımsız)
+        if (['server_crash', 'disk_warning'].includes(type)) {
+            try {
+                const pushService = require('./pushService');
+                pushService.sendToAllUsers(type, message).catch(err =>
+                    console.error('[Notification] Push error:', err.message)
+                );
+            } catch { /* pushService henüz yüklü değilse yoksay */ }
         }
     }
 

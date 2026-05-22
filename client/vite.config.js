@@ -10,6 +10,19 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
+          'vendor-query':    ['@tanstack/react-query'],
+          'vendor-codemirror': ['@uiw/react-codemirror', '@codemirror/lang-json', '@codemirror/lang-yaml'],
+          'vendor-icons':    ['react-icons/hi2'],
+          'vendor-ui':       ['react-hot-toast', 'recharts'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

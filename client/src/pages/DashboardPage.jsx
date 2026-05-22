@@ -1,518 +1,238 @@
+// client/src/pages/DashboardPage.jsx
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { useAuth } from '@/context/AuthContext';
-import { useI18n } from '@/context/I18nContext';
-import { formatBytes, formatUptime } from '@/utils/formatters';
-import {
-    HiOutlineCpuChip, HiOutlineCircleStack, HiOutlineServer,
-    HiOutlineClock, HiOutlineSignal, HiOutlineUsers,
-    HiOutlineArrowDownTray, HiOutlineExclamationTriangle,
-    HiOutlinePlay, HiOutlineStop, HiOutlineArrowPath,
-    HiOutlineWrenchScrewdriver, HiOutlinePuzzlePiece,
-    HiOutlineXMark,
-} from 'react-icons/hi2';
-import {
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts';
-import { useState, useEffect, useRef } from 'react';
+import { A, btnGhost, btnPrimary } from '@/hodo/tokens';
+import { Dot, Pill, Card } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
+import { WidgetGrid } from '@/components/Dashboard/WidgetGrid';
+import { useWidgetLayout } from '@/components/Dashboard/useWidgetLayout';
+import { WIDGET_LABELS } from '@/components/Dashboard/widgetMap';
 
-function CircularProgress({ value, size = 120, strokeWidth = 10, color, label, subLabel }) {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (Math.min(value, 100) / 100) * circumference;
-    const getColor = () => {
-        if (color) return color;
-        if (value > 80) return '#EF4444';
-        if (value > 60) return '#F59E0B';
-        return '#22C55E';
-    };
+// ─── Live series (CPU/RAM 60 örnek halka tampon) ─────────────────────────
+function useLiveSeries() {
+    const { data: serversData } = useQuery({
+        queryKey: ['servers-status-dash'],
+        queryFn: () => api.get('/servers/status-all').then(r => r.data),
+        refetchInterval: 3000,
+    });
+    const servers = serversData?.servers || [];
+
+    const [series, setSeries] = useState(
+        Array(60).fill(null).map(() => ({ cpu: 0, ram: 0 }))
+    );
+
+    useEffect(() => {
+        const def = servers[0];
+        if (!def) return;
+        const cpu = def.processStats?.cpuPercent || 0;
+        const ramMB = def.processStats?.memoryMB || 0;
+        const maxRamGB = parseRamGBLocal(def.max_ram) || 8;
+        const ram = Math.min(100, (ramMB / (maxRamGB * 1024)) * 100);
+        setSeries(prev => [...prev.slice(1), { cpu, ram }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serversData]);
+
+    return { servers, series };
+}
+
+function parseRamGBLocal(str) {
+    if (!str) return 0;
+    const m = String(str).match(/^(\d+)([GgMm])$/);
+    if (!m) return 0;
+    return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+}
+
+// ─── Sunucu sekmesi ──────────────────────────────────────────────────────
+function ServerTab({ server, active, onClick, index }) {
+    const isRunning = server.status === 'running';
+    const isStarting = server.status === 'starting';
     return (
-        <div className="flex flex-col items-center">
-            <div className="relative" style={{ width: size, height: size }}>
-                <svg width={size} height={size} className="transform -rotate-90">
-                    <circle cx={size / 2} cy={size / 2} r={radius} stroke="#E5E7EB" strokeWidth={strokeWidth} fill="none" />
-                    <circle cx={size / 2} cy={size / 2} r={radius} stroke={getColor()} strokeWidth={strokeWidth} fill="none"
-                        strokeDasharray={circumference} strokeDashoffset={offset}
-                        strokeLinecap="round" className="transition-all duration-700 ease-out" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-bold text-gray-900">{value.toFixed(0)}%</span>
-                </div>
-            </div>
-            <span className="text-sm font-medium text-gray-700 mt-2">{label}</span>
-            {subLabel && <span className="text-xs text-gray-400">{subLabel}</span>}
+        <button onClick={onClick} className="hodo-navitem"
+            style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 16px', cursor: 'pointer',
+                background: active ? A.panel : 'transparent',
+                border: 'none', borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                color: active ? A.text : A.dim, fontSize: 12, fontWeight: 500,
+                fontFamily: A.sans, whiteSpace: 'nowrap',
+            }}>
+            <Dot color={isRunning ? A.ok : isStarting ? A.warn : A.faint} size={6}/>
+            <span style={{ color: active ? A.text : A.dim }}>Sunucu {index + 1}</span>
+            <span style={{ color: A.faint, fontSize: 11, fontFamily: A.mono }}>— {server.name}</span>
+        </button>
+    );
+}
+
+// ─── Sunucu kontrol butonları ────────────────────────────────────────────
+function ServerControls({ server, onStatusChange }) {
+    const isRunning = server.status === 'running';
+    const isStarting = server.status === 'starting';
+    const isStopping = server.status === 'stopping';
+
+    const startM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/start`),
+        onSuccess: () => { toast.success('Başlatılıyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+    const stopM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/stop`),
+        onSuccess: () => { toast.success('Durduruluyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+    const restartM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/restart`),
+        onSuccess: () => { toast.success('Yeniden başlatılıyor...'); onStatusChange(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    return (
+        <div style={{ display: 'flex', gap: 8 }}>
+            {!isRunning && !isStarting && (
+                <button onClick={() => startM.mutate()} disabled={startM.isPending}
+                    style={{ ...btnPrimary, opacity: startM.isPending ? 0.5 : 1 }}>
+                    <I.Play size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>BAŞLAT
+                </button>
+            )}
+            {(isRunning || isStarting) && (
+                <>
+                    <button onClick={() => stopM.mutate()} disabled={stopM.isPending} style={btnGhost}>
+                        <I.Stop size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>DURDUR
+                    </button>
+                    <button onClick={() => restartM.mutate()} disabled={restartM.isPending} style={btnGhost}>
+                        <I.Restart size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİDEN
+                    </button>
+                </>
+            )}
+            {isStopping && <Pill color={A.warn} bg="rgba(251,191,36,0.10)">DURDURULUYOR</Pill>}
         </div>
     );
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    return (
-        <div className="glass-card p-3 text-sm">
-            <p className="text-gray-400 mb-1">{label}</p>
-            {payload.map((entry, index) => (
-                <p key={index} style={{ color: entry.color }} className="font-medium">
-                    {entry.name}: {entry.value.toFixed(1)}%
-                </p>
-            ))}
-        </div>
-    );
-};
-
+// ─── Ana Dashboard ───────────────────────────────────────────────────────
 export default function DashboardPage() {
-    const [usageHistory, setUsageHistory] = useState([]);
-    const historyRef = useRef([]);
-    const queryClient = useQueryClient();
-    const { user, token } = useAuth();
-    const { t } = useI18n();
-    const [crashAlert, setCrashAlert] = useState(null); // { code, timestamp, autoRestarted, crashCount }
-
-    // WebSocket — crash eventi dinle
-    useEffect(() => {
-        if (!token) return;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/console?token=${token}`);
-        ws.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'crash') {
-                    setCrashAlert(msg.data);
-                    // Status sorgusunu yenile ki dashboard güncellenen durumu göstersin
-                    queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
-                }
-            } catch { /* ignore */ }
-        };
-        return () => ws.close();
-    }, [token, queryClient]);
-
-    const { data: systemInfo, isLoading: infoLoading } = useQuery({
-        queryKey: ['systemInfo'],
-        queryFn: () => api.get('/system/info').then(r => r.data),
-        staleTime: 60000,
-    });
-
-    const { data: usage } = useQuery({
-        queryKey: ['systemUsage'],
-        queryFn: () => api.get('/system/usage').then(r => r.data),
-        refetchInterval: 3000,
-    });
-
-    const { data: mcStatus } = useQuery({
-        queryKey: ['minecraftStatus'],
-        queryFn: () => api.get('/minecraft/status').then(r => r.data),
-        refetchInterval: 3000,
-    });
+    const qc = useQueryClient();
+    const { servers, series } = useLiveSeries();
+    const [selectedServerId, setSelectedServerId] = useState(null);
+    const {
+        layout, setLayout,
+        editMode, toggleEditMode,
+        loading,
+        save, cancel, reset,
+        deleteWidget, addWidget,
+        hiddenWidgets,
+    } = useWidgetLayout();
 
     const { data: installedData } = useQuery({
-        queryKey: ['modpackInstalled'],
+        queryKey: ['modpacks-installed'],
         queryFn: () => api.get('/modpacks/installed').then(r => r.data),
     });
 
-    const { data: activeProfileData } = useQuery({
-        queryKey: ['activeProfile'],
-        queryFn: () => api.get('/modpacks/active').then(r => r.data),
-    });
-
-    const { data: updateInfo } = useQuery({
-        queryKey: ['modpackUpdate'],
-        queryFn: () => api.post('/modpacks/check-update', {}).then(r => r.data),
-        refetchInterval: 300000,
-        retry: false,
-    });
-
-    const startMutation = useMutation({
-        mutationFn: () => api.post('/minecraft/start'),
-        onSuccess: () => { toast.success('Sunucu başlatılıyor...'); queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Başlatılamadı'),
-    });
-    const stopMutation = useMutation({
-        mutationFn: () => api.post('/minecraft/stop'),
-        onSuccess: () => { toast.success('Sunucu durduruluyor...'); queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Durdurulamadı'),
-    });
-    const restartMutation = useMutation({
-        mutationFn: () => api.post('/minecraft/restart'),
-        onSuccess: () => { toast.success('Yeniden başlatılıyor...'); queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Yeniden başlatılamadı'),
-    });
-    const repairMutation = useMutation({
-        mutationFn: () => api.post('/minecraft/repair'),
-        onSuccess: (res) => { toast.success(res.data.message); queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] }); },
-        onError: (err) => toast.error(err.response?.data?.error || 'Onarım başarısız'),
-    });
-    const activateMutation = useMutation({
-        mutationFn: (id) => api.post(`/modpacks/activate/${id}`),
-        onSuccess: (res) => {
-            toast.success(res.data.message);
-            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
-            queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
-            queryClient.invalidateQueries({ queryKey: ['minecraftStatus'] });
-        },
-        onError: (err) => toast.error(err.response?.data?.error || 'Profil değişimi başarısız'),
-    });
+    const installedModpacks = useMemo(() => {
+        const list = installedData?.modpacks || [];
+        return list.map(mp => {
+            const usedBy = servers.find(s => s.active_modpack_id === mp.id);
+            return { ...mp, _usedByServerId: usedBy?.id || null, _usedByName: usedBy?.name || null };
+        });
+    }, [installedData, servers]);
 
     useEffect(() => {
-        if (!usage) return;
-        const now = new Date();
-        const timeLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-        const entry = { time: timeLabel, cpu: usage.cpu?.currentLoad || 0, ram: usage.memory?.usagePercent || 0 };
-        historyRef.current = [...historyRef.current.slice(-29), entry];
-        setUsageHistory([...historyRef.current]);
-    }, [usage]);
+        if (!selectedServerId && servers.length > 0) setSelectedServerId(servers[0].id);
+    }, [servers, selectedServerId]);
 
-    const cpuPercent = usage?.cpu?.currentLoad || 0;
-    const ramPercent = usage?.memory?.usagePercent || 0;
-    const mainDisk = usage?.disk?.[0];
-    const diskPercent = mainDisk?.usePercent || 0;
+    const selectedServer = servers.find(s => s.id === selectedServerId) || servers[0];
+    const onStatusChange = () => qc.invalidateQueries({ queryKey: ['servers-status-dash'] });
 
-    const isRunning = mcStatus?.status === 'running';
-    const isStarting = mcStatus?.status === 'starting';
-    const isStopping = mcStatus?.status === 'stopping';
-    const isStopped = !isRunning && !isStarting && !isStopping;
-    const isBusy = isStarting || isStopping || startMutation.isPending || stopMutation.isPending || restartMutation.isPending;
-    const serverCpu = mcStatus?.processStats?.cpuPercent || 0;
-    const serverRamMB = mcStatus?.processStats?.memoryMB || 0;
-    const totalCores = systemInfo?.cpu?.cores || 1;
-    const normalizedServerCpu = Math.min(100, +(serverCpu / totalCores).toFixed(1));
+    if (!servers.length) {
+        return (
+            <Card title="Sunucu yok" padding={24}>
+                <div style={{ color: A.faint, fontSize: 13, fontFamily: A.mono, lineHeight: 1.6 }}>
+                    Henüz tanımlı bir sunucu yok.{' '}
+                    <a href="/servers" style={{ color: 'var(--accent)' }}>Sunucular sayfasından</a> ilk sunucuyu ekleyin.
+                </div>
+            </Card>
+        );
+    }
+
+    if (!selectedServer) return null;
 
     return (
-        <div className="space-y-6">
-            <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h1>
-                <p className="text-gray-500">{t('dashboard.subtitle')}</p>
-            </div>
-
-            {/* ── Çöküm Uyarısı ── */}
-            {crashAlert && (
-                <div className="glass-card p-4 fade-in border-l-4 border-red-500 bg-red-50/60">
-                    <div className="flex items-center gap-3">
-                        <HiOutlineExclamationTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900">
-                                {crashAlert.autoRestarted ? '⚡ Sunucu çöktü ve otomatik olarak yeniden başlatıldı' : '🔴 Sunucu çöktü — manuel başlatma gerekiyor'}
-                            </p>
-                            <p className="text-sm text-gray-600 mt-0.5">
-                                {new Date(crashAlert.timestamp).toLocaleString('tr-TR')} · Exit code: {crashAlert.code} · Çöküm #{crashAlert.crashCount}
-                                {crashAlert.reason === 'max_crashes' && <span className="ml-2 text-red-600 font-medium">— Maksimum çöküm limitine ulaşıldı, otomatik başlatma durduruldu</span>}
-                            </p>
-                        </div>
-                        <button onClick={() => setCrashAlert(null)} className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0">
-                            <HiOutlineXMark className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Güncelleme Uyarısı */}
-            {updateInfo?.hasUpdate && (
-                <div className="glass-card p-4 fade-in border-l-4 border-amber-500 bg-amber-50/50">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <HiOutlineExclamationTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
-                            <div>
-                                <p className="font-semibold text-gray-900">Yeni Güncelleme Mevcut!</p>
-                                <p className="text-sm text-gray-600">
-                                    {updateInfo.currentVersion} → <span className="font-medium text-amber-700">{updateInfo.latestVersion}</span>
-                                </p>
-                            </div>
-                        </div>
-                        <a href="/modpacks" className="btn-primary text-sm flex items-center gap-2 flex-shrink-0">
-                            <HiOutlineArrowDownTray className="w-4 h-4" /> Güncelle
-                        </a>
-                    </div>
-                </div>
-            )}
-
-            {/* ============================================================ */}
-            {/* SUNUCU DURUMU — Ana Kontrol Kartı */}
-            {/* ============================================================ */}
-            <div className={`glass-card p-6 fade-in relative overflow-hidden ${isRunning ? 'ring-2 ring-green-400/30' : ''}`}>
-                {isRunning && (
-                    <div className="absolute top-4 right-4 w-3 h-3">
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
-                    </div>
-                )}
-
-                <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-                    {/* Sol: Durum + Profil + Butonlar */}
-                    <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isRunning ? 'bg-green-100' : isStarting ? 'bg-amber-100' : 'bg-gray-100'}`}>
-                                <HiOutlineServer className={`w-7 h-7 ${isRunning ? 'text-green-600' : isStarting ? 'text-amber-600' : 'text-gray-400'}`} />
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <h2 className="text-xl font-bold text-gray-900">Minecraft Sunucusu</h2>
-                                    {/* Profil Seçici */}
-                                    {installedData?.modpacks?.length > 0 && (
-                                        <div className="relative inline-flex items-center">
-                                            <HiOutlinePuzzlePiece className="absolute left-3 text-gray-400 w-4 h-4 pointer-events-none" />
-                                            <select
-                                                className="bg-gray-50 border border-gray-200 text-gray-900 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-9 pr-8 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
-                                                value={activeProfileData?.profile?.id || ''}
-                                                onChange={(e) => {
-                                                    const profileId = e.target.value;
-                                                    if (!profileId) return;
-                                                    if (isRunning && !window.confirm('Açık olan sunucu kapatılıp yeni profil ile başlatılacak. Emin misiniz?')) return;
-                                                    activateMutation.mutate(profileId);
-                                                }}
-                                                disabled={user?.role !== 'admin' || activateMutation.isPending || isStarting || isStopping}
-                                            >
-                                                <option value="" disabled>Profil Seçin</option>
-                                                {installedData.modpacks.map(mp => (
-                                                    <option key={mp.id} value={mp.id}>{mp.name} {mp.version}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1.5">
-                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${isRunning ? 'bg-green-100 text-green-700' :
-                                        isStarting ? 'bg-amber-100 text-amber-700 animate-pulse' :
-                                            isStopping ? 'bg-red-100 text-red-700 animate-pulse' :
-                                                'bg-gray-100 text-gray-500'
-                                        }`}>
-                                        <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500' : isStarting ? 'bg-amber-500' : isStopping ? 'bg-red-500' : 'bg-gray-400'}`} />
-                                        {isRunning ? 'Çalışıyor' : isStarting ? 'Başlatılıyor...' : isStopping ? 'Durduruluyor...' : 'Kapalı'}
-                                    </span>
-                                    {isRunning && mcStatus?.pid && (
-                                        <span className="text-xs text-gray-400">PID: {mcStatus.pid}</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Kontrol Butonları */}
-                        <div className="flex gap-2 flex-wrap mt-4">
-                            {isStopped ? (
-                                <button onClick={() => startMutation.mutate()} disabled={isBusy}
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-green-600 hover:bg-green-700 active:scale-95 disabled:opacity-50">
-                                    <HiOutlinePlay className="w-5 h-5" />
-                                    {startMutation.isPending ? 'Başlatılıyor...' : 'Sunucuyu Başlat'}
-                                </button>
-                            ) : (
-                                <>
-                                    <button onClick={() => stopMutation.mutate()} disabled={!isRunning || isBusy}
-                                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all bg-red-500 hover:bg-red-600 active:scale-95 disabled:opacity-50">
-                                        <HiOutlineStop className="w-4 h-4" />
-                                        {stopMutation.isPending ? 'Durduruluyor...' : 'Durdur'}
-                                    </button>
-                                    <button onClick={() => restartMutation.mutate()} disabled={isBusy}
-                                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 disabled:opacity-50">
-                                        <HiOutlineArrowPath className="w-4 h-4" />
-                                        {restartMutation.isPending ? 'Başlatılıyor...' : 'Yeniden Başlat'}
-                                    </button>
-                                </>
-                            )}
-                            <button
-                                onClick={() => { if (confirm('Sunucu kurulum dosyaları silinecek ve tekrar başlatılınca yeniden indirilecek. Emin misiniz?')) repairMutation.mutate(); }}
-                                disabled={user?.role !== 'admin' || isRunning || isBusy || repairMutation.isPending}
-                                title={user?.role !== 'admin' ? "Bu işlem için admin yetkisi gerekir" : ""}
-                                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 disabled:opacity-50"
-                            >
-                                <HiOutlineWrenchScrewdriver className="w-4 h-4" />
-                                Onar
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Sağ: Sunucu Process İstatistikleri */}
-                    {isRunning && (
-                        <div className="flex items-center gap-8 lg:border-l lg:border-gray-100 lg:pl-8">
-                            <div className="text-center">
-                                <div className="relative w-20 h-20 mx-auto">
-                                    <svg width="80" height="80" className="transform -rotate-90">
-                                        <circle cx="40" cy="40" r="32" stroke="#E5E7EB" strokeWidth="6" fill="none" />
-                                        <circle cx="40" cy="40" r="32"
-                                            stroke={normalizedServerCpu > 80 ? '#EF4444' : normalizedServerCpu > 50 ? '#F59E0B' : '#22C55E'}
-                                            strokeWidth="6" fill="none"
-                                            strokeDasharray={2 * Math.PI * 32}
-                                            strokeDashoffset={2 * Math.PI * 32 - (normalizedServerCpu / 100) * 2 * Math.PI * 32}
-                                            strokeLinecap="round" className="transition-all duration-700" />
-                                    </svg>
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <span className="text-lg font-bold text-gray-900">{normalizedServerCpu}%</span>
-                                    </div>
-                                </div>
-                                <p className="text-xs font-medium text-gray-500 mt-1">Sunucu CPU</p>
-                            </div>
-                            <div className="text-center">
-                                <div className="w-20 h-20 mx-auto rounded-2xl bg-blue-50 flex items-center justify-center">
-                                    <div>
-                                        <p className="text-lg font-bold text-blue-700">{(serverRamMB / 1024).toFixed(1)}</p>
-                                        <p className="text-xs text-blue-500 -mt-0.5">GB</p>
-                                    </div>
-                                </div>
-                                <p className="text-xs font-medium text-gray-500 mt-1">Sunucu RAM</p>
-                            </div>
-                            <div className="text-center">
-                                <div className="w-20 h-20 mx-auto rounded-2xl bg-amber-50 flex items-center justify-center">
-                                    <p className="text-2xl font-bold text-amber-700">{mcStatus?.playerCount || 0}</p>
-                                </div>
-                                <p className="text-xs font-medium text-gray-500 mt-1">Oyuncu</p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Online Oyuncular (sunucu açıkken) */}
-                {isRunning && mcStatus?.players?.length > 0 && (
-                    <div className="mt-5 pt-5 border-t border-gray-100">
-                        <div className="flex items-center gap-2 mb-3">
-                            <HiOutlineUsers className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-medium text-gray-600">Online Oyuncular</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {mcStatus.players.map((player) => (
-                                <div key={player} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                                    <img src={`https://mc-heads.net/avatar/${player}/24`} alt={player} className="w-6 h-6 rounded" loading="lazy" />
-                                    <span className="text-sm text-gray-900 font-medium">{player}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* ============================================================ */}
-            {/* SİSTEM KAYNAKLARI */}
-            {/* ============================================================ */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass-card p-6 fade-in flex flex-col items-center">
-                    <CircularProgress value={cpuPercent} label="Sistem CPU"
-                        subLabel={systemInfo ? systemInfo.cpu.brand : ''} />
-                </div>
-                <div className="glass-card p-6 fade-in flex flex-col items-center">
-                    <CircularProgress value={ramPercent} label="Sistem RAM" color="#2563EB"
-                        subLabel={usage ? `${formatBytes(usage.memory?.used)} / ${formatBytes(usage.memory?.total)}` : ''} />
-                </div>
-                <div className="glass-card p-6 fade-in flex flex-col items-center">
-                    <CircularProgress value={diskPercent} label="Disk" color="#F59E0B"
-                        subLabel={mainDisk ? `${formatBytes(mainDisk.used)} / ${formatBytes(mainDisk.size)}` : ''} />
-                </div>
-            </div>
-
-            {/* ============================================================ */}
-            {/* GRAFİK */}
-            {/* ============================================================ */}
-            <div className="glass-card p-6 fade-in">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Kaynak Kullanım Grafiği</h2>
-                <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={usageHistory}>
-                            <defs>
-                                <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#374151" stopOpacity={0.15} />
-                                    <stop offset="95%" stopColor="#374151" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
-                                    <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-                            <XAxis dataKey="time" stroke="#9CA3AF" fontSize={11} tickLine={false} />
-                            <YAxis stroke="#9CA3AF" fontSize={11} domain={[0, 100]} tickLine={false} />
-                            <Tooltip content={<CustomTooltip />} />
-                            <Area type="monotone" dataKey="cpu" name="CPU" stroke="#374151" strokeWidth={2} fill="url(#cpuGradient)" />
-                            <Area type="monotone" dataKey="ram" name="RAM" stroke="#2563EB" strokeWidth={2} fill="url(#ramGradient)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-                <div className="flex items-center gap-6 mt-3 text-sm">
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-gray-700" /><span className="text-gray-500">CPU</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-600" /><span className="text-gray-500">RAM</span></div>
-                </div>
-            </div>
-
-            {/* ============================================================ */}
-            {/* SİSTEM BİLGİLERİ & BAĞLANTI */}
-            {/* ============================================================ */}
-            {systemInfo && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="glass-card p-6 fade-in">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <HiOutlineCpuChip className="w-5 h-5 text-gray-500" /> Donanım
-                        </h3>
-                        <div className="space-y-3">
-                            <InfoRow label="İşlemci" value={`${systemInfo.cpu.manufacturer} ${systemInfo.cpu.brand}`} />
-                            <InfoRow label="Çekirdek" value={`${systemInfo.cpu.cores} (${systemInfo.cpu.physicalCores} fiziksel)`} />
-                            <InfoRow label="Hız" value={`${systemInfo.cpu.speed} GHz (Maks: ${systemInfo.cpu.speedMax} GHz)`} />
-                            <InfoRow label="Toplam RAM" value={formatBytes(systemInfo.memory.total)} />
-                            <InfoRow label="Uptime" value={usage ? formatUptime(usage.uptime) : '..'} />
-                            {usage?.temperature && <InfoRow label="Sıcaklık" value={`${usage.temperature}°C`} />}
-                        </div>
-                    </div>
-                    <div className="glass-card p-6 fade-in">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <HiOutlineServer className="w-5 h-5 text-gray-500" /> İşletim Sistemi
-                        </h3>
-                        <div className="space-y-3">
-                            <InfoRow label="Platform" value={systemInfo.os.platform} />
-                            <InfoRow label="Dağıtım" value={`${systemInfo.os.distro} ${systemInfo.os.release}`} />
-                            <InfoRow label="Hostname" value={systemInfo.os.hostname} />
-                            <InfoRow label="Mimari" value={systemInfo.os.arch} />
-                            <InfoRow label="Kernel" value={systemInfo.os.kernel} />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <ConnectionInfoWidget />
-
-            {infoLoading && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {[1, 2].map(i => (
-                        <div key={i} className="glass-card p-6">
-                            <div className="skeleton h-6 w-48 mb-4" />
-                            <div className="space-y-3">{[1, 2, 3, 4].map(j => <div key={j} className="skeleton h-4 w-full" />)}</div>
-                        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* ── Sunucu sekmeleri + kontroller ── */}
+            <div style={{
+                background: A.bgDeeper, border: `1px solid ${A.border}`, borderRadius: 4,
+                display: 'flex', alignItems: 'center',
+            }}>
+                <div style={{ display: 'flex', overflowX: 'auto', flex: 1 }}>
+                    {servers.map((s, i) => (
+                        <ServerTab key={s.id} server={s} index={i}
+                            active={s.id === selectedServerId}
+                            onClick={() => setSelectedServerId(s.id)}/>
                     ))}
                 </div>
-            )}
-        </div>
-    );
-}
-
-function InfoRow({ label, value }) {
-    return (
-        <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-            <span className="text-sm text-gray-500">{label}</span>
-            <span className="text-sm text-gray-900 font-medium">{value}</span>
-        </div>
-    );
-}
-
-function ConnectionInfoWidget() {
-    const { data } = useQuery({
-        queryKey: ['connectionInfo'],
-        queryFn: () => api.get('/system/connection-info').then(r => r.data),
-        staleTime: 60000,
-    });
-    if (!data) return null;
-
-    const copyToClipboard = (text) => { navigator.clipboard.writeText(text); toast.success('Kopyalandı!'); };
-
-    return (
-        <div className="glass-card p-6 fade-in">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <HiOutlineSignal className="w-5 h-5 text-green-600" /> Bağlantı Bilgisi
-            </h3>
-            <div className="space-y-3">
-                <InfoRow label="Sunucu IP (Yerel)" value={data.localIp} />
-                {data.externalIp && <InfoRow label="Sunucu IP (Dış)" value={data.externalIp} />}
-                <InfoRow label="Port" value={data.port} />
-                <InfoRow label="Hostname" value={data.hostname} />
-                <div className="flex items-center justify-between py-3 bg-gray-50 rounded-xl mt-3 px-4">
-                    <div>
-                        <p className="text-xs text-gray-500 mb-1">Bağlantı Komutu</p>
-                        <code className="text-sm font-mono font-bold text-gray-900">{data.connectCommand}</code>
-                    </div>
-                    <button onClick={() => copyToClipboard(data.connectCommand)} className="btn-primary text-xs py-2 px-3">Kopyala</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderLeft: `1px solid ${A.border}` }}>
+                    <ServerControls server={selectedServer} onStatusChange={onStatusChange}/>
+                    <button onClick={toggleEditMode} style={{
+                        ...btnGhost, fontSize: 10,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        borderColor: editMode ? 'var(--accent)' : A.border,
+                        color: editMode ? 'var(--accent)' : A.dim,
+                    }}>
+                        <I.Cog size={11}/>{editMode ? 'DÜZENLEME' : 'DÜZENLE'}
+                    </button>
                 </div>
             </div>
+
+            {/* ── Edit modu araç çubuğu ── */}
+            {editMode && (
+                <div style={{
+                    background: 'rgba(167,139,250,0.06)',
+                    border: '1px solid rgba(167,139,250,0.2)',
+                    borderRadius: 4, padding: '10px 16px',
+                    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+                }}>
+                    <span style={{ fontSize: 12, color: A.dim, flex: 1, minWidth: 120 }}>
+                        Widget'ları sürükle-bırak ile taşı, köşeden boyutlandır
+                    </span>
+                    {hiddenWidgets.length > 0 && hiddenWidgets.map(w => (
+                        <button key={w.i} onClick={() => addWidget(w.i)}
+                            style={{ ...btnGhost, fontSize: 10 }}>
+                            + {WIDGET_LABELS[w.i] || w.i}
+                        </button>
+                    ))}
+                    <button
+                        onClick={async () => {
+                            try { await reset(); toast.success('Yerleşim sıfırlandı'); }
+                            catch { toast.error('Sıfırlama başarısız'); }
+                        }}
+                        style={{ ...btnGhost, fontSize: 10 }}>
+                        Sıfırla
+                    </button>
+                    <button onClick={cancel} style={{ ...btnGhost, fontSize: 10 }}>İptal</button>
+                    <button
+                        onClick={async () => {
+                            try { await save(); toast.success('Yerleşim kaydedildi'); }
+                            catch { toast.error('Kaydetme başarısız'); }
+                        }}
+                        style={{ ...btnPrimary, fontSize: 10 }}>
+                        Kaydet
+                    </button>
+                </div>
+            )}
+
+            {/* ── Widget grid ── */}
+            {!loading && (
+                <WidgetGrid
+                    server={selectedServer}
+                    series={series}
+                    installedModpacks={installedModpacks}
+                    layout={layout}
+                    editMode={editMode}
+                    onLayoutChange={setLayout}
+                    onDeleteWidget={deleteWidget}
+                />
+            )}
         </div>
     );
 }

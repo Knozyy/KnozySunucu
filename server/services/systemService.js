@@ -1,6 +1,62 @@
 const si = require('systeminformation');
 
+const HISTORY_SIZE = 60; // 60 samples × 3s = 3 minutes
+
 class SystemService {
+    constructor() {
+        this._history = []; // { ts, cpu, ram }
+        this._alertCooldown = {}; // { cpu: lastAlertTs, ram: lastAlertTs }
+        this._historyInterval = setInterval(() => this._sampleHistory(), 3000);
+        this._historyInterval.unref?.(); // don't block process exit
+    }
+
+    _getThresholds() {
+        try {
+            const { getDb } = require('../db/database');
+            const db = getDb();
+            const cpu = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_cpu_threshold'").get();
+            const ram = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_ram_threshold'").get();
+            return {
+                cpu: cpu ? parseFloat(cpu.value) : null,
+                ram: ram ? parseFloat(ram.value) : null,
+            };
+        } catch { return { cpu: null, ram: null }; }
+    }
+
+    _checkAlerts(cpuPercent, ramPercent) {
+        const thresholds = this._getThresholds();
+        const webhookService = require('./webhookService');
+        const now = Date.now();
+        const COOLDOWN_MS = 5 * 60 * 1000; // aynı uyarı 5 dakikada bir
+
+        if (thresholds.cpu && cpuPercent >= thresholds.cpu) {
+            if (!this._alertCooldown.cpu || now - this._alertCooldown.cpu > COOLDOWN_MS) {
+                this._alertCooldown.cpu = now;
+                webhookService.send('resource_alert',
+                    `⚠️ CPU kullanımı eşiği aştı: **${cpuPercent.toFixed(1)}%** (eşik: ${thresholds.cpu}%)`);
+            }
+        }
+        if (thresholds.ram && ramPercent >= thresholds.ram) {
+            if (!this._alertCooldown.ram || now - this._alertCooldown.ram > COOLDOWN_MS) {
+                this._alertCooldown.ram = now;
+                webhookService.send('resource_alert',
+                    `⚠️ RAM kullanımı eşiği aştı: **${ramPercent.toFixed(1)}%** (eşik: ${thresholds.ram}%)`);
+            }
+        }
+    }
+
+    async _sampleHistory() {
+        try {
+            const [cpuLoad, mem] = await Promise.all([si.currentLoad(), si.mem()]);
+            const cpu = +cpuLoad.currentLoad.toFixed(1);
+            const ram = +((mem.active / mem.total) * 100).toFixed(1);
+            this._history.push({ ts: Date.now(), cpu, ram });
+            if (this._history.length > HISTORY_SIZE) this._history.shift();
+            this._checkAlerts(cpu, ram);
+        } catch { /* ignore */ }
+    }
+
+
     async getSystemInfo() {
         const [cpu, mem, disk, os, networkInterfaces] = await Promise.all([
             si.cpu(),
@@ -204,11 +260,9 @@ class SystemService {
             byId.set(p.pid, p);
         });
 
-        // Her process için kendi yükünü parentlarına ekle root'a kadar
-        // (Bu MinecraftWrapper için Java'nın CPU'sunu saptamayı sağlar)
         processes.forEach(p => {
             let current = byId.get(p.parentPid);
-            const seen = new Set([p.pid]); // circular tree protection
+            const seen = new Set([p.pid]);
             while (current && !seen.has(current.pid)) {
                 seen.add(current.pid);
                 current.treeCpu += (p.cpu || 0);
@@ -216,6 +270,41 @@ class SystemService {
                 current = byId.get(current.parentPid);
             }
         });
+    }
+
+    async getPerformance() {
+        const mcService = require('./minecraftService');
+        const [cpuLoad, mem, disk] = await Promise.all([
+            si.currentLoad(),
+            si.mem(),
+            si.fsSize(),
+        ]);
+
+        const pid = mcService._javaPid || mcService.process?.pid || null;
+        const mainDisk = disk.find(d => d.mount === '/') || disk[0] || null;
+
+        return {
+            cpu: +cpuLoad.currentLoad.toFixed(1),
+            ram: {
+                usedMB:   Math.round(mem.active / 1048576),
+                totalMB:  Math.round(mem.total  / 1048576),
+                percent:  +((mem.active / mem.total) * 100).toFixed(1),
+            },
+            disk: mainDisk ? {
+                usedGB:  +(mainDisk.used  / 1073741824).toFixed(1),
+                totalGB: +(mainDisk.size  / 1073741824).toFixed(1),
+                percent: mainDisk.use,
+            } : null,
+            mc: {
+                status:   mcService.status,
+                players:  mcService.players.length,
+                tps:      mcService._lastTps,
+                javaMem:  mcService.processStats.memoryMB,
+                javaCpu:  mcService.processStats.cpuPercent,
+                javaPid:  pid,
+            },
+            history: [...this._history],
+        };
     }
 }
 

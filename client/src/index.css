@@ -2,6 +2,24 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ─── Hodo design tokens ─────────────────────────────────────────────── */
+:root {
+  --accent: #a78bfa;
+  --accent-rgb: 167, 139, 250;
+  --hodo-bg: #0a0b0d;
+  --hodo-panel: #101216;
+  --hodo-border: #1f2228;
+  --hodo-text: #e8eaed;
+  --hodo-dim: #9aa0a6;
+  --hodo-faint: #5f6368;
+}
+
+/* Hodo sidebar nav hover */
+.hodo-navitem:hover {
+  background: rgba(167,139,250,0.04) !important;
+  color: #fff !important;
+}
+
 @theme {
   --color-primary: #374151;
   --color-primary-dark: #1F2937;

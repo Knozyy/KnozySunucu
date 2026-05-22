@@ -187,6 +187,17 @@ router.get('/connection-info', authMiddleware, async (req, res) => {
         res.status(500).json({ error: 'Bağlantı bilgisi alınamadı' });
     }
 });
+// GET /api/system/performance - Canlı CPU/RAM/TPS + geçmiş
+router.get('/performance', authMiddleware, async (req, res) => {
+    try {
+        const data = await systemService.getPerformance();
+        res.json(data);
+    } catch (error) {
+        console.error('[System] Performance error:', error.message);
+        res.status(500).json({ error: 'Performans verisi alınamadı' });
+    }
+});
+
 // GET /api/system/processes - Çalışan Java (Sunucu) süreçlerini listele
 router.get('/processes', authMiddleware, async (req, res) => {
     try {
@@ -222,6 +233,33 @@ router.post('/processes/kill', authMiddleware, requireRole('admin'), async (req,
         console.error('[System] Kill error:', error.message);
         res.status(500).json({ error: 'İşlem sonlandırılamadı' });
     }
+});
+
+// GET /api/system/alert-thresholds
+router.get('/alert-thresholds', authMiddleware, (req, res) => {
+    try {
+        const { getDb } = require('../db/database');
+        const db = getDb();
+        const cpu = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_cpu_threshold'").get();
+        const ram = db.prepare("SELECT value FROM app_settings WHERE key = 'alert_ram_threshold'").get();
+        res.json({ cpu: cpu ? parseFloat(cpu.value) : null, ram: ram ? parseFloat(ram.value) : null });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/system/alert-thresholds
+router.put('/alert-thresholds', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { getDb } = require('../db/database');
+        const db = getDb();
+        const upsert = db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
+        const { cpu, ram } = req.body;
+        if (cpu != null) upsert.run('alert_cpu_threshold', String(cpu));
+        else db.prepare("DELETE FROM app_settings WHERE key = 'alert_cpu_threshold'").run();
+        if (ram != null) upsert.run('alert_ram_threshold', String(ram));
+        else db.prepare("DELETE FROM app_settings WHERE key = 'alert_ram_threshold'").run();
+        res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

@@ -1,28 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/context/I18nContext';
-import {
-    HiOutlineMagnifyingGlass,
-    HiOutlineArrowDownTray,
-    HiOutlineTrash,
-    HiOutlineFire,
-    HiOutlinePuzzlePiece,
-    HiOutlineCog6Tooth,
-    HiOutlinePlay,
-    HiOutlineCheckCircle,
-    HiOutlineXMark,
-    HiOutlineChevronDown,
-    HiOutlineArrowPath,
-    HiOutlineWrenchScrewdriver,
-    HiOutlineShieldCheck,
-    HiOutlineExclamationTriangle,
-    HiOutlineInformationCircle,
-    HiOutlineCommandLine as HiOutlineTerminal,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Dot, Pill } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 function formatSize(bytes) {
     if (!bytes) return '';
@@ -36,21 +20,69 @@ function formatFileDate(dateStr) {
     return new Date(dateStr).toLocaleDateString('tr-TR');
 }
 
+// ── Hodo modal kabuk bileşeni ─────────────────────────────────────────────
+function Modal({ children, onClose, maxWidth = 560 }) {
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: 16,
+        }} onClick={onClose}>
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`,
+                borderRadius: 4, width: '100%', maxWidth,
+                maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+            }} onClick={e => e.stopPropagation()}>
+                {children}
+            </div>
+        </div>
+    );
+}
+
+function ModalHeader({ title, onClose }) {
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', borderBottom: `1px solid ${A.border}`, flexShrink: 0,
+        }}>
+            <Cap style={{ fontSize: 11 }}>{title}</Cap>
+            <button onClick={onClose}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                <I.X size={16}/>
+            </button>
+        </div>
+    );
+}
+
+// ── Spinner yardımcı bileşeni ─────────────────────────────────────────────
+function Spinner({ size = 14, color = 'var(--accent)' }) {
+    return (
+        <>
+            <div style={{
+                width: size, height: size,
+                border: `2px solid ${A.border}`, borderTopColor: color,
+                borderRadius: 99, animation: 'hodo-spin 0.8s linear infinite',
+            }}/>
+            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+        </>
+    );
+}
+
 export default function ModpacksPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('search');
-    const [provider, setProvider] = useState('curseforge'); // 'curseforge' or 'ftb'
+    const [provider, setProvider] = useState('curseforge');
     const [editingModpack, setEditingModpack] = useState(null);
     const [confirmSwitch, setConfirmSwitch] = useState(null);
     const [versionModal, setVersionModal] = useState(null);
     const [updateVersionModal, setUpdateVersionModal] = useState(null);
-    const [validationModal, setValidationModal] = useState(null); // { modpack, loading, analysis }
-    const [repairModal, setRepairModal] = useState(null); // { modpackId, repairId, analysisResult }
+    const [validationModal, setValidationModal] = useState(null);
+    const [repairModal, setRepairModal] = useState(null);
     const [repairPolling, setRepairPolling] = useState(false);
-    const [terminalHint, setTerminalHint] = useState(null); // { installPath, name } — FTB manuel kurulum
+    const [terminalHint, setTerminalHint] = useState(null);
     const queryClient = useQueryClient();
     const navigate = useNavigate();
-    const { t } = useI18n();
 
     const { data: searchResults, isLoading: searching, refetch: doSearch } = useQuery({
         queryKey: ['modpackSearch', searchQuery, provider],
@@ -99,7 +131,7 @@ export default function ModpacksPage() {
     const uninstallMutation = useMutation({
         mutationFn: (id) => api.delete(`/modpacks/${id}`),
         onSuccess: () => {
-            toast.success('Modpack kaldırıldı (dosyalar silindi)');
+            toast.success('Modpack kaldırıldı');
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
             queryClient.invalidateQueries({ queryKey: ['activeProfile'] });
         },
@@ -131,14 +163,13 @@ export default function ModpacksPage() {
     const updateSettingsMutation = useMutation({
         mutationFn: ({ id, settings }) => api.put(`/modpacks/${id}/settings`, settings),
         onSuccess: () => {
-            toast.success('Modpack ayarları güncellendi');
+            toast.success('Ayarlar güncellendi');
             setEditingModpack(null);
             queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Güncelleme başarısız'),
     });
 
-    // Onarım durumu polling
     const { data: repairStatusData } = useQuery({
         queryKey: ['repairStatus', repairModal?.repairId],
         queryFn: () => api.get(`/modpacks/${repairModal.modpackId}/repair-status/${repairModal.repairId}`).then(r => {
@@ -150,7 +181,6 @@ export default function ModpacksPage() {
         refetchInterval: repairPolling ? 800 : false,
     });
 
-    // FTB kurulumu bitince terminal yönlendirme hint'i göster
     useEffect(() => {
         if (
             installStatusData?.progress === 100 &&
@@ -188,12 +218,8 @@ export default function ModpacksPage() {
         }
     };
 
-    // Yüklü modpack sürüm değiştirme
     const openUpdateVersionModal = async (modpack) => {
-        if (!modpack.curseforge_id) {
-            toast.error('Bu modpack kayıt ID bulunamadı');
-            return;
-        }
+        if (!modpack.curseforge_id) { toast.error('Kayıt ID bulunamadı'); return; }
         setUpdateVersionModal({ modpack, files: [], loading: true });
         try {
             const targetProvider = modpack.provider || 'curseforge';
@@ -210,11 +236,7 @@ export default function ModpacksPage() {
     };
 
     const handleUpdateVersion = (modpack, fileId) => {
-        updateModpackMutation.mutate({
-            dbId: modpack.id,
-            modId: modpack.curseforge_id,
-            fileId,
-        });
+        updateModpackMutation.mutate({ dbId: modpack.id, modId: modpack.curseforge_id, fileId });
     };
 
     const openValidationModal = async (modpack) => {
@@ -241,11 +263,8 @@ export default function ModpacksPage() {
     };
 
     const handleActivate = (modpack) => {
-        if (activeProfileData?.serverStatus === 'running') {
-            setConfirmSwitch(modpack);
-        } else {
-            activateMutation.mutate(modpack.id);
-        }
+        if (activeProfileData?.serverStatus === 'running') setConfirmSwitch(modpack);
+        else activateMutation.mutate(modpack.id);
     };
 
     const modpacksToShow = activeTab === 'search'
@@ -253,273 +272,256 @@ export default function ModpacksPage() {
         : (installedData?.modpacks || []);
 
     const isInstalling = installMutation.isPending || installStatusData?.isInstalling;
+    const installProgress = installStatusData?.progress || 0;
 
     return (
-        <div className="space-y-6">
-            <div className="fade-in">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('modpacks.title')}</h1>
-                <p className="text-gray-500">{t('modpacks.subtitle')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* ── Başlık ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <I.Cube size={16} style={{ color: 'var(--accent)' }}/>
+                <Cap style={{ fontSize: 11 }}>Modpackler</Cap>
+                {activeProfileData?.profile && (
+                    <Pill color={A.ok} bg="rgba(74,222,128,0.1)">
+                        <Dot color={A.ok} size={5}/>
+                        {activeProfileData.profile.name}
+                    </Pill>
+                )}
             </div>
 
-            {/* Aktif Profil Banner */}
+            {/* ── Aktif profil banner ── */}
             {activeProfileData?.profile && (
-                <div className="glass-card p-4 border-l-4 border-green-500 fade-in">
-                    <div className="flex items-center gap-3">
-                        <HiOutlineCheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                        <div className="flex-1">
-                            <p className="text-sm font-semibold text-gray-900">
-                                Aktif Profil: <span className="text-green-600">{activeProfileData.profile.name}</span>
-                                {activeProfileData.profile.server_port && activeProfileData.profile.server_port !== 25565 && (
-                                    <span className="text-xs text-gray-400 ml-2">Port: {activeProfileData.profile.server_port}</span>
-                                )}
-                            </p>
-                            <p className="text-xs text-gray-400">{activeProfileData.profile.install_path}</p>
-                        </div>
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${activeProfileData.serverStatus === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                            }`}>
-                            {activeProfileData.serverStatus === 'running' ? '🟢 Çalışıyor' : '⚫ Kapalı'}
+                <div style={{
+                    background: 'rgba(74,222,128,0.06)',
+                    border: `1px solid rgba(74,222,128,0.2)`,
+                    borderRadius: 4, padding: '10px 14px',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                    <I.Check size={14} style={{ color: A.ok, flexShrink: 0 }}/>
+                    <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 12, color: A.text }}>
+                            Aktif Profil:&nbsp;
+                            <span style={{ color: A.ok, fontWeight: 600 }}>{activeProfileData.profile.name}</span>
+                            {activeProfileData.profile.server_port && activeProfileData.profile.server_port !== 25565 && (
+                                <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, marginLeft: 8 }}>
+                                    port:{activeProfileData.profile.server_port}
+                                </span>
+                            )}
                         </span>
+                        <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, marginTop: 2 }}>
+                            {activeProfileData.profile.install_path}
+                        </div>
                     </div>
+                    <Pill
+                        color={activeProfileData.serverStatus === 'running' ? A.ok : A.faint}
+                        bg={activeProfileData.serverStatus === 'running' ? 'rgba(74,222,128,0.1)' : 'transparent'}>
+                        {activeProfileData.serverStatus === 'running' ? 'ÇALIŞIYOR' : 'KAPALI'}
+                    </Pill>
                 </div>
             )}
 
-            <div className="flex gap-2 fade-in">
-                <button
-                    onClick={() => setActiveTab('search')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'search' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-                >
-                    <HiOutlineMagnifyingGlass className="w-4 h-4 inline mr-2" />
-                    Ara & Yükle
-                </button>
-                <button
-                    onClick={() => setActiveTab('installed')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'installed' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-                >
-                    <HiOutlinePuzzlePiece className="w-4 h-4 inline mr-2" />
-                    Profiller ({installedData?.modpacks?.length || 0})
-                </button>
+            {/* ── Sekmeler + sağ butonlar ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {[
+                    { id: 'search', label: 'Ara & Yükle', icon: I.Search },
+                    { id: 'installed', label: `Profiller (${installedData?.modpacks?.length || 0})`, icon: I.Cube },
+                ].map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 14px', border: 'none', cursor: 'pointer',
+                            fontFamily: A.sans, fontSize: 12, borderRadius: 2,
+                            background: activeTab === tab.id ? A.panel : 'transparent',
+                            color: activeTab === tab.id ? A.text : A.dim,
+                            borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                        }}>
+                        <tab.icon size={13}/> {tab.label}
+                    </button>
+                ))}
 
                 {activeTab === 'search' && (
-                    <div className="ml-auto flex items-center bg-gray-100 rounded-xl p-1">
-                        <button
-                            onClick={() => setProvider('curseforge')}
-                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${provider === 'curseforge' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                        >
-                            CurseForge
-                        </button>
-                        <button
-                            onClick={() => setProvider('ftb')}
-                            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${provider === 'ftb' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                        >
-                            Feed The Beast
-                        </button>
+                    <div style={{
+                        marginLeft: 'auto', display: 'flex',
+                        background: A.panel, border: `1px solid ${A.border}`,
+                        borderRadius: 2, overflow: 'hidden',
+                    }}>
+                        {['curseforge', 'ftb'].map(p => (
+                            <button key={p} onClick={() => setProvider(p)}
+                                style={{
+                                    padding: '5px 12px', border: 'none', cursor: 'pointer',
+                                    fontFamily: A.mono, fontSize: 10, letterSpacing: '0.04em',
+                                    textTransform: 'uppercase',
+                                    background: provider === p ? 'rgba(167,139,250,0.12)' : 'transparent',
+                                    color: provider === p ? 'var(--accent)' : A.faint,
+                                }}>
+                                {p === 'ftb' ? 'Feed The Beast' : 'CurseForge'}
+                            </button>
+                        ))}
                     </div>
                 )}
-
                 {activeTab === 'installed' && (
-                    <button
-                        onClick={() => queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] })}
-                        className="ml-auto px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all flex items-center gap-2"
-                        title="Listeyi Yenile"
-                    >
-                        <HiOutlineArrowPath className="w-4 h-4" /> Yenile
+                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] })}
+                        style={{
+                            ...btnGhost, marginLeft: 'auto',
+                            display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
+                        }}>
+                        <I.Restart size={11}/> YENİLE
                     </button>
                 )}
             </div>
 
-            {/* Search Bar */}
+            {/* ── Arama çubuğu ── */}
             {activeTab === 'search' && (
-                <form onSubmit={handleSearch} className="fade-in">
-                    <div className="flex gap-3">
-                        <div className="flex-1 relative">
-                            <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                                className="input-field pl-12" placeholder="Modpack adı ara... (örn: RLCraft, All the Mods)" />
-                        </div>
-                        <button type="submit" disabled={searching || !searchQuery.trim()} className="btn-primary">
-                            {searching ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Ara'}
-                        </button>
+                <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                        <I.Search size={13} style={{
+                            position: 'absolute', left: 10, top: '50%',
+                            transform: 'translateY(-50%)', color: A.faint,
+                        }}/>
+                        <input
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            placeholder="Modpack adı ara... (örn: RLCraft, All the Mods)"
+                            style={{
+                                background: A.bg, border: `1px solid ${A.border}`,
+                                color: A.text, fontFamily: A.sans, fontSize: 13,
+                                padding: '9px 10px 9px 32px', borderRadius: 2,
+                                width: '100%', outline: 'none',
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                            onBlur={e => e.target.style.borderColor = A.border}
+                        />
                     </div>
+                    <button type="submit" disabled={searching || !searchQuery.trim()}
+                        style={{
+                            ...btnPrimary, display: 'flex', alignItems: 'center',
+                            gap: 6, padding: '9px 18px', fontSize: 12,
+                            opacity: (!searchQuery.trim()) ? 0.5 : 1,
+                            cursor: (!searchQuery.trim()) ? 'not-allowed' : 'pointer',
+                        }}>
+                        {searching ? <Spinner size={12}/> : <><I.Search size={12}/> ARA</>}
+                    </button>
                 </form>
             )}
 
-            {/* Kurulum İlerleme Çubuğu */}
-            {(isInstalling || (installStatusData?.progress > 0 && installStatusData?.progress < 100)) && (
-                <div className="glass-card p-5 fade-in border-l-4 border-gray-900">
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="w-6 h-6 border-2 border-gray-900 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                        <div className="flex-1">
-                            <p className="text-sm font-semibold text-gray-900">{installStatusData?.task || 'Kurulum'}</p>
-                            <p className="text-xs text-gray-500">{installStatusData?.status || 'İşleniyor...'}</p>
+            {/* ── Kurulum ilerleme çubuğu ── */}
+            {(isInstalling || (installProgress > 0 && installProgress < 100)) && (
+                <div style={{
+                    background: A.panel, border: `1px solid ${A.border}`,
+                    borderLeft: `3px solid var(--accent)`,
+                    borderRadius: 4, padding: '12px 16px',
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                        <Spinner size={14}/>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, color: A.text }}>{installStatusData?.task || 'Kurulum'}</div>
+                            <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, marginTop: 2 }}>
+                                {installStatusData?.status || 'İşleniyor...'}
+                            </div>
                         </div>
-                        <span className="text-sm font-bold text-gray-900">{installStatusData?.progress || 0}%</span>
+                        <span style={{ fontFamily: A.mono, fontSize: 14, color: 'var(--accent)' }}>
+                            {installProgress}%
+                        </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500 ease-out"
-                            style={{ width: `${installStatusData?.progress || 0}%`, background: 'linear-gradient(90deg, #1F2937, #374151)' }} />
+                    <div style={{ background: A.bg, border: `1px solid ${A.border}`, height: 4, borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{
+                            height: '100%', background: 'var(--accent)',
+                            width: `${installProgress}%`,
+                            transition: 'width 0.5s ease', borderRadius: 2,
+                        }}/>
                     </div>
                 </div>
             )}
 
-            {installStatusData?.progress === 100 && !installStatusData?.isInstalling && (
-                <div className="glass-card p-4 bg-green-50/50 border-l-4 border-green-500 fade-in">
-                    <p className="text-sm font-medium text-green-700">✅ {installStatusData?.status || 'Kurulum tamamlandı!'}</p>
+            {installProgress === 100 && !installStatusData?.isInstalling && !installStatusData?.error && (
+                <div style={{
+                    background: 'rgba(74,222,128,0.06)', border: `1px solid rgba(74,222,128,0.2)`,
+                    borderLeft: `3px solid ${A.ok}`, borderRadius: 4, padding: '10px 14px',
+                    fontFamily: A.mono, fontSize: 11, color: A.ok,
+                }}>
+                    ✓ {installStatusData?.status || 'Kurulum tamamlandı!'}
                 </div>
             )}
 
             {installStatusData?.error && (
-                <div className="glass-card p-4 bg-red-50/50 border-l-4 border-red-500 fade-in">
-                    <p className="text-sm font-medium text-red-700">❌ {installStatusData.error}</p>
+                <div style={{
+                    background: 'rgba(248,113,113,0.06)', border: `1px solid rgba(248,113,113,0.2)`,
+                    borderLeft: `3px solid ${A.err}`, borderRadius: 4, padding: '10px 14px',
+                    fontFamily: A.mono, fontSize: 11, color: A.err,
+                }}>
+                    ✗ {installStatusData.error}
                 </div>
             )}
 
-            {/* FTB / Manuel kurulum terminal yönlendirme */}
+            {/* FTB terminal yönlendirme hint */}
             {terminalHint && (
-                <div className="glass-card p-4 bg-amber-50/70 border-l-4 border-amber-400 fade-in">
-                    <div className="flex items-start gap-3">
-                        <HiOutlineTerminal className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-sm font-semibold text-amber-900">Manuel kurulum adımları gerekiyor</p>
-                            <p className="text-xs text-amber-700 mt-1">
-                                <strong>{terminalHint.name}</strong> dosyaları indirildi. FTB sunucu kurulumunu tamamlamak için
-                                terminale geçip installer'ı çalıştırmanız gerekiyor.
-                            </p>
-                            <p className="text-xs font-mono bg-amber-100 rounded px-2 py-1 mt-2 text-amber-800">
-                                cd &quot;{terminalHint.installPath}&quot; &amp;&amp; java -jar *installer*.jar --installServer
-                            </p>
+                <div style={{
+                    background: 'rgba(251,191,36,0.06)', border: `1px solid rgba(251,191,36,0.2)`,
+                    borderLeft: `3px solid ${A.warn}`, borderRadius: 4, padding: '12px 14px',
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                }}>
+                    <I.Terminal size={14} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, color: A.warn, fontWeight: 600, marginBottom: 4 }}>
+                            Manuel kurulum adımları gerekiyor
                         </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                            <button
-                                onClick={() => openTerminalForInstall(terminalHint.installPath)}
-                                className="btn-primary text-xs py-1.5 px-3 bg-amber-600 hover:bg-amber-700 flex items-center gap-1.5"
-                            >
-                                <HiOutlineTerminal className="w-4 h-4" /> Terminale Git
-                            </button>
-                            <button
-                                onClick={() => setTerminalHint(null)}
-                                className="p-1.5 text-amber-500 hover:text-amber-700 transition-colors"
-                            >
-                                <HiOutlineXMark className="w-4 h-4" />
-                            </button>
+                        <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.5, marginBottom: 8 }}>
+                            <strong style={{ color: A.text }}>{terminalHint.name}</strong> dosyaları indirildi.
+                            FTB sunucu kurulumunu tamamlamak için terminale geçin.
                         </div>
+                        <div style={{
+                            fontFamily: A.mono, fontSize: 10, color: A.warn,
+                            background: 'rgba(251,191,36,0.06)', padding: '5px 8px', borderRadius: 2,
+                        }}>
+                            cd &quot;{terminalHint.installPath}&quot; &amp;&amp; java -jar *installer*.jar --installServer
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => openTerminalForInstall(terminalHint.installPath)}
+                            style={{
+                                ...btnPrimary, display: 'flex', alignItems: 'center',
+                                gap: 5, fontSize: 10, padding: '5px 10px',
+                            }}>
+                            <I.Terminal size={11}/> TERMİNAL
+                        </button>
+                        <button onClick={() => setTerminalHint(null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                            <I.X size={14}/>
+                        </button>
                     </div>
                 </div>
             )}
 
-            {editingModpack && (
-                <ModpackSettingsModal
-                    modpack={editingModpack}
-                    onClose={() => setEditingModpack(null)}
-                    onSave={(settings) => updateSettingsMutation.mutate({ id: editingModpack.id, settings })}
-                    saving={updateSettingsMutation.isPending}
-                />
-            )}
-
-            {/* Profil Geçiş Onay Modalı */}
-            {confirmSwitch && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setConfirmSwitch(null)}>
-                    <div className="glass-card p-6 w-full max-w-md fade-in" onClick={e => e.stopPropagation()}>
-                        <h2 className="text-lg font-bold text-gray-900 mb-3">⚠️ Sunucu Açık</h2>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Şu an <strong>{activeProfileData?.profile?.name}</strong> çalışıyor.
-                            <strong> {confirmSwitch.name}</strong> profiline geçmek için açık sunucu
-                            <strong> save alınıp kapatılacak</strong>. Devam etmek istiyor musunuz?
-                        </p>
-                        <div className="flex gap-3 justify-end">
-                            <button onClick={() => setConfirmSwitch(null)} className="btn-secondary">İptal</button>
-                            <button
-                                onClick={() => activateMutation.mutate(confirmSwitch.id)}
-                                disabled={activateMutation.isPending}
-                                className="btn-primary"
-                            >
-                                {activateMutation.isPending ? (
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        Geçiliyor...
-                                    </div>
-                                ) : 'Evet, Geçiş Yap'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Yeni Kurulum Sürüm Seçim Modalı */}
-            {versionModal && (
-                <VersionSelectModal
-                    title={`Sürüm Seç — ${versionModal.modpack.name}`}
-                    files={versionModal.files}
-                    loading={versionModal.loading}
-                    onClose={() => setVersionModal(null)}
-                    onSelect={(fileId) => handleInstallVersion(versionModal.modpack, fileId)}
-                    isPending={installMutation.isPending}
-                    buttonLabel="Yükle"
-                />
-            )}
-
-            {/* Doğrulama & Onarım Modalı */}
-            {validationModal && (
-                <ValidationModal
-                    modpack={validationModal.modpack}
-                    loading={validationModal.loading}
-                    analysis={validationModal.analysis}
-                    onClose={() => setValidationModal(null)}
-                    onRepair={(selectedIds) => handleRepair(selectedIds, validationModal.analysis, validationModal.modpack)}
-                />
-            )}
-
-            {/* Onarım İlerleme Modalı */}
-            {repairModal && (
-                <RepairProgressModal
-                    status={repairStatusData}
-                    modpackId={repairModal.modpackId}
-                    onClose={() => {
-                        setRepairModal(null);
-                        setRepairPolling(false);
-                        queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
-                    }}
-                />
-            )}
-
-            {/* Yüklü Modpack Sürüm Değiştirme Modalı */}
-            {updateVersionModal && (
-                <VersionSelectModal
-                    title={`Sürüm Değiştir — ${updateVersionModal.modpack.name}`}
-                    subtitle={`Mevcut: ${updateVersionModal.modpack.file_display_name || updateVersionModal.modpack.version}`}
-                    files={updateVersionModal.files}
-                    loading={updateVersionModal.loading}
-                    onClose={() => setUpdateVersionModal(null)}
-                    onSelect={(fileId) => handleUpdateVersion(updateVersionModal.modpack, fileId)}
-                    isPending={updateModpackMutation.isPending}
-                    buttonLabel="Güncelle"
-                />
-            )}
-
+            {/* Popüler başlık */}
             {activeTab === 'search' && !searchResults && !searching && (
-                <div className="fade-in">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                        <HiOutlineFire className="w-5 h-5 text-amber-500" />
-                        Popüler Modpackler
-                    </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <I.Stack size={13} style={{ color: A.warn }}/>
+                    <Cap>Popüler Modpackler</Cap>
+                    <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>· {provider}</span>
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {/* ── Kart Grid ── */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                gap: 10,
+            }}>
                 {(searching || loadingPopular || loadingInstalled) ? (
                     Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="glass-card p-4">
-                            <div className="flex gap-4">
-                                <div className="skeleton w-16 h-16 rounded-xl flex-shrink-0" />
-                                <div className="flex-1 space-y-2">
-                                    <div className="skeleton h-5 w-3/4" />
-                                    <div className="skeleton h-4 w-full" />
-                                    <div className="skeleton h-4 w-1/2" />
-                                </div>
+                        <div key={i} style={{
+                            background: A.panel, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '14px', display: 'flex', gap: 12,
+                        }}>
+                            <div style={{ width: 56, height: 56, background: A.bgDeeper, borderRadius: 2, flexShrink: 0 }}/>
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ height: 12, background: A.bgDeeper, borderRadius: 2, width: '70%' }}/>
+                                <div style={{ height: 10, background: A.bgDeeper, borderRadius: 2, width: '100%' }}/>
+                                <div style={{ height: 10, background: A.bgDeeper, borderRadius: 2, width: '50%' }}/>
                             </div>
                         </div>
                     ))
                 ) : modpacksToShow.length > 0 ? (
-                    modpacksToShow.map((modpack) => (
+                    modpacksToShow.map(modpack => (
                         <ModpackCard
                             key={modpack.id}
                             modpack={modpack}
@@ -542,168 +544,221 @@ export default function ModpacksPage() {
                         />
                     ))
                 ) : (
-                    <div className="col-span-full text-center py-12 text-gray-400">
-                        <HiOutlinePuzzlePiece className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                        <p className="text-lg">
-                            {activeTab === 'installed' ? 'Henüz yüklü modpack yok' : 'Aramak için yukarıdaki arama çubuğunu kullanın'}
-                        </p>
+                    <div style={{
+                        gridColumn: '1 / -1', display: 'flex',
+                        flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', padding: '48px 0', gap: 10,
+                    }}>
+                        <I.Cube size={32} style={{ color: A.faintest }}/>
+                        <span style={{ fontFamily: A.mono, fontSize: 12, color: A.faintest }}>
+                            {activeTab === 'installed'
+                                ? 'Henüz yüklü modpack yok'
+                                : 'Arama yapmak için yukarıdaki çubuğu kullanın'}
+                        </span>
                     </div>
                 )}
             </div>
+
+            {/* ── Modaller ── */}
+            {editingModpack && (
+                <ModpackSettingsModal
+                    modpack={editingModpack}
+                    onClose={() => setEditingModpack(null)}
+                    onSave={(settings) => updateSettingsMutation.mutate({ id: editingModpack.id, settings })}
+                    saving={updateSettingsMutation.isPending}
+                />
+            )}
+
+            {confirmSwitch && (
+                <Modal onClose={() => setConfirmSwitch(null)} maxWidth={440}>
+                    <ModalHeader title="Sunucu Açık — Profil Değiştir" onClose={() => setConfirmSwitch(null)}/>
+                    <div style={{ padding: '16px', color: A.dim, fontSize: 13, lineHeight: 1.6 }}>
+                        <span style={{ color: A.text }}>{activeProfileData?.profile?.name}</span> çalışıyor.&nbsp;
+                        <span style={{ color: 'var(--accent)' }}>{confirmSwitch.name}</span> profiline geçmek için
+                        sunucu kapatılacak. Devam edilsin mi?
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                        <button onClick={() => setConfirmSwitch(null)} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                        <button onClick={() => activateMutation.mutate(confirmSwitch.id)}
+                            disabled={activateMutation.isPending}
+                            style={{ ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            {activateMutation.isPending ? <Spinner size={12}/> : null}
+                            GEÇİŞ YAP
+                        </button>
+                    </div>
+                </Modal>
+            )}
+
+            {versionModal && (
+                <VersionSelectModal
+                    title={`Sürüm Seç — ${versionModal.modpack.name}`}
+                    files={versionModal.files}
+                    loading={versionModal.loading}
+                    onClose={() => setVersionModal(null)}
+                    onSelect={(fileId) => handleInstallVersion(versionModal.modpack, fileId)}
+                    isPending={installMutation.isPending}
+                    buttonLabel="YÜKLE"
+                />
+            )}
+
+            {validationModal && (
+                <ValidationModal
+                    modpack={validationModal.modpack}
+                    loading={validationModal.loading}
+                    analysis={validationModal.analysis}
+                    onClose={() => setValidationModal(null)}
+                    onRepair={(selectedIds) => handleRepair(selectedIds, validationModal.analysis, validationModal.modpack)}
+                />
+            )}
+
+            {repairModal && (
+                <RepairProgressModal
+                    status={repairStatusData}
+                    modpackId={repairModal.modpackId}
+                    onClose={() => {
+                        setRepairModal(null);
+                        setRepairPolling(false);
+                        queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+                    }}
+                />
+            )}
+
+            {updateVersionModal && (
+                <VersionSelectModal
+                    title={`Sürüm Değiştir — ${updateVersionModal.modpack.name}`}
+                    subtitle={`Mevcut: ${updateVersionModal.modpack.file_display_name || updateVersionModal.modpack.version}`}
+                    files={updateVersionModal.files}
+                    loading={updateVersionModal.loading}
+                    onClose={() => setUpdateVersionModal(null)}
+                    onSelect={(fileId) => handleUpdateVersion(updateVersionModal.modpack, fileId)}
+                    isPending={updateModpackMutation.isPending}
+                    buttonLabel="GÜNCELLE"
+                />
+            )}
         </div>
     );
 }
 
-// Reusable Version Select Modal
-function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect, isPending, buttonLabel }) {
-    const [selectedFileId, setSelectedFileId] = useState(null);
-
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="glass-card p-6 w-full max-w-lg max-h-[80vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                            <HiOutlineChevronDown className="w-5 h-5 text-blue-600" />
-                            {title}
-                        </h2>
-                        {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
-                    </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
-                        <HiOutlineXMark className="w-5 h-5" />
-                    </button>
-                </div>
-
-                {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
-                        <span className="ml-3 text-sm text-gray-600">Sürümler yükleniyor...</span>
-                    </div>
-                ) : (
-                    <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-                        {files.length > 0 ? files.map(file => (
-                            <div key={file.id} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
-                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                        <span className="text-xs text-gray-400">{formatSize(file.fileLength)}</span>
-                                        <span className="text-xs text-gray-400">{formatFileDate(file.fileDate)}</span>
-                                        {file.gameVersions?.slice(0, 3).map((v, i) => (
-                                            <span key={i} className="text-xs bg-gray-100 px-2 py-0.5 rounded-full text-gray-500">{v}</span>
-                                        ))}
-                                        {file.serverPackFileId && (
-                                            <span className="text-xs bg-green-100 px-2 py-0.5 rounded-full text-green-700 font-medium">Server Pack</span>
-                                        )}
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        setSelectedFileId(file.id);
-                                        onSelect(file.id);
-                                    }}
-                                    disabled={isPending}
-                                    className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
-                                >
-                                    {isPending && selectedFileId === file.id ? (
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    ) : (
-                                        <>
-                                            <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
-                                            {buttonLabel}
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        )) : (
-                            <div className="text-center py-8 text-gray-400">
-                                <p>Sürüm bulunamadı</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
+// ── Modpack kartı ────────────────────────────────────────────────────────
 function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, onOpenTerminal, installing, uninstalling, activating }) {
     return (
-        <div className={`glass-card p-4 fade-in group relative ${isActive ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}>
-            {/* Aktif Badge */}
+        <div style={{
+            background: A.panel,
+            border: `1px solid ${isActive ? 'rgba(74,222,128,0.3)' : A.border}`,
+            borderRadius: 4, padding: 14,
+            display: 'flex', flexDirection: 'column', gap: 12, position: 'relative',
+        }}>
             {isActive && (
-                <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
-                    <HiOutlineCheckCircle className="w-3.5 h-3.5" /> AKTİF
+                <div style={{
+                    position: 'absolute', top: -1, right: 16,
+                    background: A.ok, color: '#000',
+                    fontFamily: A.mono, fontSize: 9, fontWeight: 700,
+                    padding: '3px 8px', letterSpacing: '0.06em',
+                    borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
+                }}>
+                    AKTİF
                 </div>
             )}
 
-            <div className="flex gap-4">
-                <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
+            <div style={{ display: 'flex', gap: 12 }}>
+                {/* Logo */}
+                <div style={{
+                    width: 52, height: 52, borderRadius: 2, flexShrink: 0,
+                    background: A.bgDeeper, border: `1px solid ${A.border}`,
+                    overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
                     {(modpack.logoUrl || modpack.logo_url) ? (
-                        <img src={modpack.logoUrl || modpack.logo_url} alt={modpack.name} className="w-full h-full object-cover" loading="lazy" />
+                        <img src={modpack.logoUrl || modpack.logo_url} alt={modpack.name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy"/>
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                            <HiOutlinePuzzlePiece className="w-8 h-8 text-gray-300" />
-                        </div>
+                        <I.Cube size={20} style={{ color: A.faintest }}/>
                     )}
                 </div>
-
-                <div className="flex-1 min-w-0">
-                    <h3 className="text-gray-900 font-semibold truncate">{modpack.name}</h3>
-                    <p className="text-sm text-gray-500 line-clamp-2 mt-1">{modpack.summary || modpack.version || 'Açıklama yok'}</p>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                        {modpack.author && <span>👤 {modpack.author}</span>}
-                        {modpack.downloadCount && <span>📥 {formatNumber(modpack.downloadCount)}</span>}
-                        {modpack.installed_at && <span>📅 {formatDate(modpack.installed_at)}</span>}
+                {/* Bilgi */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: A.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {modpack.name}
                     </div>
-
-                    {modpack.install_path && (
-                        <p className="text-xs text-gray-300 mt-1 truncate">📁 {modpack.install_path}</p>
-                    )}
-
+                    <div style={{
+                        fontSize: 11, color: A.faint, lineHeight: 1.5, marginTop: 3,
+                        overflow: 'hidden', display: '-webkit-box',
+                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    }}>
+                        {modpack.summary || modpack.version || 'Açıklama yok'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 5, flexWrap: 'wrap' }}>
+                        {modpack.author && (
+                            <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                                {modpack.author}
+                            </span>
+                        )}
+                        {modpack.downloadCount && (
+                            <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                                ↓{formatNumber(modpack.downloadCount)}
+                            </span>
+                        )}
+                        {modpack.installed_at && (
+                            <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                                {formatDate(modpack.installed_at)}
+                            </span>
+                        )}
+                    </div>
                     {modpack.server_port && modpack.server_port !== 25565 && (
-                        <p className="text-xs text-blue-400 mt-1">🔌 Port: {modpack.server_port}</p>
+                        <div style={{ fontFamily: A.mono, fontSize: 10, color: 'var(--accent)', marginTop: 3 }}>
+                            port:{modpack.server_port}
+                        </div>
                     )}
-
                     {modpack.latestFiles?.[0]?.gameVersions && (
-                        <div className="flex gap-1 mt-2 flex-wrap">
+                        <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
                             {modpack.latestFiles[0].gameVersions.slice(0, 3).map((v, i) => (
-                                <span key={i} className="px-2 py-0.5 rounded-md bg-gray-100 text-xs text-gray-500">{v}</span>
+                                <Pill key={i}>{v}</Pill>
                             ))}
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="mt-4 flex gap-2 justify-end flex-wrap">
+            {/* Aksiyon butonları */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 {isInstalled ? (
                     <>
                         {!isActive && (
-                            <button onClick={onActivate} disabled={activating} className="btn-primary text-xs py-1.5 px-3">
-                                <HiOutlinePlay className="w-4 h-4" /> Aktif Yap
+                            <button onClick={onActivate} disabled={activating}
+                                style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                                <I.Play size={10}/> AKTİF YAP
                             </button>
                         )}
-                        <button onClick={onValidate} className="btn-secondary text-xs py-1.5 px-3" title="Modpack dosyalarını doğrula ve eksiklikleri onar">
-                            <HiOutlineWrenchScrewdriver className="w-4 h-4" /> Doğrula & Onar
+                        <button onClick={onValidate}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                            <I.Wrench size={10}/> DOĞRULA
                         </button>
                         {modpack.install_path && (
-                            <button onClick={onOpenTerminal} className="btn-secondary text-xs py-1.5 px-3" title="Terminalde bu klasörü aç">
-                                <HiOutlineTerminal className="w-4 h-4" /> Terminal
+                            <button onClick={onOpenTerminal}
+                                style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                                <I.Terminal size={10}/> TERMİNAL
                             </button>
                         )}
-                        <button onClick={onChangeVersion} className="btn-secondary text-xs py-1.5 px-3">
-                            <HiOutlineArrowPath className="w-4 h-4" /> Sürüm Değiştir
+                        <button onClick={onChangeVersion}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                            <I.Restart size={10}/> SÜRÜM
                         </button>
-                        <button onClick={onSettings} className="btn-secondary text-xs py-1.5 px-3">
-                            <HiOutlineCog6Tooth className="w-4 h-4" /> Ayarlar
+                        <button onClick={onSettings}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                            <I.Cog size={10}/> AYAR
                         </button>
-                        <button onClick={onUninstall} disabled={uninstalling} className="btn-danger text-xs py-1.5 px-3">
-                            <HiOutlineTrash className="w-4 h-4" /> Kaldır
+                        <button onClick={onUninstall} disabled={uninstalling}
+                            style={{
+                                ...btnGhost, display: 'flex', alignItems: 'center', gap: 4,
+                                fontSize: 10, padding: '5px 10px',
+                                color: A.err, borderColor: 'rgba(248,113,113,0.2)',
+                            }}>
+                            <I.Trash size={10}/> KALDIR
                         </button>
                     </>
                 ) : (
-                    <button onClick={onInstall} disabled={installing} className="btn-primary text-xs py-1.5 px-3">
-                        <HiOutlineChevronDown className="w-4 h-4" />
-                        Sürüm Seç & Yükle
+                    <button onClick={onInstall} disabled={installing}
+                        style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, padding: '5px 12px' }}>
+                        <I.Download size={10}/> SÜRÜM SEÇ & YÜKLE
                     </button>
                 )}
             </div>
@@ -711,13 +766,84 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
     );
 }
 
-// ─── Doğrulama Modalı ───────────────────────────────────────────────────────
+// ── Sürüm seçim modalı ───────────────────────────────────────────────────
+function VersionSelectModal({ title, subtitle, files, loading, onClose, onSelect, isPending, buttonLabel }) {
+    const [selectedFileId, setSelectedFileId] = useState(null);
+    return (
+        <Modal onClose={onClose} maxWidth={560}>
+            <ModalHeader title={title} onClose={onClose}/>
+            {subtitle && (
+                <div style={{ padding: '6px 16px', borderBottom: `1px solid ${A.border}`, fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                    {subtitle}
+                </div>
+            )}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0', minHeight: 0 }}>
+                {loading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: 10 }}>
+                        <Spinner/>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>Sürümler yükleniyor...</span>
+                    </div>
+                ) : files.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0', color: A.faintest, fontFamily: A.mono, fontSize: 11 }}>
+                        Sürüm bulunamadı
+                    </div>
+                ) : (
+                    files.map(file => (
+                        <div key={file.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '10px 16px', borderBottom: `1px solid ${A.border}`,
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: A.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {file.displayName}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                                    {file.fileLength && (
+                                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                                            {formatSize(file.fileLength)}
+                                        </span>
+                                    )}
+                                    {file.fileDate && (
+                                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                                            {formatFileDate(file.fileDate)}
+                                        </span>
+                                    )}
+                                    {file.gameVersions?.slice(0, 3).map((v, i) => (
+                                        <Pill key={i}>{v}</Pill>
+                                    ))}
+                                    {file.serverPackFileId && (
+                                        <Pill color={A.ok} bg="rgba(74,222,128,0.1)">Server Pack</Pill>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => { setSelectedFileId(file.id); onSelect(file.id); }}
+                                disabled={isPending}
+                                style={{
+                                    ...btnPrimary, fontSize: 10, padding: '5px 10px',
+                                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                                    opacity: isPending ? 0.5 : 1,
+                                }}>
+                                {isPending && selectedFileId === file.id
+                                    ? <Spinner size={10}/>
+                                    : <><I.Download size={10}/> {buttonLabel}</>
+                                }
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+        </Modal>
+    );
+}
 
+// ── Doğrulama modalı ─────────────────────────────────────────────────────
 function ValidationModal({ modpack, loading, analysis, onClose, onRepair }) {
     const [selected, setSelected] = useState({});
-
-    // Zorunlu (canSkip=false) sorunlar otomatik seçili, atlanamaz
     const allIssues = analysis?.issues || [];
+
     const toggleIssue = (id, canSkip) => {
         if (!canSkip) return;
         setSelected(prev => ({ ...prev, [id]: !prev[id] }));
@@ -725,128 +851,118 @@ function ValidationModal({ modpack, loading, analysis, onClose, onRepair }) {
 
     const isSelected = (issue) => {
         if (!issue.canSkip) return true;
-        return selected[issue.id] !== false; // varsayılan seçili
+        return selected[issue.id] !== false;
     };
 
     const selectedIds = allIssues.filter(i => isSelected(i)).map(i => i.id);
 
-    const severityStyle = (severity) => {
-        if (severity === 'error') return 'text-red-600 bg-red-50 border-red-200';
-        if (severity === 'warning') return 'text-amber-600 bg-amber-50 border-amber-200';
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-    };
-
-    const SeverityIcon = ({ severity }) => {
-        if (severity === 'error') return <HiOutlineExclamationTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />;
-        if (severity === 'warning') return <HiOutlineExclamationTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />;
-        return <HiOutlineInformationCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />;
-    };
+    const severityColor = (severity) => ({
+        error: A.err, warning: A.warn, info: '#60a5fa',
+    }[severity] || A.faint);
 
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="glass-card p-6 w-full max-w-xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-5 flex-shrink-0">
-                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <HiOutlineWrenchScrewdriver className="w-5 h-5 text-gray-700" />
-                        Doğrula & Onar — {modpack.name}
-                    </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
-                        <HiOutlineXMark className="w-5 h-5" />
-                    </button>
-                </div>
-
+        <Modal onClose={onClose} maxWidth={580}>
+            <ModalHeader title={`Doğrula & Onar — ${modpack.name}`} onClose={onClose}/>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', minHeight: 0 }}>
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center py-12 gap-3">
-                        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
-                        <p className="text-sm text-gray-500">Analiz ediliyor...</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: 10 }}>
+                        <Spinner size={18}/>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>Analiz ediliyor...</span>
                     </div>
                 ) : analysis ? (
                     <>
-                        {/* Tespit Bilgisi */}
-                        <div className="bg-gray-50 rounded-xl p-4 mb-4 flex-shrink-0">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tespit Sonucu</p>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                                <span className="text-gray-500">Paket Tipi:</span>
-                                <span className="font-medium text-gray-900 capitalize">{analysis.detectedInfo?.packageType || '?'}</span>
-                                <span className="text-gray-500">Loader:</span>
-                                <span className="font-medium text-gray-900 uppercase">{analysis.detectedInfo?.loader || '?'}</span>
-                                <span className="text-gray-500">MC Sürümü:</span>
-                                <span className="font-medium text-gray-900">{analysis.detectedInfo?.mcVersion || '?'}</span>
-                                <span className="text-gray-500">Gerekli Java:</span>
-                                <span className="font-medium text-gray-900">{analysis.detectedInfo?.requiredJava ? `Java ${analysis.detectedInfo.requiredJava}` : '?'}</span>
-                            </div>
+                        {/* Tespit bilgisi */}
+                        <div style={{
+                            background: A.bgDeeper, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '12px 14px', marginBottom: 16,
+                            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px',
+                        }}>
+                            {[
+                                ['Paket Tipi', analysis.detectedInfo?.packageType || '?'],
+                                ['Loader', analysis.detectedInfo?.loader || '?'],
+                                ['MC Sürümü', analysis.detectedInfo?.mcVersion || '?'],
+                                ['Gerekli Java', analysis.detectedInfo?.requiredJava ? `Java ${analysis.detectedInfo.requiredJava}` : '?'],
+                            ].map(([label, value]) => (
+                                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Cap>{label}</Cap>
+                                    <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{value}</span>
+                                </div>
+                            ))}
                         </div>
 
-                        {/* Sorun Listesi */}
                         {allIssues.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-8 gap-3 text-green-600">
-                                <HiOutlineShieldCheck className="w-12 h-12" />
-                                <p className="font-semibold">Sorun bulunamadı!</p>
-                                <p className="text-sm text-gray-500">Sunucu başlatılmaya hazır.</p>
+                            <div style={{ textAlign: 'center', padding: '24px 0', color: A.ok }}>
+                                <I.Check size={32} style={{ marginBottom: 8 }}/>
+                                <div style={{ fontFamily: A.mono, fontSize: 12 }}>Sorun bulunamadı!</div>
+                                <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Sunucu başlatılmaya hazır.</div>
                             </div>
                         ) : (
                             <>
-                                <p className="text-sm text-gray-500 mb-3 flex-shrink-0">
-                                    {allIssues.length} sorun tespit edildi. Onarılacakları seçin:
-                                </p>
-                                <div className="flex-1 overflow-y-auto space-y-2 min-h-0 mb-4">
-                                    {allIssues.map(issue => (
-                                        <div
-                                            key={issue.id}
-                                            onClick={() => toggleIssue(issue.id, issue.canSkip)}
-                                            className={`border rounded-xl p-3 transition-all ${issue.canSkip ? 'cursor-pointer' : 'cursor-not-allowed opacity-90'} ${isSelected(issue) ? severityStyle(issue.severity) : 'bg-gray-50 border-gray-200 text-gray-400'}`}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-                                                    {isSelected(issue)
-                                                        ? <div className="w-4 h-4 rounded bg-current opacity-80 flex items-center justify-center">
-                                                            <HiOutlineCheckCircle className="w-3 h-3 text-white" />
-                                                          </div>
-                                                        : <div className="w-4 h-4 rounded border-2 border-gray-300" />
-                                                    }
-                                                    <SeverityIcon severity={issue.severity} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="text-sm font-semibold">{issue.title}</p>
-                                                        {!issue.canSkip && (
-                                                            <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Zorunlu</span>
-                                                        )}
+                                <div style={{ fontSize: 11, color: A.faint, marginBottom: 10 }}>
+                                    {allIssues.length} sorun tespit edildi:
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {allIssues.map(issue => {
+                                        const sel = isSelected(issue);
+                                        const c = severityColor(issue.severity);
+                                        return (
+                                            <div key={issue.id}
+                                                onClick={() => toggleIssue(issue.id, issue.canSkip)}
+                                                style={{
+                                                    padding: '10px 12px', borderRadius: 2,
+                                                    border: `1px solid ${sel ? c + '44' : A.border}`,
+                                                    background: sel ? c + '0d' : A.bgDeeper,
+                                                    cursor: issue.canSkip ? 'pointer' : 'not-allowed',
+                                                    opacity: issue.canSkip ? 1 : 0.9,
+                                                }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                                    <div style={{ flexShrink: 0, marginTop: 2 }}>
+                                                        {sel
+                                                            ? <I.Check size={14} style={{ color: c }}/>
+                                                            : <div style={{ width: 14, height: 14, borderRadius: 2, border: `1.5px solid ${A.border}` }}/>
+                                                        }
                                                     </div>
-                                                    <p className="text-xs opacity-80 mt-0.5">{issue.description}</p>
-                                                    <p className="text-xs font-medium mt-1 opacity-70">→ {issue.action}</p>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            <span style={{ fontSize: 12, color: A.text, fontWeight: 500 }}>{issue.title}</span>
+                                                            {!issue.canSkip && (
+                                                                <Pill color={A.err} bg="rgba(248,113,113,0.1)">ZORUNLU</Pill>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: 11, color: A.faint, marginTop: 3 }}>{issue.description}</div>
+                                                        <div style={{ fontFamily: A.mono, fontSize: 10, color: c, marginTop: 4 }}>→ {issue.action}</div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="flex gap-3 justify-end flex-shrink-0">
-                                    <button onClick={onClose} className="btn-secondary">İptal</button>
-                                    <button
-                                        onClick={() => onRepair(selectedIds)}
-                                        disabled={selectedIds.length === 0}
-                                        className="btn-primary"
-                                    >
-                                        <HiOutlineWrenchScrewdriver className="w-4 h-4" />
-                                        {selectedIds.length} Sorunu Onar
-                                    </button>
+                                        );
+                                    })}
                                 </div>
                             </>
                         )}
                     </>
                 ) : null}
             </div>
-        </div>
+            {analysis && allIssues.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                    <button onClick={onClose} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                    <button onClick={() => onRepair(selectedIds)} disabled={selectedIds.length === 0}
+                        style={{
+                            ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', gap: 6,
+                            opacity: selectedIds.length === 0 ? 0.4 : 1,
+                        }}>
+                        <I.Wrench size={11}/> {selectedIds.length} SORUNU ONAR
+                    </button>
+                </div>
+            )}
+        </Modal>
     );
 }
 
-// ─── Onarım İlerleme Modalı ─────────────────────────────────────────────────
-
+// ── Onarım ilerleme modalı ───────────────────────────────────────────────
 function RepairProgressModal({ status, modpackId, onClose }) {
     const [verifyResult, setVerifyResult] = useState(null);
 
-    // Onarım bitince final doğrulama yap
     const handleVerify = async () => {
         try {
             const res = await api.get(`/modpacks/${modpackId}/verify`);
@@ -860,71 +976,89 @@ function RepairProgressModal({ status, modpackId, onClose }) {
     const progress = status?.progress || 0;
 
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="glass-card p-6 w-full max-w-lg flex flex-col fade-in">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        {isDone
-                            ? hasError
-                                ? <><HiOutlineExclamationTriangle className="w-5 h-5 text-red-500" /> Onarım Hatası</>
-                                : <><HiOutlineShieldCheck className="w-5 h-5 text-green-500" /> Onarım Tamamlandı</>
-                            : <><div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin flex-shrink-0" /> Onarım Devam Ediyor...</>
-                        }
-                    </h2>
-                    {isDone && (
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
-                            <HiOutlineXMark className="w-5 h-5" />
-                        </button>
-                    )}
-                </div>
-
-                {/* Progress Bar */}
-                <div className="w-full bg-gray-100 rounded-full h-2 mb-4 overflow-hidden">
-                    <div
-                        className={`h-full rounded-full transition-all duration-300 ${hasError ? 'bg-red-500' : 'bg-gray-900'}`}
-                        style={{ width: `${progress}%` }}
-                    />
+        <Modal onClose={isDone ? onClose : undefined} maxWidth={520}>
+            <div style={{
+                padding: '12px 16px', borderBottom: `1px solid ${A.border}`,
+                display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+            }}>
+                {isDone
+                    ? hasError
+                        ? <I.Alert size={14} style={{ color: A.err }}/>
+                        : <I.Check size={14} style={{ color: A.ok }}/>
+                    : <Spinner size={14}/>
+                }
+                <Cap>{isDone ? (hasError ? 'Onarım Hatası' : 'Onarım Tamamlandı') : 'Onarım Devam Ediyor...'}</Cap>
+                {isDone && (
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, marginLeft: 'auto' }}>
+                        <I.X size={14}/>
+                    </button>
+                )}
+            </div>
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Progress bar */}
+                <div style={{ background: A.bg, border: `1px solid ${A.border}`, height: 4, borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{
+                        height: '100%', width: `${progress}%`,
+                        background: hasError ? A.err : 'var(--accent)',
+                        transition: 'width 300ms ease', borderRadius: 2,
+                    }}/>
                 </div>
 
                 {/* Log */}
-                <div className="bg-gray-900 rounded-xl p-3 h-40 overflow-y-auto font-mono text-xs text-green-400 space-y-0.5 mb-4">
+                <div style={{
+                    background: A.bgDeeper, border: `1px solid ${A.border}`,
+                    borderRadius: 2, padding: '8px 12px',
+                    height: 140, overflowY: 'auto',
+                    fontFamily: A.mono, fontSize: 10, lineHeight: 1.6,
+                }}>
                     {log.length === 0 ? (
-                        <p className="text-gray-500">Başlatılıyor...</p>
-                    ) : log.map((line, i) => (
-                        <p key={i} className={line.startsWith('Hata') ? 'text-red-400' : ''}>{line}</p>
-                    ))}
+                        <span style={{ color: A.faintest }}>Başlatılıyor...</span>
+                    ) : (
+                        log.map((line, i) => (
+                            <div key={i} style={{ color: line.startsWith('Hata') ? A.err : A.ok }}>{line}</div>
+                        ))
+                    )}
                 </div>
 
-                {/* Final doğrulama sonucu */}
                 {isDone && !hasError && !verifyResult && (
-                    <button onClick={handleVerify} className="btn-secondary w-full mb-3 flex items-center justify-center gap-2">
-                        <HiOutlineShieldCheck className="w-4 h-4" /> Final Doğrulaması Yap
+                    <button onClick={handleVerify}
+                        style={{ ...btnGhost, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <I.Check size={11}/> FİNAL DOĞRULAMASI YAP
                     </button>
                 )}
 
                 {verifyResult && (
-                    <div className={`rounded-xl p-3 mb-3 text-sm ${verifyResult.ready ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                        <p className="font-semibold">{verifyResult.summary}</p>
+                    <div style={{
+                        background: verifyResult.ready ? 'rgba(74,222,128,0.06)' : 'rgba(251,191,36,0.06)',
+                        border: `1px solid ${verifyResult.ready ? 'rgba(74,222,128,0.2)' : 'rgba(251,191,36,0.2)'}`,
+                        borderRadius: 2, padding: '8px 12px',
+                        fontFamily: A.mono, fontSize: 11,
+                        color: verifyResult.ready ? A.ok : A.warn,
+                    }}>
+                        <div style={{ fontWeight: 600 }}>{verifyResult.summary}</div>
                         {verifyResult.issues?.length > 0 && (
-                            <ul className="mt-2 space-y-1 text-xs">
-                                {verifyResult.issues.map((issue, i) => <li key={i}>• {issue}</li>)}
+                            <ul style={{ marginTop: 6, paddingLeft: 0, listStyle: 'none', fontSize: 10 }}>
+                                {verifyResult.issues.map((issue, i) => (
+                                    <li key={i} style={{ marginTop: 2 }}>· {issue}</li>
+                                ))}
                             </ul>
                         )}
                     </div>
                 )}
 
                 {isDone && (
-                    <button onClick={onClose} className="btn-primary w-full">Kapat</button>
+                    <button onClick={onClose} style={{ ...btnPrimary, width: '100%', justifyContent: 'center', display: 'flex' }}>
+                        KAPAT
+                    </button>
                 )}
             </div>
-        </div>
+        </Modal>
     );
 }
 
+// ── Modpack ayarlar modalı ───────────────────────────────────────────────
 const AIKARS_FLAGS = `-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1`;
-
 const RAM_PRESETS = ['1G', '2G', '3G', '4G', '6G', '8G', '12G', '16G', '32G'];
-
 const PROPS_GROUPS = [
     {
         label: 'Bağlantı & Erişim',
@@ -972,7 +1106,7 @@ const PROPS_GROUPS = [
 ];
 
 function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
-    const [activeTab, setActiveTab] = useState('port');
+    const [settingsTab, setSettingsTab] = useState('port');
     const [portError, setPortError] = useState('');
     const [settings, setSettings] = useState({
         server_port: modpack.server_port || 25565,
@@ -982,7 +1116,6 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
         properties: {},
     });
 
-    // React Query v5: onSuccess kaldırıldı, useEffect kullan
     const { data: settingsData, isLoading } = useQuery({
         queryKey: ['modpackSettings', modpack.id],
         queryFn: () => api.get(`/modpacks/${modpack.id}/settings`).then(r => r.data),
@@ -1003,24 +1136,14 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
 
     const set = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
     const setProp = (key, value) => setSettings(prev => ({ ...prev, properties: { ...prev.properties, [key]: value } }));
-
     const validatePort = (val) => {
         const n = parseInt(val);
-        if (isNaN(n) || n < 1024 || n > 65535) {
-            setPortError('Port 1024–65535 arasında olmalı');
-            return false;
-        }
+        if (isNaN(n) || n < 1024 || n > 65535) { setPortError('Port 1024–65535 arasında olmalı'); return false; }
         setPortError('');
         return true;
     };
-
-    const handleSave = () => {
-        if (!validatePort(settings.server_port)) return;
-        onSave(settings);
-    };
-
+    const handleSave = () => { if (!validatePort(settings.server_port)) return; onSave(settings); };
     const hasProperties = Object.keys(settings.properties || {}).length > 0;
-
     const TABS = [
         { id: 'port', label: 'Bağlantı' },
         { id: 'ram', label: 'Bellek' },
@@ -1028,276 +1151,309 @@ function ModpackSettingsModal({ modpack, onClose, onSave, saving }) {
         { id: 'props', label: 'Oyun Ayarları' },
     ];
 
+    // ── input yardımcısı ─
+    const fieldStyle = {
+        background: A.bg, border: `1px solid ${A.border}`,
+        color: A.text, fontFamily: A.mono, fontSize: 12,
+        padding: '6px 10px', borderRadius: 2, outline: 'none',
+    };
+
+    const ramBtn = (p, current, setter) => (
+        <button key={p} onClick={() => setter(p)}
+            style={{
+                padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                fontFamily: A.mono, fontSize: 11, border: `1px solid`,
+                background: current === p ? 'rgba(167,139,250,0.12)' : 'transparent',
+                color: current === p ? 'var(--accent)' : A.dim,
+                borderColor: current === p ? 'rgba(167,139,250,0.3)' : A.border,
+            }}>
+            {p}
+        </button>
+    );
+
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="glass-card w-full max-w-2xl max-h-[90vh] flex flex-col fade-in" onClick={e => e.stopPropagation()}>
-
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 flex-shrink-0">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                            {modpack.logo_url
-                                ? <img src={modpack.logo_url} alt="" className="w-full h-full object-cover" />
-                                : <HiOutlineCog6Tooth className="w-5 h-5 text-gray-500" />
-                            }
-                        </div>
-                        <div>
-                            <h2 className="text-base font-bold text-gray-900 leading-tight">{modpack.name}</h2>
-                            <p className="text-xs text-gray-400">{modpack.version}</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
-                        <HiOutlineXMark className="w-5 h-5" />
-                    </button>
+        <Modal onClose={onClose} maxWidth={640}>
+            {/* Header */}
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 16px', borderBottom: `1px solid ${A.border}`, flexShrink: 0,
+            }}>
+                <div style={{
+                    width: 36, height: 36, borderRadius: 2,
+                    background: A.bgDeeper, border: `1px solid ${A.border}`,
+                    overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    {modpack.logo_url
+                        ? <img src={modpack.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        : <I.Cog size={16} style={{ color: A.faint }}/>
+                    }
                 </div>
-
-                {/* Tabs */}
-                <div className="flex gap-1 px-6 pt-3 flex-shrink-0">
-                    {TABS.map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>{modpack.name}</div>
+                    <Cap>{modpack.version}</Cap>
                 </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-                    {isLoading ? (
-                        <div className="flex justify-center py-16">
-                            <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : (
-                        <>
-                            {/* ── Bağlantı ── */}
-                            {activeTab === 'port' && (
-                                <div className="space-y-5 fade-in">
-                                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700">
-                                        Farklı port kullanarak aynı makinede birden fazla sunucu eş zamanlı çalıştırabilirsiniz.
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Sunucu Portu</label>
-                                        <div className="flex items-center gap-3">
-                                            <input
-                                                type="number"
-                                                value={settings.server_port}
-                                                onChange={e => { set('server_port', parseInt(e.target.value) || ''); validatePort(e.target.value); }}
-                                                className={`input-field w-40 text-lg font-mono font-bold ${portError ? 'border-red-400' : ''}`}
-                                                min={1024} max={65535}
-                                            />
-                                            <button
-                                                onClick={() => { set('server_port', 25565); setPortError(''); }}
-                                                className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
-                                            >
-                                                Varsayılana sıfırla (25565)
-                                            </button>
-                                        </div>
-                                        {portError && <p className="text-xs text-red-500 mt-1">{portError}</p>}
-                                        <p className="text-xs text-gray-400 mt-2">Geçerli aralık: 1024 – 65535</p>
-                                    </div>
-
-                                    {/* Hızlı port önerileri */}
-                                    <div>
-                                        <p className="text-xs font-medium text-gray-500 mb-2">Hızlı Seçim</p>
-                                        <div className="flex gap-2 flex-wrap">
-                                            {[25565, 25566, 25567, 19132, 19133].map(p => (
-                                                <button
-                                                    key={p}
-                                                    onClick={() => { set('server_port', p); setPortError(''); }}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono transition-all border ${settings.server_port === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
-                                                >
-                                                    {p}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* ── Bellek ── */}
-                            {activeTab === 'ram' && (
-                                <div className="space-y-6 fade-in">
-                                    {/* Max RAM */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-sm font-semibold text-gray-700">Maksimum RAM</label>
-                                            <span className="text-lg font-bold font-mono text-gray-900">{settings.maxRam || '—'}</span>
-                                        </div>
-                                        <div className="flex gap-2 flex-wrap mb-2">
-                                            {RAM_PRESETS.map(p => (
-                                                <button key={p} onClick={() => set('maxRam', p)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all border ${settings.maxRam === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
-                                                    {p}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <input type="text" value={settings.maxRam}
-                                            onChange={e => set('maxRam', e.target.value)}
-                                            className="input-field font-mono text-sm" placeholder="Özel: 6G, 10G, 24G..." />
-                                    </div>
-
-                                    {/* Min RAM */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-sm font-semibold text-gray-700">Minimum RAM</label>
-                                            <span className="text-lg font-bold font-mono text-gray-900">{settings.minRam || '—'}</span>
-                                        </div>
-                                        <div className="flex gap-2 flex-wrap mb-2">
-                                            {RAM_PRESETS.slice(0, 6).map(p => (
-                                                <button key={p} onClick={() => set('minRam', p)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all border ${settings.minRam === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
-                                                    {p}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <input type="text" value={settings.minRam}
-                                            onChange={e => set('minRam', e.target.value)}
-                                            className="input-field font-mono text-sm" placeholder="Özel: 1G, 2G..." />
-                                    </div>
-
-                                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
-                                        <strong>Öneri:</strong> Max RAM = sistem RAM'inin %70-80'i. Min RAM = Max RAM'in yarısı.
-                                        Örnek: 16GB sistem → Max: 12G, Min: 4G
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* ── JVM ── */}
-                            {activeTab === 'jvm' && (
-                                <div className="space-y-4 fade-in">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-sm font-semibold text-gray-700">JVM Argümanları</label>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => set('jvmArgs', AIKARS_FLAGS)}
-                                                className="text-xs px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors font-medium"
-                                            >
-                                                ✦ Aikar's Flags Ekle
-                                            </button>
-                                            <button
-                                                onClick={() => set('jvmArgs', '')}
-                                                className="text-xs px-3 py-1.5 bg-gray-50 text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
-                                            >
-                                                Temizle
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <textarea
-                                        value={settings.jvmArgs}
-                                        onChange={e => set('jvmArgs', e.target.value)}
-                                        className="input-field h-48 font-mono text-xs resize-none"
-                                        placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
-                                        spellCheck={false}
-                                    />
-                                    <p className="text-xs text-gray-400">
-                                        Boş bırakılırsa varsayılan JVM ayarları kullanılır. Aikar's Flags Minecraft sunucuları için optimize edilmiş performans bayraklarıdır.
-                                    </p>
-                                    {settings.jvmArgs && (
-                                        <div className="bg-gray-50 rounded-xl p-3">
-                                            <p className="text-xs text-gray-500 font-medium mb-1">Önizleme:</p>
-                                            <p className="text-xs font-mono text-gray-600 break-all">
-                                                java -Xmx{settings.maxRam || '4G'} -Xms{settings.minRam || '2G'} {settings.jvmArgs} -jar server.jar nogui
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* ── Oyun Ayarları ── */}
-                            {activeTab === 'props' && (
-                                <div className="fade-in">
-                                    {!hasProperties ? (
-                                        <div className="text-center py-12 text-gray-400 space-y-3">
-                                            <HiOutlineCog6Tooth className="w-12 h-12 mx-auto opacity-20" />
-                                            <p className="font-medium">server.properties bulunamadı</p>
-                                            <p className="text-sm">Sunucuyu en az bir kez başlatın — Minecraft ilk açılışta bu dosyayı otomatik oluşturur.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-6">
-                                            {PROPS_GROUPS.map(group => {
-                                                const groupProps = group.keys.filter(k => k.key in settings.properties);
-                                                if (groupProps.length === 0) return null;
-                                                return (
-                                                    <div key={group.label}>
-                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{group.label}</p>
-                                                        <div className="space-y-1">
-                                                            {groupProps.map(({ key, label, type, options }) => {
-                                                                const value = settings.properties[key] ?? '';
-                                                                return (
-                                                                    <div key={key} className="flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0 gap-4">
-                                                                        <label className="text-sm text-gray-700 flex-1">{label}
-                                                                            <span className="ml-2 text-xs text-gray-300 font-mono">{key}</span>
-                                                                        </label>
-                                                                        <div className="flex-shrink-0">
-                                                                            {type === 'boolean' ? (
-                                                                                <button
-                                                                                    onClick={() => setProp(key, value === 'true' ? 'false' : 'true')}
-                                                                                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all border min-w-[72px] ${value === 'true' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
-                                                                                >
-                                                                                    {value === 'true' ? 'Açık' : 'Kapalı'}
-                                                                                </button>
-                                                                            ) : type === 'select' ? (
-                                                                                <select value={value} onChange={e => setProp(key, e.target.value)}
-                                                                                    className="input-field text-sm py-1.5 w-36">
-                                                                                    {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                                                </select>
-                                                                            ) : (
-                                                                                <input type={type === 'number' ? 'number' : 'text'} value={value}
-                                                                                    onChange={e => setProp(key, e.target.value)}
-                                                                                    className="input-field text-sm py-1.5 w-40 font-mono" />
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-
-                                            {/* Diğer properties (gruba girmeyenler) */}
-                                            {(() => {
-                                                const knownKeys = PROPS_GROUPS.flatMap(g => g.keys.map(k => k.key));
-                                                const others = Object.entries(settings.properties).filter(([k]) => !knownKeys.includes(k));
-                                                if (others.length === 0) return null;
-                                                return (
-                                                    <div>
-                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Diğer</p>
-                                                        <div className="space-y-1">
-                                                            {others.map(([key, value]) => (
-                                                                <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 gap-4">
-                                                                    <label className="text-xs font-mono text-gray-500 flex-1">{key}</label>
-                                                                    <input type="text" value={value}
-                                                                        onChange={e => setProp(key, e.target.value)}
-                                                                        className="input-field text-xs py-1.5 w-48 font-mono" />
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div className="flex gap-3 px-6 pb-6 pt-4 border-t border-gray-100 justify-end flex-shrink-0">
-                    <button onClick={onClose} className="btn-secondary">İptal</button>
-                    <button onClick={handleSave} disabled={saving || isLoading || !!portError} className="btn-primary">
-                        {saving
-                            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Kaydediliyor...</>
-                            : 'Kaydet'
-                        }
-                    </button>
-                </div>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                    <I.X size={16}/>
+                </button>
             </div>
-        </div>
+
+            {/* Alt sekmeler */}
+            <div style={{ display: 'flex', gap: 2, padding: '8px 16px 0', borderBottom: `1px solid ${A.border}`, flexShrink: 0 }}>
+                {TABS.map(tab => (
+                    <button key={tab.id} onClick={() => setSettingsTab(tab.id)}
+                        style={{
+                            padding: '6px 12px', border: 'none', cursor: 'pointer',
+                            fontFamily: A.sans, fontSize: 12, borderRadius: '2px 2px 0 0',
+                            background: settingsTab === tab.id ? A.bgDeeper : 'transparent',
+                            color: settingsTab === tab.id ? A.text : A.dim,
+                            borderBottom: `2px solid ${settingsTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                        }}>
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* İçerik */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
+                {isLoading ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+                        <Spinner size={18}/>
+                    </div>
+                ) : (
+                    <>
+                        {/* Bağlantı */}
+                        {settingsTab === 'port' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <div style={{
+                                    background: 'rgba(96,165,250,0.06)', border: `1px solid rgba(96,165,250,0.15)`,
+                                    borderRadius: 2, padding: '10px 12px', fontSize: 11, color: '#93c5fd',
+                                }}>
+                                    Farklı port kullanarak aynı makinede birden fazla sunucu eş zamanlı çalıştırabilirsiniz.
+                                </div>
+                                <div>
+                                    <Cap style={{ display: 'block', marginBottom: 8 }}>Sunucu Portu</Cap>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <input type="number" value={settings.server_port}
+                                            onChange={e => { set('server_port', parseInt(e.target.value) || ''); validatePort(e.target.value); }}
+                                            min={1024} max={65535}
+                                            style={{ ...fieldStyle, width: 120, fontSize: 16, textAlign: 'center', borderColor: portError ? A.err : A.border }}
+                                        />
+                                        <button onClick={() => { set('server_port', 25565); setPortError(''); }}
+                                            style={{ ...btnGhost, fontSize: 10 }}>VARSAYILAN (25565)</button>
+                                    </div>
+                                    {portError && <div style={{ fontFamily: A.mono, fontSize: 10, color: A.err, marginTop: 4 }}>{portError}</div>}
+                                </div>
+                                <div>
+                                    <Cap style={{ display: 'block', marginBottom: 8 }}>Hızlı Seçim</Cap>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        {[25565, 25566, 25567, 19132, 19133].map(p => (
+                                            <button key={p} onClick={() => { set('server_port', p); setPortError(''); }}
+                                                style={{
+                                                    padding: '4px 12px', borderRadius: 2, cursor: 'pointer',
+                                                    fontFamily: A.mono, fontSize: 11,
+                                                    background: settings.server_port === p ? 'rgba(167,139,250,0.12)' : 'transparent',
+                                                    color: settings.server_port === p ? 'var(--accent)' : A.dim,
+                                                    border: `1px solid ${settings.server_port === p ? 'rgba(167,139,250,0.3)' : A.border}`,
+                                                }}>
+                                                {p}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Bellek */}
+                        {settingsTab === 'ram' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                {[
+                                    { label: 'Maksimum RAM', key: 'maxRam' },
+                                    { label: 'Minimum RAM', key: 'minRam' },
+                                ].map(({ label, key }) => (
+                                    <div key={key}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                            <Cap>{label}</Cap>
+                                            <span style={{ fontFamily: A.mono, fontSize: 14, color: 'var(--accent)' }}>{settings[key]}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                                            {(key === 'minRam' ? RAM_PRESETS.slice(0, 6) : RAM_PRESETS).map(p => ramBtn(p, settings[key], (v) => set(key, v)))}
+                                        </div>
+                                        <input value={settings[key]} onChange={e => set(key, e.target.value)}
+                                            placeholder="Özel: 6G, 10G..."
+                                            style={{ ...fieldStyle, width: '100%' }}
+                                            onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                            onBlur={e => e.target.style.borderColor = A.border}
+                                        />
+                                    </div>
+                                ))}
+                                <div style={{
+                                    background: 'rgba(251,191,36,0.06)', border: `1px solid rgba(251,191,36,0.15)`,
+                                    borderRadius: 2, padding: '8px 12px', fontSize: 11, color: A.warn,
+                                }}>
+                                    Öneri: Max RAM = sistem RAM'inin %70-80'i. Örnek: 16GB sistem → Max: 12G, Min: 4G
+                                </div>
+                            </div>
+                        )}
+
+                        {/* JVM */}
+                        {settingsTab === 'jvm' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Cap>JVM Argümanları</Cap>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button onClick={() => set('jvmArgs', AIKARS_FLAGS)}
+                                            style={{
+                                                ...btnGhost, fontSize: 10, color: A.ok,
+                                                borderColor: 'rgba(74,222,128,0.2)',
+                                            }}>
+                                            ✦ AIKAR FLAGS
+                                        </button>
+                                        <button onClick={() => set('jvmArgs', '')}
+                                            style={{ ...btnGhost, fontSize: 10 }}>
+                                            TEMİZLE
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea value={settings.jvmArgs} onChange={e => set('jvmArgs', e.target.value)}
+                                    rows={6} placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
+                                    spellCheck={false}
+                                    style={{
+                                        ...fieldStyle, width: '100%', resize: 'vertical',
+                                        fontFamily: A.mono, fontSize: 10, lineHeight: 1.6,
+                                    }}
+                                    onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                    onBlur={e => e.target.style.borderColor = A.border}
+                                />
+                                {settings.jvmArgs && (
+                                    <div style={{
+                                        background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                        borderRadius: 2, padding: '8px 10px',
+                                        fontFamily: A.mono, fontSize: 10, color: A.dim, lineHeight: 1.5,
+                                        wordBreak: 'break-all',
+                                    }}>
+                                        <Cap style={{ display: 'block', marginBottom: 4 }}>Önizleme</Cap>
+                                        java -Xmx{settings.maxRam || '4G'} -Xms{settings.minRam || '2G'} {settings.jvmArgs} -jar server.jar nogui
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Oyun Ayarları */}
+                        {settingsTab === 'props' && (
+                            <div>
+                                {!hasProperties ? (
+                                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                                        <I.Cog size={28} style={{ color: A.faintest, marginBottom: 10 }}/>
+                                        <div style={{ fontSize: 12, color: A.faint }}>server.properties bulunamadı</div>
+                                        <div style={{ fontSize: 11, color: A.faintest, marginTop: 6 }}>
+                                            Sunucuyu en az bir kez başlatın — dosya otomatik oluşturulur.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                        {PROPS_GROUPS.map(group => {
+                                            const groupProps = group.keys.filter(k => k.key in settings.properties);
+                                            if (groupProps.length === 0) return null;
+                                            return (
+                                                <div key={group.label}>
+                                                    <Cap style={{ display: 'block', marginBottom: 10 }}>{group.label}</Cap>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                                                        {groupProps.map(({ key, label, type, options }) => {
+                                                            const value = settings.properties[key] ?? '';
+                                                            return (
+                                                                <div key={key} style={{
+                                                                    display: 'flex', alignItems: 'center',
+                                                                    justifyContent: 'space-between', gap: 12,
+                                                                    padding: '8px 0',
+                                                                    borderBottom: `1px solid ${A.border}`,
+                                                                }}>
+                                                                    <div>
+                                                                        <div style={{ fontSize: 12, color: A.text }}>{label}</div>
+                                                                        <div style={{ fontFamily: A.mono, fontSize: 9, color: A.faintest }}>{key}</div>
+                                                                    </div>
+                                                                    <div style={{ flexShrink: 0 }}>
+                                                                        {type === 'boolean' ? (
+                                                                            <button onClick={() => setProp(key, value === 'true' ? 'false' : 'true')}
+                                                                                style={{
+                                                                                    padding: '4px 12px', borderRadius: 2,
+                                                                                    border: `1px solid`, cursor: 'pointer',
+                                                                                    fontFamily: A.mono, fontSize: 10, minWidth: 60,
+                                                                                    background: value === 'true' ? 'rgba(74,222,128,0.1)' : 'transparent',
+                                                                                    color: value === 'true' ? A.ok : A.faint,
+                                                                                    borderColor: value === 'true' ? 'rgba(74,222,128,0.2)' : A.border,
+                                                                                }}>
+                                                                                {value === 'true' ? 'AÇIK' : 'KAPALI'}
+                                                                            </button>
+                                                                        ) : type === 'select' ? (
+                                                                            <select value={value} onChange={e => setProp(key, e.target.value)}
+                                                                                style={{ ...fieldStyle, width: 140 }}>
+                                                                                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                                            </select>
+                                                                        ) : (
+                                                                            <input type={type === 'number' ? 'number' : 'text'} value={value}
+                                                                                onChange={e => setProp(key, e.target.value)}
+                                                                                style={{ ...fieldStyle, width: 140 }}
+                                                                                onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                                                                onBlur={e => e.target.style.borderColor = A.border}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* Diğer properties */}
+                                        {(() => {
+                                            const knownKeys = PROPS_GROUPS.flatMap(g => g.keys.map(k => k.key));
+                                            const others = Object.entries(settings.properties).filter(([k]) => !knownKeys.includes(k));
+                                            if (others.length === 0) return null;
+                                            return (
+                                                <div>
+                                                    <Cap style={{ display: 'block', marginBottom: 10 }}>Diğer</Cap>
+                                                    {others.map(([key, value]) => (
+                                                        <div key={key} style={{
+                                                            display: 'flex', alignItems: 'center',
+                                                            justifyContent: 'space-between', gap: 12,
+                                                            padding: '8px 0', borderBottom: `1px solid ${A.border}`,
+                                                        }}>
+                                                            <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>{key}</div>
+                                                            <input type="text" value={value}
+                                                                onChange={e => setProp(key, e.target.value)}
+                                                                style={{ ...fieldStyle, width: 180 }}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+                display: 'flex', gap: 8, padding: '12px 16px',
+                borderTop: `1px solid ${A.border}`, flexShrink: 0, justifyContent: 'flex-end',
+            }}>
+                <button onClick={onClose} style={{ ...btnGhost, padding: '7px 16px' }}>İPTAL</button>
+                <button onClick={handleSave} disabled={saving || isLoading || !!portError}
+                    style={{
+                        ...btnPrimary, padding: '7px 16px',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        opacity: (saving || isLoading || !!portError) ? 0.5 : 1,
+                    }}>
+                    {saving ? <Spinner size={12}/> : null}
+                    KAYDET
+                </button>
+            </div>
+        </Modal>
     );
 }
