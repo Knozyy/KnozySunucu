@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
 import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
 import { I } from '@/hodo/icons';
+import { usePushSubscription } from '@/hooks/usePushSubscription';
 
 // ── Tüm izin verilebilir sayfalar ────────────────────────────────────────
 const ALL_PAGES = [
@@ -102,6 +103,7 @@ export default function SettingsPage() {
         { id: 'templates',  label: 'Şablonlar',            icon: I.Archive },
         { id: 'alerts',     label: 'Kaynak Uyarıları',     icon: I.Alert },
         { id: 'audit',      label: 'Audit Log',            icon: I.Folder },
+        { id: 'push',       label: 'Tarayıcı Bildirimleri', icon: I.Signal },
     ];
 
     return (
@@ -138,6 +140,106 @@ export default function SettingsPage() {
             {activeTab === 'templates'  && <TemplatesPanel/>}
             {activeTab === 'alerts'     && <AlertsPanel/>}
             {activeTab === 'audit'      && <AuditLogPanel/>}
+            {activeTab === 'push'       && <PushNotificationTab/>}
+        </div>
+    );
+}
+
+// ============================================================
+// TARAYICI BİLDİRİMLERİ
+// ============================================================
+function PushNotificationTab() {
+    const { subscribed, permission, loading, supported, vapidKey, subscribe, unsubscribe, error } = usePushSubscription();
+
+    if (!supported) {
+        return (
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                padding: 20, color: A.faint, fontSize: 12, fontFamily: A.mono,
+            }}>
+                Bu tarayıcı Web Push bildirimlerini desteklemiyor.
+            </div>
+        );
+    }
+
+    return (
+        <div style={{
+            background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 20,
+            display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 480,
+        }}>
+            {/* Başlık */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <I.Alert size={14} style={{ color: 'var(--accent)' }}/>
+                <Cap>Tarayıcı Push Bildirimleri</Cap>
+            </div>
+
+            {/* Durum */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, width: 64 }}>İzin</span>
+                    <Pill
+                        color={permission === 'granted' ? A.ok : permission === 'denied' ? A.err : A.warn}
+                        bg={permission === 'granted' ? 'rgba(74,222,128,0.10)' : permission === 'denied' ? 'rgba(248,113,113,0.10)' : 'rgba(251,191,36,0.10)'}
+                    >
+                        {permission === 'granted' ? 'VERİLDİ' : permission === 'denied' ? 'REDDEDİLDİ' : 'BEKLİYOR'}
+                    </Pill>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, width: 64 }}>Durum</span>
+                    <Pill
+                        color={subscribed ? A.ok : A.dim}
+                        bg={subscribed ? 'rgba(74,222,128,0.10)' : 'rgba(255,255,255,0.04)'}
+                    >
+                        {loading ? 'YÜKLENİYOR' : subscribed ? 'AKTİF' : 'PASİF'}
+                    </Pill>
+                </div>
+            </div>
+
+            {/* Açıklama */}
+            <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6, fontFamily: A.sans }}>
+                Etkinleştirildiğinde sunucu çökmesi ve disk uyarıları bu tarayıcıya anlık bildirim olarak iletilir.
+            </div>
+
+            {/* İzin reddedildi uyarısı */}
+            {permission === 'denied' && (
+                <div style={{
+                    fontSize: 11, color: A.warn, fontFamily: A.mono, lineHeight: 1.6,
+                    background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)',
+                    borderRadius: 3, padding: '8px 12px',
+                }}>
+                    Bildirim izni reddedildi. Tarayıcı adres çubuğundaki kilit simgesinden izni manuel olarak vermeniz gerekiyor.
+                </div>
+            )}
+
+            {/* Hata */}
+            {error && (
+                <div style={{
+                    fontSize: 11, color: A.err, fontFamily: A.mono,
+                    background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)',
+                    borderRadius: 3, padding: '8px 12px',
+                }}>
+                    {error}
+                </div>
+            )}
+
+            {/* Eylem butonu */}
+            {permission !== 'denied' && (
+                <div>
+                    {subscribed ? (
+                        <button onClick={unsubscribe} disabled={loading} style={{
+                            ...btnGhost, opacity: loading ? 0.5 : 1, fontSize: 11,
+                        }}>
+                            Devre Dışı Bırak
+                        </button>
+                    ) : (
+                        <button onClick={subscribe} disabled={loading || !vapidKey} style={{
+                            ...btnPrimary, opacity: (loading || !vapidKey) ? 0.5 : 1, fontSize: 11,
+                        }}>
+                            Etkinleştir
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
