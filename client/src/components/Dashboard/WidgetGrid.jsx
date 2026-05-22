@@ -1,22 +1,36 @@
 // client/src/components/Dashboard/WidgetGrid.jsx
-import ReactGridLayout, { WidthProvider } from 'react-grid-layout';
+import { useRef, useState, useEffect } from 'react';
+import ReactGridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { WIDGET_MAP } from './widgetMap';
 import { WidgetWrapper } from './WidgetWrapper';
 
-const ResponsiveGrid = WidthProvider(ReactGridLayout);
+function useContainerWidth(ref) {
+    const [width, setWidth] = useState(1200);
+    useEffect(() => {
+        if (!ref.current) return;
+        setWidth(ref.current.getBoundingClientRect().width);
+        const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+        ro.observe(ref.current);
+        return () => ro.disconnect();
+    }, []);
+    return width;
+}
 
 export function WidgetGrid({ server, series, installedModpacks, layout, editMode, onLayoutChange, onDeleteWidget }) {
+    const containerRef = useRef(null);
+    const width = useContainerWidth(containerRef);
     const widgetProps = { server, series, installedModpacks };
 
     return (
-        <>
+        <div ref={containerRef}>
             <style>{`
                 .react-resizable-handle { opacity: ${editMode ? 1 : 0}; }
                 .react-grid-item.react-grid-placeholder { background: rgba(167,139,250,0.15) !important; border-radius: 4px; }
             `}</style>
-            <ResponsiveGrid
+            <ReactGridLayout
+                width={width}
                 layout={layout}
                 cols={12}
                 rowHeight={80}
@@ -42,7 +56,7 @@ export function WidgetGrid({ server, series, installedModpacks, layout, editMode
                         </div>
                     );
                 })}
-            </ResponsiveGrid>
-        </>
+            </ReactGridLayout>
+        </div>
     );
 }
