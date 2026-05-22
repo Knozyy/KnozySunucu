@@ -33,3 +33,10 @@ export function formatDate(dateStr) {
     const date = new Date(dateStr);
     return date.toLocaleString('tr-TR');
 }
+
+export function parseRamGB(str) {
+    if (!str) return 0;
+    const m = String(str).match(/^(\d+)([GgMm])$/);
+    if (!m) return 0;
+    return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+}
