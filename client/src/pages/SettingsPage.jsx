@@ -2,18 +2,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/context/I18nContext';
-import {
-    HiOutlineArrowPath,
-    HiOutlineCpuChip,
-    HiOutlineShieldCheck,
-    HiOutlineUserPlus, HiOutlineTrash, HiOutlinePlus, HiOutlinePencil,
-    HiOutlineCheck, HiOutlineTag, HiOutlineKey, HiOutlineClipboard,
-    HiOutlineEyeSlash, HiOutlineXMark, HiOutlineClipboardDocumentList,
-    HiOutlineBookmarkSquare, HiOutlineBell,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
-// ── Tüm izin verilebilir sayfalar ─────────────────────────────────────────────
+// ── Tüm izin verilebilir sayfalar ────────────────────────────────────────
 const ALL_PAGES = [
     { key: 'dashboard',   label: 'Ana Panel',    emoji: '🏠' },
     { key: 'console',     label: 'Konsol',       emoji: '💻' },
@@ -32,63 +25,238 @@ const ALL_PAGES = [
     { key: 'server',      label: 'Sunucu Bilgi', emoji: '🖥️' },
 ];
 
-const PRESET_COLORS = [
-    '#6366f1', '#10b981', '#f59e0b', '#ef4444',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
-];
+const PRESET_COLORS = ['#a78bfa', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#8b5cf6', '#ec4899', '#14b8a6'];
 
-export default function SettingsPage() {
-    const [activeTab, setActiveTab] = useState('tasks');
-    const { t } = useI18n();
-
-    const tabs = [
-        { id: 'tasks',     label: 'Görev Yöneticisi',   icon: HiOutlineCpuChip },
-        { id: 'users',     label: 'Panel Kullanıcıları', icon: HiOutlineShieldCheck },
-        { id: 'categories',label: 'İzin Kategorileri',   icon: HiOutlineTag },
-        { id: 'tokens',    label: 'API Tokenları',       icon: HiOutlineKey },
-        { id: 'templates', label: 'Şablonlar',           icon: HiOutlineBookmarkSquare },
-        { id: 'alerts',    label: 'Kaynak Uyarıları',    icon: HiOutlineBell },
-        { id: 'audit',     label: 'Audit Log',           icon: HiOutlineClipboardDocumentList },
-    ];
-
+// ── Spinner ───────────────────────────────────────────────────────────────
+function Spinner({ size = 14 }) {
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between fade-in">
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('settings.title')}</h1>
-                    <p className="text-gray-500">{t('settings.subtitle')}</p>
-                </div>
-            </div>
+        <>
+            <div style={{
+                width: size, height: size,
+                border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
+                borderRadius: 99, animation: 'hodo-spin 0.8s linear infinite',
+            }}/>
+            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+        </>
+    );
+}
 
-            {/* Tab buttons */}
-            <div className="flex gap-2 fade-in overflow-x-auto pb-2 scrollbar-hide">
-                {tabs.map(tab => (
-                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                            }`}>
-                        <tab.icon className="w-4 h-4" /> {tab.label}
-                    </button>
-                ))}
+// ── Hodo Modal ─────────────────────────────────────────────────────────────
+function HodoModal({ children, onClose, maxWidth = 520 }) {
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 60,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: 16,
+        }} onClick={onClose}>
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`,
+                borderRadius: 4, width: '100%', maxWidth,
+                maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+            }} onClick={e => e.stopPropagation()}>
+                {children}
             </div>
-
-            {activeTab === 'tasks'      && <TaskManagerPanel />}
-            {activeTab === 'users'      && <PanelUsersPanel />}
-            {activeTab === 'categories' && <CategoriesPanel />}
-            {activeTab === 'tokens'     && <ApiTokensPanel />}
-            {activeTab === 'templates'  && <TemplatesPanel />}
-            {activeTab === 'alerts'     && <AlertsPanel />}
-            {activeTab === 'audit'      && <AuditLogPanel />}
         </div>
     );
 }
 
+function HodoModalHeader({ title, onClose }) {
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', borderBottom: `1px solid ${A.border}`, flexShrink: 0,
+        }}>
+            <Cap style={{ fontSize: 11 }}>{title}</Cap>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                <I.X size={14}/>
+            </button>
+        </div>
+    );
+}
+
+// ── Hodo table ─────────────────────────────────────────────────────────────
+const tblStyle = {
+    width: '100%', borderCollapse: 'collapse',
+    fontFamily: A.sans, fontSize: 12,
+};
+const thStyle = {
+    padding: '8px 14px', background: A.bgDeeper,
+    color: A.faint, fontSize: 10, fontWeight: 500,
+    letterSpacing: '0.08em', textTransform: 'uppercase',
+    borderBottom: `1px solid ${A.border}`, textAlign: 'left',
+};
+const tdStyle = {
+    padding: '9px 14px', borderBottom: `1px solid ${A.border}`,
+    color: A.dim, verticalAlign: 'middle',
+};
+
+export default function SettingsPage() {
+    const [activeTab, setActiveTab] = useState('tasks');
+
+    const tabs = [
+        { id: 'tasks',      label: 'Görev Yöneticisi',   icon: I.CPU },
+        { id: 'users',      label: 'Kullanıcılar',        icon: I.Users },
+        { id: 'categories', label: 'İzin Kategorileri',   icon: I.Stack },
+        { id: 'tokens',     label: 'API Tokenları',        icon: I.Signal },
+        { id: 'templates',  label: 'Şablonlar',            icon: I.Archive },
+        { id: 'alerts',     label: 'Kaynak Uyarıları',     icon: I.Alert },
+        { id: 'audit',      label: 'Audit Log',            icon: I.Folder },
+    ];
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Başlık */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <I.Cog size={16} style={{ color: 'var(--accent)' }}/>
+                <Cap style={{ fontSize: 11 }}>Ayarlar</Cap>
+            </div>
+
+            {/* Sekmeler */}
+            <div style={{ display: 'flex', gap: 2, overflowX: 'auto' }}>
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '7px 12px', border: 'none', cursor: 'pointer',
+                            fontFamily: A.sans, fontSize: 12, borderRadius: 2,
+                            whiteSpace: 'nowrap', flexShrink: 0,
+                            background: activeTab === tab.id ? A.panel : 'transparent',
+                            color: activeTab === tab.id ? A.text : A.dim,
+                            borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                        }}>
+                        <tab.icon size={13}/> {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Sekme içerikleri */}
+            {activeTab === 'tasks'      && <TaskManagerPanel/>}
+            {activeTab === 'users'      && <PanelUsersPanel/>}
+            {activeTab === 'categories' && <CategoriesPanel/>}
+            {activeTab === 'tokens'     && <ApiTokensPanel/>}
+            {activeTab === 'templates'  && <TemplatesPanel/>}
+            {activeTab === 'alerts'     && <AlertsPanel/>}
+            {activeTab === 'audit'      && <AuditLogPanel/>}
+        </div>
+    );
+}
 
 // ============================================================
-// PANEL KULLANICI YÖNETİMİ (PanelUsers)
+// GÖREV YÖNETİCİSİ
+// ============================================================
+function TaskManagerPanel() {
+    const queryClient = useQueryClient();
+    const { data: processesData, isLoading } = useQuery({
+        queryKey: ['systemProcesses'],
+        queryFn: () => api.get('/system/processes').then(r => r.data),
+        refetchInterval: 5000,
+    });
+
+    const killMutation = useMutation({
+        mutationFn: (pid) => api.post('/system/processes/kill', { pid }),
+        onSuccess: (res) => {
+            toast.success(res.data.message);
+            queryClient.invalidateQueries({ queryKey: ['systemProcesses'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'İşlem sonlandırılamadı'),
+    });
+
+    const processes = processesData?.processes || [];
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>Aktif İşlemler · 5s güncelleme</Cap>
+                <button onClick={() => queryClient.invalidateQueries({ queryKey: ['systemProcesses'] })}
+                    style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10 }}>
+                    <I.Restart size={11}/> YENİLE
+                </button>
+            </div>
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                <table style={tblStyle}>
+                    <thead>
+                        <tr>
+                            <th style={thStyle}>PID</th>
+                            <th style={thStyle}>İşlem</th>
+                            <th style={{ ...thStyle, textAlign: 'right' }}>CPU</th>
+                            <th style={{ ...thStyle, textAlign: 'right' }}>RAM</th>
+                            <th style={{ ...thStyle, textAlign: 'right' }}>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {isLoading ? (
+                            <tr><td colSpan="5" style={{ ...tdStyle, textAlign: 'center', padding: '32px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
+                                    <Spinner size={12}/>
+                                    <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>Yükleniyor...</span>
+                                </div>
+                            </td></tr>
+                        ) : processes.length === 0 ? (
+                            <tr><td colSpan="5" style={{ ...tdStyle, textAlign: 'center', padding: '32px' }}>
+                                <I.CPU size={24} style={{ color: A.faintest, marginBottom: 6 }}/>
+                                <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faintest }}>
+                                    Aktif Java/ağ işlemi yok
+                                </div>
+                            </td></tr>
+                        ) : (
+                            processes.map(proc => (
+                                <tr key={proc.pid}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{ ...tdStyle, fontFamily: A.mono, fontSize: 11, color: A.faint }}>{proc.pid}</td>
+                                    <td style={tdStyle}>
+                                        <div style={{ fontSize: 12, color: A.text }}>{proc.name}</div>
+                                        <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest, marginTop: 2, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {proc.command}
+                                        </div>
+                                    </td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                        <span style={{
+                                            fontFamily: A.mono, fontSize: 11,
+                                            color: proc.cpu > 50 ? A.err : A.ok,
+                                            background: proc.cpu > 50 ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)',
+                                            padding: '2px 6px', borderRadius: 2,
+                                        }}>
+                                            {proc.cpu}%
+                                        </span>
+                                    </td>
+                                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: A.mono, fontSize: 11, color: A.dim }}>
+                                        {proc.mem} MB
+                                    </td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                        <button onClick={() => {
+                                            if (window.confirm(`${proc.name} (PID: ${proc.pid}) sonlandırılsın mı?`)) {
+                                                killMutation.mutate(proc.pid);
+                                            }
+                                        }}
+                                            style={{
+                                                padding: '3px 10px', borderRadius: 2,
+                                                background: 'rgba(248,113,113,0.08)',
+                                                border: `1px solid rgba(248,113,113,0.2)`,
+                                                color: A.err, cursor: 'pointer',
+                                                fontFamily: A.mono, fontSize: 10,
+                                                letterSpacing: '0.04em',
+                                            }}>
+                                            KILL
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// PANEL KULLANICILARI
 // ============================================================
 function PanelUsersPanel() {
     const queryClient = useQueryClient();
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [modal, setModal] = useState(false);
     const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user', category_id: '' });
 
     const { data: usersData, isLoading } = useQuery({
@@ -104,296 +272,202 @@ function PanelUsersPanel() {
     const addMutation = useMutation({
         mutationFn: (data) => api.post('/users', data),
         onSuccess: async (_, data) => {
-            toast.success('Kullanıcı başarıyla eklendi');
+            toast.success('Kullanıcı eklendi');
             const { data: allUsers } = await api.get('/users');
             if (data.category_id) {
                 const created = allUsers.users.find(u => u.username === data.username);
                 if (created) await api.put(`/users/${created.id}/category`, { category_id: data.category_id });
             }
-            setIsAddModalOpen(false);
+            setModal(false);
             setNewUser({ username: '', password: '', role: 'user', category_id: '' });
             queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
         },
-        onError: (err) => toast.error(err.response?.data?.error || 'Kullanıcı eklenemedi'),
+        onError: (err) => toast.error(err.response?.data?.error || 'Eklenemedi'),
     });
 
     const deleteMutation = useMutation({
         mutationFn: (id) => api.delete(`/users/${id}`),
-        onSuccess: () => {
-            toast.success('Kullanıcı silindi');
-            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
-        },
+        onSuccess: () => { toast.success('Kullanıcı silindi'); queryClient.invalidateQueries({ queryKey: ['panelUsers'] }); },
         onError: (err) => toast.error(err.response?.data?.error || 'Silinemedi'),
     });
 
     const updateRoleMutation = useMutation({
         mutationFn: ({ id, role }) => api.put(`/users/${id}/role`, { role }),
-        onSuccess: () => {
-            toast.success('Rol güncellendi');
-            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
-        },
+        onSuccess: () => { toast.success('Rol güncellendi'); queryClient.invalidateQueries({ queryKey: ['panelUsers'] }); },
         onError: (err) => toast.error(err.response?.data?.error || 'Güncellenemedi'),
     });
 
     const updateCategoryMutation = useMutation({
         mutationFn: ({ id, category_id }) => api.put(`/users/${id}/category`, { category_id: category_id || null }),
-        onSuccess: () => {
-            toast.success('Kategori güncellendi');
-            queryClient.invalidateQueries({ queryKey: ['panelUsers'] });
-        },
+        onSuccess: () => { toast.success('Kategori güncellendi'); queryClient.invalidateQueries({ queryKey: ['panelUsers'] }); },
         onError: (err) => toast.error(err.response?.data?.error || 'Güncellenemedi'),
     });
 
     const users = usersData?.users || [];
     const categories = catsData?.categories || [];
+    const selStyle = {
+        background: A.bg, border: `1px solid ${A.border}`,
+        color: A.text, fontFamily: A.mono, fontSize: 10,
+        padding: '3px 8px', borderRadius: 2, outline: 'none',
+    };
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4 flex items-center justify-between">
-                <div>
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <HiOutlineShieldCheck className="w-5 h-5 text-gray-600" /> Panel Kullanıcıları
-                    </h2>
-                    <p className="text-sm text-gray-500 mt-1">Panel erişimi olan hesapları yönetin.</p>
-                </div>
-                <button onClick={() => setIsAddModalOpen(true)} className="btn-primary text-sm flex items-center gap-2">
-                    <HiOutlineUserPlus className="w-4 h-4" /> Yeni Kullanıcı
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>Panel erişimi olan hesaplar</Cap>
+                <button onClick={() => setModal(true)}
+                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '6px 12px' }}>
+                    <I.Plus size={11}/> YENİ KULLANICI
                 </button>
             </div>
-
-            <div className="glass-card overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-gray-600">
-                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
-                            <tr>
-                                <th className="px-6 py-3">Kullanıcı Adı</th>
-                                <th className="px-6 py-3">Rol</th>
-                                <th className="px-6 py-3">İzin Kategorisi</th>
-                                <th className="px-6 py-3">Kayıt Tarihi</th>
-                                <th className="px-6 py-3 text-right">İşlemler</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                            {isLoading ? (
-                                <tr>
-                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">Yükleniyor...</td>
-                                </tr>
-                            ) : users.map(user => (
-                                <tr key={user.id} className="hover:bg-gray-50/50">
-                                    <td className="px-6 py-4 font-medium text-gray-900">{user.username}</td>
-                                    <td className="px-6 py-4">
-                                        <select
-                                            value={user.role}
-                                            onChange={(e) => updateRoleMutation.mutate({ id: user.id, role: e.target.value })}
-                                            className={`text-xs font-semibold px-2 py-1 rounded-lg border-0 ring-1 ring-inset focus:ring-2 focus:ring-primary ${user.role === 'admin' ? 'bg-amber-50 text-amber-700 ring-amber-600/20' : 'bg-blue-50 text-blue-700 ring-blue-600/20'
-                                                }`}
-                                        >
-                                            <option value="user">Misafir (Yalnızca Oku)</option>
-                                            <option value="admin">Yönetici (Full Erişim)</option>
-                                        </select>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {user.role === 'admin' ? (
-                                            <span className="text-xs text-amber-500 font-medium">Tam Erişim</span>
-                                        ) : (
-                                            <select
-                                                value={user.category_id || ''}
-                                                onChange={(e) => updateCategoryMutation.mutate({ id: user.id, category_id: e.target.value ? parseInt(e.target.value) : null })}
-                                                className="text-xs px-2 py-1 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary focus:outline-none bg-white text-gray-700 max-w-[160px]"
-                                            >
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                <table style={tblStyle}>
+                    <thead>
+                        <tr>
+                            <th style={thStyle}>Kullanıcı Adı</th>
+                            <th style={thStyle}>Rol</th>
+                            <th style={thStyle}>İzin Kategorisi</th>
+                            <th style={thStyle}>Kayıt</th>
+                            <th style={{ ...thStyle, textAlign: 'right' }}/>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {isLoading ? (
+                            <tr><td colSpan="5" style={{ ...tdStyle, textAlign: 'center', padding: '24px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'center' }}><Spinner/></div>
+                            </td></tr>
+                        ) : users.map(user => (
+                            <tr key={user.id}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <td style={tdStyle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div style={{
+                                            width: 22, height: 22, borderRadius: 1,
+                                            background: 'var(--accent)', display: 'grid', placeItems: 'center',
+                                            color: '#000', fontFamily: A.mono, fontWeight: 700, fontSize: 10, flexShrink: 0,
+                                        }}>
+                                            {(user.username || '?').slice(0, 1).toUpperCase()}
+                                        </div>
+                                        <span style={{ fontSize: 12, color: A.text }}>{user.username}</span>
+                                    </div>
+                                </td>
+                                <td style={tdStyle}>
+                                    <select value={user.role}
+                                        onChange={e => updateRoleMutation.mutate({ id: user.id, role: e.target.value })}
+                                        style={{
+                                            ...selStyle,
+                                            color: user.role === 'admin' ? A.warn : A.dim,
+                                        }}>
+                                        <option value="user">Misafir</option>
+                                        <option value="admin">Yönetici</option>
+                                    </select>
+                                </td>
+                                <td style={tdStyle}>
+                                    {user.role === 'admin' ? (
+                                        <Pill color={A.warn} bg="rgba(251,191,36,0.1)">TAM ERİŞİM</Pill>
+                                    ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <select value={user.category_id || ''}
+                                                onChange={e => updateCategoryMutation.mutate({ id: user.id, category_id: e.target.value ? parseInt(e.target.value) : null })}
+                                                style={selStyle}>
                                                 <option value="">— Kategori Yok —</option>
                                                 {categories.map(cat => (
                                                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                                                 ))}
                                             </select>
-                                        )}
-                                        {user.category_name && user.role !== 'admin' && (
-                                            <span
-                                                className="ml-2 inline-block w-2 h-2 rounded-full"
-                                                style={{ backgroundColor: user.category_color || '#6366f1' }}
-                                            />
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4 text-gray-400">{new Date(user.created_at).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <button
-                                            onClick={() => window.confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz?') && deleteMutation.mutate(user.id)}
-                                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                                        >
-                                            <HiOutlineTrash className="w-5 h-5" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                            {user.category_color && (
+                                                <span style={{ width: 8, height: 8, borderRadius: 99, background: user.category_color, flexShrink: 0 }}/>
+                                            )}
+                                        </div>
+                                    )}
+                                </td>
+                                <td style={{ ...tdStyle, fontFamily: A.mono, fontSize: 10, color: A.faintest }}>
+                                    {new Date(user.created_at).toLocaleDateString('tr-TR')}
+                                </td>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                    <button
+                                        onClick={() => window.confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz?') && deleteMutation.mutate(user.id)}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 4 }}
+                                        onMouseEnter={e => e.currentTarget.style.color = A.err}
+                                        onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                        <I.Trash size={13}/>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
 
-            {/* Yeni Kullanıcı Modalı */}
-            {isAddModalOpen && (
-                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md p-6 shadow-2xl scale-in">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Yeni Kullanıcı Ekle</h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kullanıcı Adı</label>
-                                <input type="text" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} className="input-field" placeholder="Kullanıcı adı girin..." />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Şifre</label>
-                                <input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} className="input-field" placeholder="Parola belirleyin..." minLength={5} />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Yetki Rolü</label>
-                                <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })} className="input-field">
-                                    <option value="user">Misafir (Yalnızca Okuma)</option>
-                                    <option value="admin">Yönetici (Admin)</option>
-                                </select>
-                            </div>
-                            {newUser.role === 'user' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">İzin Kategorisi</label>
-                                    <select value={newUser.category_id} onChange={e => setNewUser({ ...newUser, category_id: e.target.value })} className="input-field">
-                                        <option value="">— Kategori Yok (Sıfır Erişim) —</option>
-                                        {categories.map(cat => (
-                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                        ))}
-                                    </select>
-                                    <p className="text-xs text-gray-400 mt-1">Kategori seçilmezse kullanıcı hiçbir sayfayı göremez.</p>
-                                </div>
-                            )}
-                            <div className="flex gap-3 mt-6">
-                                <button onClick={() => setIsAddModalOpen(false)} className="btn-secondary flex-1">İptal</button>
-                                <button onClick={() => addMutation.mutate(newUser)} disabled={addMutation.isPending} className="btn-primary flex-1">
-                                    {addMutation.isPending ? 'Ekleniyor...' : 'Kullanıcıyı Oluştur'}
-                                </button>
-                            </div>
+            {modal && (
+                <HodoModal onClose={() => setModal(false)} maxWidth={460}>
+                    <HodoModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>Kullanıcı Adı</Cap>
+                            <Input value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} placeholder="kullanici_adi" mono/>
                         </div>
+                        <div>
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>Şifre</Cap>
+                            <Input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} placeholder="••••••••" mono/>
+                        </div>
+                        <div>
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>Rol</Cap>
+                            <select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                                style={{
+                                    background: A.bg, border: `1px solid ${A.border}`,
+                                    color: A.text, fontFamily: A.mono, fontSize: 11,
+                                    padding: '7px 10px', borderRadius: 2, outline: 'none', width: '100%',
+                                }}>
+                                <option value="user">Misafir (Yalnızca Okuma)</option>
+                                <option value="admin">Yönetici (Admin)</option>
+                            </select>
+                        </div>
+                        {newUser.role === 'user' && (
+                            <div>
+                                <Cap style={{ display: 'block', marginBottom: 6 }}>İzin Kategorisi</Cap>
+                                <select value={newUser.category_id} onChange={e => setNewUser({ ...newUser, category_id: e.target.value })}
+                                    style={{
+                                        background: A.bg, border: `1px solid ${A.border}`,
+                                        color: A.text, fontFamily: A.mono, fontSize: 11,
+                                        padding: '7px 10px', borderRadius: 2, outline: 'none', width: '100%',
+                                    }}>
+                                    <option value="">— Kategori Yok (Sıfır Erişim) —</option>
+                                    {categories.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                    ))}
+                                </select>
+                                <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest, marginTop: 4 }}>
+                                    Kategori seçilmezse kullanıcı hiçbir sayfayı göremez.
+                                </div>
+                            </div>
+                        )}
                     </div>
-                </div>
+                    <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                        <button onClick={() => setModal(false)} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                        <button onClick={() => addMutation.mutate(newUser)} disabled={addMutation.isPending || !newUser.username || !newUser.password}
+                            style={{
+                                ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                opacity: (!newUser.username || !newUser.password) ? 0.4 : 1,
+                            }}>
+                            {addMutation.isPending ? <Spinner size={12}/> : null}
+                            OLUŞTUR
+                        </button>
+                    </div>
+                </HodoModal>
             )}
         </div>
     );
 }
 
-
 // ============================================================
-// GÖREV YÖNETİCİSİ (TaskManager)
-// ============================================================
-function TaskManagerPanel() {
-    const queryClient = useQueryClient();
-    const { data: processesData, isLoading } = useQuery({
-        queryKey: ['systemProcesses'],
-        queryFn: () => api.get('/system/processes').then(r => r.data),
-        refetchInterval: 5000, // 5 saniyede bir otomatik yenile
-    });
-
-    const killMutation = useMutation({
-        mutationFn: (pid) => api.post('/system/processes/kill', { pid }),
-        onSuccess: (res) => {
-            toast.success(res.data.message);
-            queryClient.invalidateQueries({ queryKey: ['systemProcesses'] });
-        },
-        onError: (err) => toast.error(err.response?.data?.error || 'İşlem sonlandırılamadı'),
-    });
-
-    const handleKill = (pid, name) => {
-        if (window.confirm(`${name} (PID: ${pid}) sürecini sonlandırmak istediğinize emin misiniz? Sunucu anında kapanacaktır.`)) {
-            killMutation.mutate(pid);
-        }
-    };
-
-    const processes = processesData?.processes || [];
-
-    return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4 flex items-center justify-between">
-                <div>
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <HiOutlineCpuChip className="w-5 h-5 text-gray-600" /> Aktif İşlemler
-                    </h2>
-                    <p className="text-sm text-gray-500 mt-1">Sistemdeki Java ve ilgili ağ servisleri. Veriler 5 saniyede bir yenilenir.</p>
-                </div>
-                <button onClick={() => queryClient.invalidateQueries({ queryKey: ['systemProcesses'] })}
-                    className="btn-secondary text-xs py-1.5">
-                    <HiOutlineArrowPath className="w-4 h-4" /> Yenile
-                </button>
-            </div>
-
-            <div className="glass-card overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-gray-600">
-                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
-                            <tr>
-                                <th className="px-6 py-3">PID</th>
-                                <th className="px-6 py-3">İşlem Adı</th>
-                                <th className="px-6 py-3 text-right">CPU</th>
-                                <th className="px-6 py-3 text-right">RAM (MB)</th>
-                                <th className="px-6 py-3 text-right">İşlem</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                            {isLoading ? (
-                                <tr>
-                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                                        <div className="flex justify-center mb-3">
-                                            <div className="w-6 h-6 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
-                                        </div>
-                                        İşlemler yükleniyor...
-                                    </td>
-                                </tr>
-                            ) : processes.length === 0 ? (
-                                <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-400">
-                                        <HiOutlineCpuChip className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                        <p>Çalışan aktif Java veya ağ işlemi bulunamadı.</p>
-                                    </td>
-                                </tr>
-                            ) : (
-                                processes.map((proc) => (
-                                    <tr key={proc.pid} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-4 font-mono text-xs">{proc.pid}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="font-medium text-gray-900">{proc.name}</div>
-                                            <div className="text-xs text-gray-400 mt-0.5 max-w-xs truncate" title={proc.command}>
-                                                {proc.command}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <span className={`px-2 py-1 flex-inline justify-center min-w-[3rem] rounded font-medium text-xs ${proc.cpu > 50 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                                                %{proc.cpu}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-medium">
-                                            {proc.mem} MB
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => handleKill(proc.pid, proc.name)}
-                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 hover:border-red-500 rounded transition-all focus:ring-2 focus:ring-red-500/20 outline-none"
-                                            >
-                                                Kapat (Kill)
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ============================================================
-// İZİN KATEGORİLERİ PANELİ (CategoriesPanel)
+// İZİN KATEGORİLERİ
 // ============================================================
 function CategoriesPanel() {
     const queryClient = useQueryClient();
     const [modalOpen, setModalOpen] = useState(false);
-    const [editing, setEditing] = useState(null); // null = yeni oluştur
+    const [editing, setEditing] = useState(null);
 
     const { data, isLoading } = useQuery({
         queryKey: ['permCategories'],
@@ -411,91 +485,81 @@ function CategoriesPanel() {
     });
 
     const categories = data?.categories || [];
-
     const openCreate = () => { setEditing(null); setModalOpen(true); };
     const openEdit = (cat) => { setEditing(cat); setModalOpen(true); };
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4 flex items-center justify-between">
-                <div>
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <HiOutlineTag className="w-5 h-5 text-gray-600" /> İzin Kategorileri
-                    </h2>
-                    <p className="text-sm text-gray-500 mt-1">Hangi sayfaların görüneceğini belirleyen gruplar oluşturun.</p>
-                </div>
-                <button onClick={openCreate} className="btn-primary text-sm flex items-center gap-2">
-                    <HiOutlinePlus className="w-4 h-4" /> Yeni Kategori
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>Hangi sayfaların görüneceğini belirleyen gruplar</Cap>
+                <button onClick={openCreate}
+                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '6px 12px' }}>
+                    <I.Plus size={11}/> YENİ KATEGORİ
                 </button>
             </div>
 
             {isLoading ? (
-                <div className="glass-card p-8 text-center text-gray-400">Yükleniyor...</div>
+                <div style={{ textAlign: 'center', padding: '24px 0' }}><Spinner/></div>
             ) : categories.length === 0 ? (
-                <div className="glass-card p-12 text-center text-gray-400">
-                    <HiOutlineTag className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p className="font-medium mb-1">Henüz kategori yok</p>
-                    <p className="text-sm">Yeni Kategori butonuna tıklayarak başlayın.</p>
+                <div style={{
+                    background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                    padding: '40px 0', textAlign: 'center',
+                }}>
+                    <I.Stack size={24} style={{ color: A.faintest, marginBottom: 8 }}/>
+                    <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faintest }}>Henüz kategori yok</div>
                 </div>
             ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
                     {categories.map(cat => {
                         const pages = Array.isArray(cat.pages) ? cat.pages : (() => { try { return JSON.parse(cat.pages || '[]'); } catch { return []; } })();
                         return (
-                            <div key={cat.id} className="glass-card p-4 space-y-3 group">
-                                {/* Başlık */}
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span
-                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: cat.color || '#6366f1' }}
-                                        />
-                                        <span className="font-semibold text-gray-900 truncate">{cat.name}</span>
+                            <div key={cat.id} style={{
+                                background: A.panel, border: `1px solid ${A.border}`,
+                                borderRadius: 4, padding: '12px 14px',
+                                display: 'flex', flexDirection: 'column', gap: 10,
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ width: 10, height: 10, borderRadius: 99, background: cat.color || '#a78bfa', flexShrink: 0 }}/>
+                                        <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>{cat.name}</span>
                                     </div>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => openEdit(cat)}
-                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                            title="Düzenle"
-                                        >
-                                            <HiOutlinePencil className="w-4 h-4" />
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        <button onClick={() => openEdit(cat)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 3 }}
+                                            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+                                            onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                            <I.Wrench size={12}/>
                                         </button>
-                                        <button
-                                            onClick={() => window.confirm(`"${cat.name}" kategorisini silmek istediğinizden emin misiniz?`) && deleteMutation.mutate(cat.id)}
-                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Sil"
-                                        >
-                                            <HiOutlineTrash className="w-4 h-4" />
+                                        <button onClick={() => window.confirm(`"${cat.name}" silinsin mi?`) && deleteMutation.mutate(cat.id)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 3 }}
+                                            onMouseEnter={e => e.currentTarget.style.color = A.err}
+                                            onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                            <I.Trash size={12}/>
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* İzinli sayfalar */}
-                                <div className="flex flex-wrap gap-1.5">
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                     {pages.length === 0 ? (
-                                        <span className="text-xs text-gray-400 italic">Hiçbir sayfa seçilmedi</span>
+                                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>Hiçbir sayfa seçilmedi</span>
                                     ) : ALL_PAGES.filter(p => pages.includes(p.key)).map(p => (
-                                        <span
-                                            key={p.key}
-                                            className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
-                                            style={{ backgroundColor: (cat.color || '#6366f1') + '22', color: cat.color || '#6366f1' }}
-                                        >
-                                            <span>{p.emoji}</span> {p.label}
+                                        <span key={p.key} style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                                            fontFamily: A.mono, fontSize: 10,
+                                            padding: '2px 7px', borderRadius: 2,
+                                            background: (cat.color || '#a78bfa') + '22',
+                                            color: cat.color || '#a78bfa',
+                                        }}>
+                                            {p.emoji} {p.label}
                                         </span>
                                     ))}
                                 </div>
-
-                                {/* Kullanıcı sayısı */}
-                                <p className="text-xs text-gray-400">
-                                    {cat.user_count ?? 0} kullanıcı bu kategoride
-                                </p>
+                                <Cap>{cat.user_count ?? 0} kullanıcı</Cap>
                             </div>
                         );
                     })}
                 </div>
             )}
 
-            {/* Oluştur / Düzenle Modalı */}
             {modalOpen && (
                 <CategoryModal
                     initial={editing}
@@ -511,7 +575,6 @@ function CategoriesPanel() {
     );
 }
 
-// ── Kategori oluştur/düzenle modalı ─────────────────────────────────────────
 function CategoryModal({ initial, onClose, onSaved }) {
     const [name, setName] = useState(initial?.name || '');
     const [color, setColor] = useState(initial?.color || PRESET_COLORS[0]);
@@ -522,9 +585,7 @@ function CategoryModal({ initial, onClose, onSaved }) {
     });
     const [saving, setSaving] = useState(false);
 
-    const togglePage = (key) => {
-        setPages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-    };
+    const togglePage = (key) => setPages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
     const handleSave = async () => {
         if (!name.trim()) { toast.error('Kategori adı boş olamaz'); return; }
@@ -546,95 +607,63 @@ function CategoryModal({ initial, onClose, onSaved }) {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl scale-in">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-5">
-                    {initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'}
-                </h3>
-
-                <div className="space-y-5">
-                    {/* İsim */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kategori Adı</label>
-                        <input
-                            type="text"
-                            value={name}
-                            onChange={e => setName(e.target.value)}
-                            className="input-field"
-                            placeholder="örn. Builder, Moderatör..."
-                            autoFocus
+        <HodoModal onClose={onClose} maxWidth={520}>
+            <HodoModalHeader title={initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'} onClose={onClose}/>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                    <Cap style={{ display: 'block', marginBottom: 6 }}>Kategori Adı</Cap>
+                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="örn. Builder, Moderatör..." autoFocus/>
+                </div>
+                <div>
+                    <Cap style={{ display: 'block', marginBottom: 8 }}>Renk</Cap>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {PRESET_COLORS.map(c => (
+                            <button key={c} onClick={() => setColor(c)}
+                                style={{
+                                    width: 22, height: 22, borderRadius: 99,
+                                    background: c, border: `2px solid ${color === c ? '#fff' : 'transparent'}`,
+                                    cursor: 'pointer', outline: 'none',
+                                }}/>
+                        ))}
+                        <input type="color" value={color} onChange={e => setColor(e.target.value)}
+                            style={{ width: 22, height: 22, borderRadius: 99, border: 'none', cursor: 'pointer', padding: 0, background: 'none' }}
                         />
                     </div>
-
-                    {/* Renk */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Renk</label>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {PRESET_COLORS.map(c => (
-                                <button
-                                    key={c}
-                                    onClick={() => setColor(c)}
-                                    className="w-7 h-7 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                                    style={{
-                                        backgroundColor: c,
-                                        boxShadow: color === c ? `0 0 0 3px white, 0 0 0 5px ${c}` : undefined,
-                                    }}
-                                />
-                            ))}
-                            <input
-                                type="color"
-                                value={color}
-                                onChange={e => setColor(e.target.value)}
-                                className="w-7 h-7 rounded-full border border-gray-200 cursor-pointer"
-                                title="Özel renk seç"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Sayfa İzinleri */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Erişilebilir Sayfalar
-                            <span className="ml-2 text-xs font-normal text-gray-400">({pages.length}/{ALL_PAGES.length} seçili)</span>
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {ALL_PAGES.map(page => {
-                                const selected = pages.includes(page.key);
-                                return (
-                                    <button
-                                        key={page.key}
-                                        onClick={() => togglePage(page.key)}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                                            selected
-                                                ? 'border-transparent text-white'
-                                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 bg-white'
-                                        }`}
-                                        style={selected ? { backgroundColor: color, borderColor: color } : {}}
-                                    >
-                                        {selected
-                                            ? <HiOutlineCheck className="w-4 h-4 flex-shrink-0" />
-                                            : <span className="w-4 h-4 flex-shrink-0 text-base leading-none">{page.emoji}</span>
-                                        }
-                                        <span className="truncate">{page.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
                 </div>
-
-                <div className="flex gap-3 mt-6">
-                    <button onClick={onClose} className="btn-secondary flex-1">İptal</button>
-                    <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                        {saving ? (
-                            <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Kaydediliyor...</>
-                        ) : (
-                            <><HiOutlineCheck className="w-4 h-4" /> {initial ? 'Güncelle' : 'Oluştur'}</>
-                        )}
-                    </button>
+                <div>
+                    <Cap style={{ display: 'block', marginBottom: 8 }}>
+                        Erişilebilir Sayfalar ({pages.length}/{ALL_PAGES.length})
+                    </Cap>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                        {ALL_PAGES.map(page => {
+                            const sel = pages.includes(page.key);
+                            return (
+                                <button key={page.key} onClick={() => togglePage(page.key)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 6,
+                                        padding: '6px 8px', borderRadius: 2, cursor: 'pointer',
+                                        border: `1px solid ${sel ? color + '66' : A.border}`,
+                                        background: sel ? color + '22' : 'transparent',
+                                        color: sel ? color : A.faint, fontSize: 11,
+                                        fontFamily: A.sans, textAlign: 'left',
+                                    }}>
+                                    {sel ? <I.Check size={10} style={{ flexShrink: 0 }}/> : <span style={{ fontSize: 12 }}>{page.emoji}</span>}
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
-        </div>
+            <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                <button onClick={onClose} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                <button onClick={handleSave} disabled={saving}
+                    style={{ ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    {saving ? <Spinner size={12}/> : null}
+                    {initial ? 'GÜNCELLE' : 'OLUŞTUR'}
+                </button>
+            </div>
+        </HodoModal>
     );
 }
 
@@ -645,7 +674,7 @@ function ApiTokensPanel() {
     const qc = useQueryClient();
     const [showCreate, setShowCreate] = useState(false);
     const [form, setForm] = useState({ name: '', expiresInDays: '' });
-    const [revealed, setRevealed] = useState(null); // { id, token }
+    const [revealed, setRevealed] = useState(null);
 
     const { data: tokens = [], isLoading } = useQuery({
         queryKey: ['api-tokens'],
@@ -659,7 +688,7 @@ function ApiTokensPanel() {
             setShowCreate(false);
             setForm({ name: '', expiresInDays: '' });
             setRevealed({ id: data.id, token: data.token });
-            toast.success('Token oluşturuldu — lütfen şimdi kopyalayın!');
+            toast.success('Token oluşturuldu — şimdi kopyalayın!');
         },
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
@@ -670,140 +699,164 @@ function ApiTokensPanel() {
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
-    function fmtDate(ts) {
-        if (!ts) return '—';
-        return new Date(ts * 1000).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    }
-    function fmtAgo(str) {
+    const fmtDate = (ts) => !ts ? '—' : new Date(ts * 1000).toLocaleDateString('tr-TR');
+    const fmtAgo = (str) => {
         if (!str) return '—';
         const d = Math.floor((Date.now() - new Date(str).getTime()) / 86400000);
         return d === 0 ? 'bugün' : `${d} gün önce`;
-    }
+    };
 
-    const copyToken = (token) => {
-        navigator.clipboard.writeText(token).then(() => toast.success('Kopyalandı!'));
+    const copyToken = (token) => navigator.clipboard.writeText(token).then(() => toast.success('Kopyalandı!'));
+
+    const inputSt = {
+        background: A.bg, border: `1px solid ${A.border}`,
+        color: A.text, fontFamily: A.mono, fontSize: 11,
+        padding: '6px 10px', borderRadius: 2, outline: 'none',
     };
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="flex items-start justify-between">
-                <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Harici araçlar ve scriptler için API erişim tokenları. Token yalnızca oluşturulduğunda gösterilir.</p>
-                </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>Harici araçlar için API erişim tokenları</Cap>
                 <button onClick={() => setShowCreate(v => !v)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 flex-shrink-0 ml-4">
-                    <HiOutlinePlus className="w-4 h-4" /> Yeni Token
+                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '6px 12px' }}>
+                    <I.Plus size={11}/> YENİ TOKEN
                 </button>
             </div>
 
-            {/* Yeni token formu */}
             {showCreate && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Yeni API Token</h3>
-                        <button onClick={() => setShowCreate(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                            <HiOutlineXMark className="w-4 h-4" />
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <Cap>Yeni API Token</Cap>
+                        <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                            <I.X size={14}/>
                         </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">İsim</label>
+                            <Cap style={{ display: 'block', marginBottom: 4 }}>İsim</Cap>
                             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                                placeholder="örn: Monitoring Script"
-                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                placeholder="örn: Monitoring Script" style={{ ...inputSt, width: '100%' }}
+                                onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                onBlur={e => e.target.style.borderColor = A.border}
+                            />
                         </div>
                         <div>
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Süre (gün, boş = sonsuz)</label>
+                            <Cap style={{ display: 'block', marginBottom: 4 }}>Süre (gün, boş = sonsuz)</Cap>
                             <input type="number" value={form.expiresInDays} onChange={e => setForm(f => ({ ...f, expiresInDays: e.target.value }))}
-                                placeholder="örn: 30"
-                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                placeholder="30" style={{ ...inputSt, width: '100%' }}
+                            />
                         </div>
                     </div>
                     <button onClick={() => createMutation.mutate({ name: form.name, expiresInDays: form.expiresInDays ? parseInt(form.expiresInDays) : undefined })}
                         disabled={!form.name.trim() || createMutation.isPending}
-                        className="w-full py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40">
-                        {createMutation.isPending ? 'Oluşturuluyor...' : 'Oluştur'}
+                        style={{
+                            ...btnPrimary, width: '100%', justifyContent: 'center',
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            opacity: !form.name.trim() ? 0.4 : 1,
+                        }}>
+                        {createMutation.isPending ? <Spinner size={12}/> : null}
+                        OLUŞTUR
                     </button>
                 </div>
             )}
 
-            {/* Token gösterme kutusu — sadece bir kez */}
             {revealed && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 space-y-2">
-                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                        <HiOutlineEyeSlash className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-xs font-semibold">Bu tokeni şimdi kopyalayın — bir daha gösterilmeyecek!</span>
+                <div style={{
+                    background: 'rgba(251,191,36,0.06)', border: `1px solid rgba(251,191,36,0.2)`,
+                    borderRadius: 4, padding: '12px 14px',
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <I.Alert size={12} style={{ color: A.warn }}/>
+                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.warn }}>
+                            Bu tokeni şimdi kopyalayın — bir daha gösterilmeyecek!
+                        </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <code className="flex-1 text-xs font-mono bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white break-all">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <code style={{
+                            flex: 1, fontFamily: A.mono, fontSize: 10, color: A.text,
+                            background: A.bg, border: `1px solid ${A.border}`,
+                            padding: '6px 10px', borderRadius: 2, wordBreak: 'break-all',
+                        }}>
                             {revealed.token}
                         </code>
                         <button onClick={() => copyToken(revealed.token)}
-                            className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800 flex-shrink-0">
-                            <HiOutlineClipboard className="w-4 h-4" />
+                            style={{ ...btnGhost, padding: '6px 10px', flexShrink: 0 }}>
+                            <I.Clipboard size={13}/>
                         </button>
                         <button onClick={() => setRevealed(null)}
-                            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 flex-shrink-0">
-                            <HiOutlineXMark className="w-4 h-4" />
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                            <I.X size={14}/>
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Token listesi */}
-            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tokenlar</span>
-                    <span className="text-xs text-gray-400">{tokens.filter(t => t.is_active).length} aktif</span>
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 14px', borderBottom: `1px solid ${A.border}`, display: 'flex', justifyContent: 'space-between' }}>
+                    <Cap>Tokenlar</Cap>
+                    <Cap>{(Array.isArray(tokens) ? tokens : []).filter(t => t.is_active).length} aktif</Cap>
                 </div>
                 {isLoading ? (
-                    <div className="flex items-center justify-center py-10">
-                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-                    </div>
-                ) : tokens.length === 0 ? (
-                    <div className="py-10 text-center">
-                        <HiOutlineKey className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                        <p className="text-sm text-gray-400">Henüz token yok.</p>
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}><Spinner/></div>
+                ) : !Array.isArray(tokens) || tokens.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                        <I.Signal size={24} style={{ color: A.faintest, marginBottom: 6 }}/>
+                        <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faintest }}>Henüz token yok</div>
                     </div>
                 ) : (
-                    <div className="divide-y divide-gray-50 dark:divide-gray-800">
-                        {tokens.map(t => (
-                            <div key={t.id} className={`flex items-center gap-3 px-5 py-3 ${!t.is_active ? 'opacity-50' : ''}`}>
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${t.is_active ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
-                                    <HiOutlineKey className="w-4 h-4" />
+                    (Array.isArray(tokens) ? tokens : []).map(t => (
+                        <div key={t.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '10px 14px', borderBottom: `1px solid ${A.border}`,
+                            opacity: t.is_active ? 1 : 0.5,
+                        }}>
+                            <I.Signal size={14} style={{ color: t.is_active ? 'var(--accent)' : A.faint, flexShrink: 0 }}/>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 12, color: A.text }}>{t.name}</span>
+                                    {!t.is_active && <Pill>İPTAL</Pill>}
+                                    {t.expires_at && t.expires_at < Date.now() / 1000 && (
+                                        <Pill color={A.err} bg="rgba(248,113,113,0.1)">SÜRESI DOLDU</Pill>
+                                    )}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-medium text-sm text-gray-900 dark:text-white">{t.name}</span>
-                                        {!t.is_active && <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">iptal edildi</span>}
-                                        {t.expires_at && t.expires_at < Date.now() / 1000 && <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-500 px-1.5 py-0.5 rounded-full">süresi doldu</span>}
-                                    </div>
-                                    <div className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-0.5">
-                                        {t.token_prefix}... · oluşturan: {t.created_by} · {fmtAgo(t.created_at)}
-                                    </div>
+                                <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest, marginTop: 2 }}>
+                                    {t.token_prefix}... · {t.created_by} · {fmtAgo(t.created_at)}
                                 </div>
-                                <div className="text-right flex-shrink-0 mr-2">
-                                    <div className="text-xs text-gray-400">Son kullanım</div>
-                                    <div className="text-xs font-medium text-gray-600 dark:text-gray-300">{t.last_used_at ? fmtDate(t.last_used_at) : '—'}</div>
-                                </div>
-                                <div className="text-right flex-shrink-0 mr-2">
-                                    <div className="text-xs text-gray-400">Bitiş</div>
-                                    <div className="text-xs font-medium text-gray-600 dark:text-gray-300">{fmtDate(t.expires_at)}</div>
-                                </div>
-                                {t.is_active && (
-                                    <button onClick={() => { if (window.confirm(`"${t.name}" tokeni iptal edilsin mi?`)) revokeMutation.mutate(t.id); }}
-                                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
-                                        <HiOutlineTrash className="w-4 h-4" />
-                                    </button>
-                                )}
                             </div>
-                        ))}
-                    </div>
+                            <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                                <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>Son Kullanım</div>
+                                <div style={{ fontFamily: A.mono, fontSize: 11, color: A.dim }}>
+                                    {t.last_used_at ? fmtDate(t.last_used_at) : '—'}
+                                </div>
+                            </div>
+                            <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                                <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>Bitiş</div>
+                                <div style={{ fontFamily: A.mono, fontSize: 11, color: A.dim }}>{fmtDate(t.expires_at)}</div>
+                            </div>
+                            {t.is_active && (
+                                <button onClick={() => { if (window.confirm(`"${t.name}" iptal edilsin mi?`)) revokeMutation.mutate(t.id); }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 4 }}
+                                    onMouseEnter={e => e.currentTarget.style.color = A.err}
+                                    onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                    <I.Trash size={13}/>
+                                </button>
+                            )}
+                        </div>
+                    ))
                 )}
             </div>
         </div>
     );
 }
+
+// ── Clipboard icon (basit inline) ─────────────────────────────────────────
+I.Clipboard = ({ size = 16, style }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={style}>
+        <rect x="9" y="2" width="6" height="4" rx="1"/>
+        <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/>
+    </svg>
+);
 
 // ============================================================
 // SUNUCU ŞABLONLARI
@@ -837,68 +890,83 @@ function TemplatesPanel() {
     });
 
     const templates = data?.templates || [];
+    const inputSt = {
+        background: A.bg, border: `1px solid ${A.border}`,
+        color: A.text, fontFamily: A.mono, fontSize: 11,
+        padding: '6px 10px', borderRadius: 2, outline: 'none', width: '100%',
+    };
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">Aktif profilin RAM/JVM/port ayarlarını şablon olarak kaydedin, sonra tek tıkla uygulayın.</p>
-                <button onClick={() => setShowForm(v => !v)} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-gray-900 text-white hover:opacity-90 flex-shrink-0 ml-4">
-                    <HiOutlinePlus className="w-4 h-4" /> Şablon Kaydet
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>Aktif profilin RAM/JVM/port ayarlarını şablon olarak kaydet</Cap>
+                <button onClick={() => setShowForm(v => !v)}
+                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '6px 12px' }}>
+                    <I.Plus size={11}/> ŞABLON KAYDET
                 </button>
             </div>
 
             {showForm && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '14px 16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
-                            <label className="block text-xs text-gray-500 mb-1">Şablon Adı</label>
-                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="örn: Vanilla 4GB" className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <Cap style={{ display: 'block', marginBottom: 4 }}>Şablon Adı</Cap>
+                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="örn: Vanilla 4GB" style={inputSt} onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = A.border}/>
                         </div>
                         <div>
-                            <label className="block text-xs text-gray-500 mb-1">Açıklama (isteğe bağlı)</label>
-                            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Kısa açıklama..." className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <Cap style={{ display: 'block', marginBottom: 4 }}>Açıklama</Cap>
+                            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Kısa açıklama..." style={inputSt} onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = A.border}/>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowForm(false)} className="btn-secondary text-sm flex-1">İptal</button>
-                        <button onClick={() => createMutation.mutate(form)} disabled={!form.name.trim() || createMutation.isPending} className="btn-primary text-sm flex-1">
-                            {createMutation.isPending ? 'Kaydediliyor...' : 'Aktif Profili Kaydet'}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => setShowForm(false)} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                        <button onClick={() => createMutation.mutate(form)} disabled={!form.name.trim() || createMutation.isPending}
+                            style={{ ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            {createMutation.isPending ? <Spinner size={12}/> : null}
+                            AKTİF PROFİLİ KAYDET
                         </button>
                     </div>
                 </div>
             )}
 
             {isLoading ? (
-                <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
+                <div style={{ textAlign: 'center', padding: '24px 0' }}><Spinner/></div>
             ) : templates.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
-                    <HiOutlineBookmarkSquare className="w-10 h-10 mx-auto mb-2 opacity-20" />
-                    <p>Henüz şablon yok.</p>
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '40px 0', textAlign: 'center' }}>
+                    <I.Archive size={24} style={{ color: A.faintest, marginBottom: 8 }}/>
+                    <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faintest }}>Henüz şablon yok</div>
                 </div>
             ) : (
-                <div className="space-y-2">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {templates.map(t => (
-                        <div key={t.id} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 flex items-center gap-4">
-                            <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                                <HiOutlineBookmarkSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm text-gray-900 dark:text-white">{t.name}</p>
-                                {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
-                                <div className="flex gap-3 mt-1 text-xs text-gray-400 font-mono">
-                                    {t.config.min_ram && <span>Min: {t.config.min_ram}</span>}
-                                    {t.config.max_ram && <span>Max: {t.config.max_ram}</span>}
-                                    {t.config.server_port && <span>Port: {t.config.server_port}</span>}
+                        <div key={t.id} style={{
+                            background: A.panel, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '12px 14px',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                        }}>
+                            <I.Archive size={14} style={{ color: 'var(--accent)', flexShrink: 0 }}/>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: A.text }}>{t.name}</div>
+                                {t.description && <div style={{ fontSize: 11, color: A.faint, marginTop: 2 }}>{t.description}</div>}
+                                <div style={{ display: 'flex', gap: 10, marginTop: 4, fontFamily: A.mono, fontSize: 10, color: A.faintest }}>
+                                    {t.config?.min_ram && <span>Min: {t.config.min_ram}</span>}
+                                    {t.config?.max_ram && <span>Max: {t.config.max_ram}</span>}
+                                    {t.config?.server_port && <span>Port: {t.config.server_port}</span>}
                                 </div>
                             </div>
-                            <div className="flex gap-2 flex-shrink-0">
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                                 <button onClick={() => { if (window.confirm(`"${t.name}" şablonunu uygula?`)) applyMutation.mutate(t.id); }}
-                                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60">
-                                    Uygula
+                                    style={{
+                                        ...btnGhost, fontSize: 10, padding: '4px 10px',
+                                        color: 'var(--accent)', borderColor: 'rgba(167,139,250,0.2)',
+                                    }}>
+                                    UYGULA
                                 </button>
                                 <button onClick={() => { if (window.confirm('Şablonu sil?')) deleteMutation.mutate(t.id); }}
-                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
-                                    <HiOutlineTrash className="w-4 h-4" />
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 4 }}
+                                    onMouseEnter={e => e.currentTarget.style.color = A.err}
+                                    onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                    <I.Trash size={13}/>
                                 </button>
                             </div>
                         </div>
@@ -935,27 +1003,45 @@ function AlertsPanel() {
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
 
-    return (
-        <div className="space-y-4 fade-in">
-            <p className="text-sm text-gray-500">Belirtilen eşikleri aşan CPU veya RAM kullanımı Discord webhook üzerinden bildirim gönderir. Aynı uyarı 5 dakikada bir tekrar tetiklenir.</p>
+    const inputSt = {
+        background: A.bg, border: `1px solid ${A.border}`,
+        color: A.text, fontFamily: A.mono, fontSize: 12,
+        padding: '7px 10px', borderRadius: 2, outline: 'none', width: '100%',
+    };
 
-            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-4 max-w-md">
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 400 }}>
+            <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faint, lineHeight: 1.6 }}>
+                Belirtilen eşikleri aşan CPU/RAM kullanımı Discord webhook üzerinden bildirim gönderir.
+                Aynı uyarı 5 dakikada bir tekrar tetiklenir.
+            </div>
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU Eşiği (%)</label>
+                    <Cap style={{ display: 'block', marginBottom: 6 }}>CPU Eşiği (%)</Cap>
                     <input type="number" min="1" max="100" value={cpu} onChange={e => setCpu(e.target.value)}
-                        placeholder="örn: 90 (boş = kapalı)"
-                        className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        placeholder="örn: 90 (boş = kapalı)" style={inputSt}
+                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.target.style.borderColor = A.border}
+                    />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM Eşiği (%)</label>
+                    <Cap style={{ display: 'block', marginBottom: 6 }}>RAM Eşiği (%)</Cap>
                     <input type="number" min="1" max="100" value={ram} onChange={e => setRam(e.target.value)}
-                        placeholder="örn: 85 (boş = kapalı)"
-                        className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        placeholder="örn: 85 (boş = kapalı)" style={inputSt}
+                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.target.style.borderColor = A.border}
+                    />
                 </div>
-                <p className="text-xs text-gray-400">Discord webhookunu Discord sayfasından yapılandırın.</p>
+                <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>
+                    Discord webhookunu Discord sayfasından yapılandırın.
+                </div>
                 <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-                    className="w-full py-2 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2">
-                    {saved ? <><HiOutlineCheck className="w-4 h-4" /> Kaydedildi</> : saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                    style={{ ...btnPrimary, width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {saved
+                        ? <><I.Check size={12}/> KAYDEDİLDİ</>
+                        : saveMutation.isPending ? <><Spinner size={12}/> KAYDEDİLİYOR...</>
+                        : 'KAYDET'
+                    }
                 </button>
             </div>
         </div>
@@ -975,7 +1061,6 @@ function AuditLogPanel() {
         refetchInterval: 15000,
     });
 
-    // Kullanıcı bazlı aktivite özeti
     const userSummary = (() => {
         const logs = data?.logs || [];
         const map = new Map();
@@ -997,72 +1082,100 @@ function AuditLogPanel() {
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
-    const ACTION_COLORS = {
-        sunucu_baslat:         'text-emerald-600 bg-emerald-50',
-        sunucu_durdur:         'text-gray-600 bg-gray-100',
-        sunucu_yeniden_baslat: 'text-amber-600 bg-amber-50',
-        oyuncu_ban:            'text-red-600 bg-red-50',
-        oyuncu_ban_kaldir:     'text-blue-600 bg-blue-50',
-        ip_ban:                'text-red-600 bg-red-50',
-        ip_ban_kaldir:         'text-blue-600 bg-blue-50',
+    const actionColor = (action) => {
+        if (/baslat/.test(action)) return A.ok;
+        if (/durdur|kapat/.test(action)) return A.faint;
+        if (/ban/.test(action)) return A.err;
+        if (/ban_kaldir/.test(action)) return '#60a5fa';
+        if (/yeniden/.test(action)) return A.warn;
+        return 'var(--accent)';
     };
 
     const logs = data?.logs || [];
 
     return (
-        <div className="space-y-4 fade-in">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {/* Kullanıcı aktivite özeti */}
             {userSummary.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {userSummary.map(u => (
-                        <div key={u.user} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-3 space-y-1">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">{u.user}</span>
-                                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">{u.count}</span>
+                        <div key={u.user} style={{
+                            background: A.panel, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '10px 12px',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 12, color: A.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {u.user}
+                                </span>
+                                <Pill color="var(--accent)" bg="rgba(167,139,250,0.1)">{u.count}</Pill>
                             </div>
-                            <p className="text-xs text-gray-400 truncate">{u.lastAction.replace(/_/g, ' ')}</p>
-                            <p className="text-xs text-gray-300 dark:text-gray-600">
+                            <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {u.lastAction.replace(/_/g, ' ')}
+                            </div>
+                            <div style={{ fontFamily: A.mono, fontSize: 9, color: A.faintest, marginTop: 3 }}>
                                 {new Date(u.lastAt).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </p>
+                            </div>
                         </div>
                     ))}
                 </div>
             )}
 
-            <div className="flex items-center gap-3">
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="Kullanıcıya göre filtrele..."
-                    className="flex-1 max-w-xs px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                <span className="text-xs text-gray-400">{logs.length} kayıt</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ position: 'relative', flex: '0 0 200px' }}>
+                    <I.Search size={11} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: A.faint }}/>
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                        placeholder="Kullanıcıya göre filtrele"
+                        style={{
+                            background: A.bg, border: `1px solid ${A.border}`,
+                            color: A.text, fontFamily: A.mono, fontSize: 11,
+                            padding: '5px 8px 5px 26px', borderRadius: 2, outline: 'none', width: '100%',
+                        }}
+                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.target.style.borderColor = A.border}
+                    />
+                </div>
+                <Cap>{logs.length} kayıt</Cap>
                 <button onClick={() => { if (window.confirm('Tüm audit logları silinsin mi?')) clearMutation.mutate(); }}
-                    className="px-3 py-2 text-xs font-medium rounded-xl text-red-600 bg-red-50 hover:bg-red-100 flex items-center gap-1">
-                    <HiOutlineTrash className="w-3.5 h-3.5" /> Temizle
+                    style={{
+                        ...btnGhost, display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 10, color: A.err, borderColor: 'rgba(248,113,113,0.2)',
+                    }}>
+                    <I.Trash size={11}/> TEMİZLE
                 </button>
             </div>
 
-            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
                 {isLoading ? (
-                    <div className="flex items-center justify-center py-10">
-                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}><Spinner/></div>
                 ) : logs.length === 0 ? (
-                    <div className="py-10 text-center">
-                        <HiOutlineClipboardDocumentList className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                        <p className="text-sm text-gray-400">Henüz kayıt yok.</p>
+                    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                        <I.Folder size={24} style={{ color: A.faintest, marginBottom: 6 }}/>
+                        <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faintest }}>Henüz kayıt yok</div>
                     </div>
                 ) : (
-                    <div className="divide-y divide-gray-50 dark:divide-gray-800 max-h-[500px] overflow-y-auto">
+                    <div style={{ maxHeight: 480, overflowY: 'auto' }}>
                         {logs.map(log => (
-                            <div key={log.id} className="flex items-center gap-3 px-5 py-3">
-                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${ACTION_COLORS[log.action] || 'text-indigo-600 bg-indigo-50'}`}>
+                            <div key={log.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                padding: '8px 14px', borderBottom: `1px solid ${A.border}`,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <span style={{
+                                    fontFamily: A.mono, fontSize: 10, color: actionColor(log.action),
+                                    background: actionColor(log.action) + '22',
+                                    padding: '2px 7px', borderRadius: 2, flexShrink: 0,
+                                }}>
                                     {log.action.replace(/_/g, ' ')}
                                 </span>
-                                <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-gray-900 dark:text-white">{log.user}</span>
-                                    {log.details && <span className="text-sm text-gray-400 ml-2 truncate">{log.details}</span>}
-                                </div>
-                                <span className="text-xs text-gray-400 flex-shrink-0">
-                                    {new Date(log.created_at).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                                <span style={{ fontSize: 12, color: A.text, flexShrink: 0 }}>{log.user}</span>
+                                {log.details && (
+                                    <span style={{ fontSize: 11, color: A.faint, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {log.details}
+                                    </span>
+                                )}
+                                <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest, flexShrink: 0 }}>
+                                    {new Date(log.created_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                 </span>
                             </div>
                         ))}

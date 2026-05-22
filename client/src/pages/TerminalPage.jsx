@@ -7,15 +7,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import {
-    HiOutlineCommandLine,
-    HiOutlinePlus,
-    HiOutlineTrash,
-    HiOutlineArrowRightOnRectangle,
-    HiOutlineArrowPath,
-    HiOutlineXMark,
-    HiOutlinePaperAirplane,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Dot, Pill } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 export default function TerminalPage() {
     const [searchParams] = useSearchParams();
@@ -26,13 +20,12 @@ export default function TerminalPage() {
     const wsRef = useRef(null);
     const queryClient = useQueryClient();
     const [connected, setConnected] = useState(false);
-    const [activeScreen, setActiveScreen] = useState(null); // şu an bağlı olunan screen adı
+    const [activeScreen, setActiveScreen] = useState(null);
     const [newScreenName, setNewScreenName] = useState('');
     const [showNewScreen, setShowNewScreen] = useState(false);
     const [cmdInput, setCmdInput] = useState('');
-    const [cmdTarget, setCmdTarget] = useState(''); // hedef screen adı
+    const [cmdTarget, setCmdTarget] = useState('');
 
-    // URL'den komut parametresini al (FTB yönlendirme)
     const pendingCommand = searchParams.get('run');
 
     const { data: screensData, isLoading: loadingScreens } = useQuery({
@@ -63,10 +56,7 @@ export default function TerminalPage() {
 
     const sendCmdMutation = useMutation({
         mutationFn: ({ name, command }) => api.post(`/terminal/screens/${name}/send`, { command }),
-        onSuccess: () => {
-            setCmdInput('');
-            toast.success(`→ ${cmdTarget}`);
-        },
+        onSuccess: () => { setCmdInput(''); toast.success(`→ ${cmdTarget}`); },
         onError: (err) => toast.error(err.response?.data?.error || 'Gönderilemedi'),
     });
 
@@ -83,9 +73,7 @@ export default function TerminalPage() {
             return;
         }
         try {
-            // Bu sekmenin kendi PTY oturumundan screen'e attach — diğer sekmeleri etkilemez
             if (activeScreen) {
-                // Mevcut screen'den çık (Ctrl+A D)
                 wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
                 await new Promise(r => setTimeout(r, 250));
             }
@@ -99,39 +87,37 @@ export default function TerminalPage() {
     };
 
     const detachScreen = () => {
-        // Ctrl+A D gönder — screen'den çık, bash'e dön (sadece bu sekme)
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'input', data: '\x01d' }));
         }
         setActiveScreen(null);
     };
 
-    // Terminal başlat
     const initTerminal = useCallback(() => {
         if (!terminalRef.current || xtermRef.current) return;
 
         const term = new Terminal({
             theme: {
-                background: '#111827',
-                foreground: '#d1d5db',
-                cursor: '#6b7280',
-                selectionBackground: '#374151',
-                black: '#1f2937',
-                brightBlack: '#374151',
-                red: '#ef4444',
-                brightRed: '#f87171',
-                green: '#22c55e',
-                brightGreen: '#4ade80',
-                yellow: '#eab308',
-                brightYellow: '#facc15',
-                blue: '#3b82f6',
-                brightBlue: '#60a5fa',
-                magenta: '#a855f7',
-                brightMagenta: '#c084fc',
-                cyan: '#06b6d4',
-                brightCyan: '#22d3ee',
-                white: '#d1d5db',
-                brightWhite: '#f9fafb',
+                background: A.bgDeeper,
+                foreground: '#c9d1d9',
+                cursor: 'var(--accent)',
+                selectionBackground: 'rgba(167,139,250,0.2)',
+                black: '#1f2228',
+                brightBlack: '#2a2e36',
+                red: '#f87171',
+                brightRed: '#fca5a5',
+                green: '#4ade80',
+                brightGreen: '#86efac',
+                yellow: '#fbbf24',
+                brightYellow: '#fde68a',
+                blue: '#60a5fa',
+                brightBlue: '#93c5fd',
+                magenta: '#a78bfa',
+                brightMagenta: '#c4b5fd',
+                cyan: '#22d3ee',
+                brightCyan: '#67e8f9',
+                white: '#c9d1d9',
+                brightWhite: '#e8eaed',
             },
             fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
             fontSize: 13,
@@ -150,9 +136,6 @@ export default function TerminalPage() {
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
 
-        // Scroll olaylarını DOM seviyesinde yakala — PTY'ye ANSI mouse sequence
-        // gönderilmesini engelle (screen mouse tracking modunu açınca 'a','b' spawn olur).
-        // Bunun yerine xterm'in kendi scrollback buffer'ını kullan.
         const termEl = terminalRef.current;
         const wheelHandler = (e) => {
             e.preventDefault();
@@ -162,7 +145,6 @@ export default function TerminalPage() {
         };
         termEl.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
 
-        // WebSocket bağlantısı
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/terminal?token=${token}`;
         const ws = new WebSocket(wsUrl);
@@ -170,7 +152,6 @@ export default function TerminalPage() {
 
         ws.onopen = () => {
             setConnected(true);
-            // URL'den gelen komutu çalıştır
             if (pendingCommand) {
                 setTimeout(() => {
                     ws.send(JSON.stringify({ type: 'input', data: `${pendingCommand}\r` }));
@@ -188,14 +169,12 @@ export default function TerminalPage() {
         ws.onclose = () => setConnected(false);
         ws.onerror = () => setConnected(false);
 
-        // Kullanıcı girişi → WebSocket
         term.onData(data => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'input', data }));
             }
         });
 
-        // Resize
         const resizeObserver = new ResizeObserver(() => {
             try {
                 fitAddon.fit();
@@ -223,212 +202,322 @@ export default function TerminalPage() {
 
     const screens = screensData?.screens || [];
 
-    const statusColor = connected ? 'bg-green-500' : 'bg-gray-400';
-    const statusText = connected ? 'Bağlı' : 'Bağlantı kesik';
-
     return (
-        <div className="flex flex-col h-full gap-4">
-            <div className="fade-in flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Terminal</h1>
-                    <p className="text-gray-500 text-sm mt-1">Sunucu bash terminali ve screen yönetimi</p>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px - 32px)', gap: 12 }}>
+            {/* ── Başlık ── */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <I.Terminal size={16} style={{ color: 'var(--accent)' }}/>
+                    <Cap style={{ fontSize: 11 }}>Terminal</Cap>
+                    <Pill>bash · pty</Pill>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${statusColor}`} />
-                    <span className="text-sm text-gray-500">{statusText}</span>
-                </div>
+                <span style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    fontFamily: A.mono, fontSize: 11,
+                    color: connected ? A.ok : A.err,
+                }}>
+                    <Dot color={connected ? A.ok : A.err} size={6}/>
+                    {connected ? 'CONNECTED' : 'DISCONNECTED'}
+                </span>
             </div>
 
-            <div className="flex gap-4 flex-1 min-h-0">
-                {/* ── Sol: Screen Listesi ── */}
-                <div className="w-56 flex-shrink-0 flex flex-col gap-3">
-                    <div className="glass-card p-4 flex flex-col gap-3 flex-1">
-                        <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Screen Oturumları</p>
+            <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0 }}>
+                {/* ── Sol: Screen listesi ── */}
+                <div style={{
+                    width: 220, flexShrink: 0, display: 'flex',
+                    flexDirection: 'column', gap: 8,
+                }}>
+                    {/* Screen listesi kartı */}
+                    <div style={{
+                        flex: 1, background: A.panel, border: `1px solid ${A.border}`,
+                        borderRadius: 4, display: 'flex', flexDirection: 'column',
+                        overflow: 'hidden',
+                    }}>
+                        {/* Başlık */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '8px 12px', borderBottom: `1px solid ${A.border}`,
+                        }}>
+                            <Cap>Screen Oturumları</Cap>
                             <button
                                 onClick={() => queryClient.invalidateQueries({ queryKey: ['terminalScreens'] })}
-                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                                title="Yenile"
-                            >
-                                <HiOutlineArrowPath className="w-3.5 h-3.5" />
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 2 }}
+                                onMouseEnter={e => e.currentTarget.style.color = A.text}
+                                onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                <I.Restart size={12}/>
                             </button>
                         </div>
 
-                        {loadingScreens ? (
-                            <div className="space-y-2">
-                                {[1, 2].map(i => <div key={i} className="skeleton h-10 rounded-xl" />)}
-                            </div>
-                        ) : screens.length === 0 ? (
-                            <div className="text-center py-6 text-gray-400">
-                                <HiOutlineCommandLine className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                                <p className="text-xs">Screen yok</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-1 flex-1 overflow-y-auto">
-                                {screens.map(screen => {
+                        {/* Liste */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+                            {loadingScreens ? (
+                                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {[1, 2].map(i => (
+                                        <div key={i} style={{
+                                            height: 36, background: A.bgDeeper,
+                                            borderRadius: 2, border: `1px solid ${A.border}`,
+                                        }}/>
+                                    ))}
+                                </div>
+                            ) : screens.length === 0 ? (
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column',
+                                    alignItems: 'center', justifyContent: 'center',
+                                    padding: '24px 12px', gap: 6,
+                                }}>
+                                    <I.Terminal size={20} style={{ color: A.faintest }}/>
+                                    <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>
+                                        Screen yok
+                                    </span>
+                                </div>
+                            ) : (
+                                screens.map(screen => {
                                     const isActive = activeScreen === screen.name;
+                                    const isDetached = screen.status?.toLowerCase().includes('detach');
                                     return (
-                                        <div
-                                            key={screen.fullId}
-                                            className={`rounded-xl border p-2.5 transition-colors ${isActive ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-white hover:bg-gray-50'}`}
-                                        >
-                                            <div className="flex items-center justify-between gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className={`text-sm font-semibold truncate ${isActive ? 'text-blue-700' : 'text-gray-900'}`}>
-                                                        {isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 mb-0.5" />}
+                                        <div key={screen.fullId} style={{
+                                            margin: '3px 8px', borderRadius: 2,
+                                            background: isActive ? 'rgba(167,139,250,0.08)' : 'transparent',
+                                            border: `1px solid ${isActive ? 'rgba(167,139,250,0.3)' : 'transparent'}`,
+                                            padding: '8px 10px',
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: 5,
+                                                        fontFamily: A.mono, fontSize: 11,
+                                                        color: isActive ? 'var(--accent)' : A.text,
+                                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                    }}>
+                                                        {isActive && <Dot color="var(--accent)" size={5}/>}
                                                         {screen.name}
-                                                    </p>
-                                                    <p className={`text-xs mt-0.5 ${screen.status?.toLowerCase().includes('detached') ? 'text-amber-500' : 'text-green-500'}`}>
-                                                        {screen.status}
-                                                    </p>
+                                                    </div>
+                                                    <div style={{
+                                                        fontFamily: A.mono, fontSize: 9,
+                                                        color: isDetached ? A.warn : A.ok,
+                                                        marginTop: 2, letterSpacing: '0.04em',
+                                                    }}>
+                                                        {(screen.status || '').toUpperCase()}
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                                                     {isActive ? (
-                                                        <button
-                                                            onClick={detachScreen}
-                                                            className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors font-medium"
-                                                            title="Screen'den çık (Ctrl+A D)"
-                                                        >
-                                                            Çık
+                                                        <button onClick={detachScreen}
+                                                            style={{
+                                                                background: 'transparent',
+                                                                border: `1px solid ${A.border}`,
+                                                                color: 'var(--accent)',
+                                                                fontFamily: A.mono, fontSize: 9,
+                                                                padding: '2px 6px', borderRadius: 2,
+                                                                cursor: 'pointer', letterSpacing: '0.04em',
+                                                            }}>
+                                                            ÇIK
                                                         </button>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => attachScreen(screen.name)}
-                                                            disabled={!connected}
-                                                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
-                                                            title="Terminale bağlan"
-                                                        >
-                                                            <HiOutlineArrowRightOnRectangle className="w-3.5 h-3.5" />
+                                                        <button onClick={() => attachScreen(screen.name)} disabled={!connected}
+                                                            style={{
+                                                                background: 'none', border: 'none',
+                                                                cursor: 'pointer', color: A.faint, padding: 3,
+                                                                opacity: !connected ? 0.4 : 1,
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+                                                            onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                                            <I.ArrowUpRight size={12}/>
                                                         </button>
                                                     )}
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm(`'${screen.name}' screen'ini kapatmak istiyor musunuz?`)) {
+                                                            if (confirm(`'${screen.name}' kapatılsın mı?`)) {
                                                                 killScreenMutation.mutate(screen.name);
                                                                 if (isActive) setActiveScreen(null);
                                                             }
                                                         }}
-                                                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Kapat"
-                                                    >
-                                                        <HiOutlineTrash className="w-3.5 h-3.5" />
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 3 }}
+                                                        onMouseEnter={e => e.currentTarget.style.color = A.err}
+                                                        onMouseLeave={e => e.currentTarget.style.color = A.faint}>
+                                                        <I.Trash size={12}/>
                                                     </button>
                                                 </div>
                                             </div>
                                         </div>
                                     );
-                                })}
-                            </div>
-                        )}
+                                })
+                            )}
+                        </div>
 
-                        {/* Yeni Screen */}
-                        {showNewScreen ? (
-                            <div className="space-y-2">
-                                <input
-                                    type="text"
-                                    value={newScreenName}
-                                    onChange={e => setNewScreenName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter' && newScreenName) createScreenMutation.mutate(newScreenName);
-                                        if (e.key === 'Escape') setShowNewScreen(false);
-                                    }}
-                                    placeholder="screen-adı"
-                                    className="input-field text-sm py-1.5 font-mono"
-                                    autoFocus
-                                />
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() => newScreenName && createScreenMutation.mutate(newScreenName)}
-                                        disabled={!newScreenName || createScreenMutation.isPending}
-                                        className="btn-primary text-xs py-1.5 flex-1"
-                                    >
-                                        Oluştur
-                                    </button>
-                                    <button
-                                        onClick={() => setShowNewScreen(false)}
-                                        className="p-1.5 text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg"
-                                    >
-                                        <HiOutlineXMark className="w-4 h-4" />
-                                    </button>
+                        {/* Yeni screen */}
+                        <div style={{ padding: '8px', borderTop: `1px solid ${A.border}` }}>
+                            {showNewScreen ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <input
+                                        value={newScreenName}
+                                        onChange={e => setNewScreenName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' && newScreenName) createScreenMutation.mutate(newScreenName);
+                                            if (e.key === 'Escape') setShowNewScreen(false);
+                                        }}
+                                        placeholder="screen-adı"
+                                        autoFocus
+                                        style={{
+                                            background: A.bg, border: `1px solid ${A.border}`,
+                                            color: A.text, fontFamily: A.mono, fontSize: 11,
+                                            padding: '6px 8px', borderRadius: 2, outline: 'none', width: '100%',
+                                        }}
+                                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                        onBlur={e => e.target.style.borderColor = A.border}
+                                    />
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        <button
+                                            onClick={() => newScreenName && createScreenMutation.mutate(newScreenName)}
+                                            disabled={!newScreenName || createScreenMutation.isPending}
+                                            style={{
+                                                ...btnPrimary, flex: 1, fontSize: 10, padding: '5px 8px',
+                                                opacity: !newScreenName ? 0.4 : 1,
+                                                cursor: !newScreenName ? 'not-allowed' : 'pointer',
+                                            }}>
+                                            OLUŞTUR
+                                        </button>
+                                        <button onClick={() => setShowNewScreen(false)}
+                                            style={{
+                                                ...btnGhost, padding: '5px 8px',
+                                            }}>
+                                            <I.X size={12}/>
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={() => setShowNewScreen(true)}
-                                className="w-full flex items-center justify-center gap-2 py-2 text-sm text-gray-500 hover:text-gray-900 border border-dashed border-gray-200 hover:border-gray-400 rounded-xl transition-all"
-                            >
-                                <HiOutlinePlus className="w-4 h-4" /> Yeni Screen
-                            </button>
-                        )}
+                            ) : (
+                                <button onClick={() => setShowNewScreen(true)}
+                                    style={{
+                                        width: '100%', display: 'flex', alignItems: 'center',
+                                        justifyContent: 'center', gap: 6,
+                                        padding: '7px 0', background: 'transparent',
+                                        border: `1px dashed ${A.border}`,
+                                        borderRadius: 2, cursor: 'pointer',
+                                        color: A.faint, fontFamily: A.mono, fontSize: 10,
+                                        letterSpacing: '0.04em',
+                                        transition: 'border-color 120ms, color 120ms',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.borderColor = A.dim; e.currentTarget.style.color = A.text; }}
+                                    onMouseLeave={e => { e.currentTarget.style.borderColor = A.border; e.currentTarget.style.color = A.faint; }}>
+                                    <I.Plus size={11}/> YENİ SCREEN
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Klavye kısayolları */}
-                    <div className="glass-card p-3">
-                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Kısayollar</p>
-                        <div className="space-y-1 text-xs text-gray-500">
-                            <div className="flex justify-between">
-                                <span>Screen'den çık</span>
-                                <kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">Ctrl+A D</kbd>
+                    {/* Kısayollar */}
+                    <div style={{
+                        background: A.panel, border: `1px solid ${A.border}`,
+                        borderRadius: 4, padding: '10px 12px',
+                        display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0,
+                    }}>
+                        <Cap style={{ marginBottom: 4 }}>Kısayollar</Cap>
+                        {[
+                            ['Ctrl+A D', "Screen'den çık"],
+                            ['Ctrl+L', 'Temizle'],
+                            ['Shift+↑↓', 'Scroll'],
+                        ].map(([key, label]) => (
+                            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                <span style={{ fontSize: 10, color: A.faint }}>{label}</span>
+                                <span style={{
+                                    fontFamily: A.mono, fontSize: 10, color: A.dim,
+                                    background: A.bg, border: `1px solid ${A.border}`,
+                                    padding: '1px 6px', borderRadius: 2,
+                                }}>{key}</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span>Scroll</span>
-                                <kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">Shift+↑↓</kbd>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Temizle</span>
-                                <kbd className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">Ctrl+L</kbd>
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
 
                 {/* ── Sağ: Terminal ── */}
-                <div className="flex-1 min-w-0 glass-card overflow-hidden flex flex-col">
+                <div style={{
+                    flex: 1, minWidth: 0,
+                    background: A.panel, border: `1px solid ${A.border}`,
+                    borderRadius: 4, overflow: 'hidden',
+                    display: 'flex', flexDirection: 'column',
+                }}>
+                    {/* Terminal başlık çubuğu */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 14px', borderBottom: `1px solid ${A.border}`,
+                        background: A.bgDeeper, flexShrink: 0,
+                    }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 99, background: A.err }}/>
+                            <span style={{ width: 10, height: 10, borderRadius: 99, background: A.warn }}/>
+                            <span style={{ width: 10, height: 10, borderRadius: 99, background: A.ok }}/>
+                        </div>
+                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>
+                            {activeScreen ? `screen: ${activeScreen}` : 'bash · /'}
+                        </span>
+                        {activeScreen && (
+                            <Pill color="var(--accent)" bg="rgba(167,139,250,0.1)">ATTACHED</Pill>
+                        )}
+                    </div>
+
                     {/* FTB / pending command banner */}
                     {pendingCommand && (
-                        <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2 flex-shrink-0">
-                            <HiOutlineCommandLine className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                            <p className="text-xs text-amber-700 flex-1">
-                                <strong>Kurulum komutu hazır:</strong> <code className="font-mono bg-amber-100 px-1 rounded">{pendingCommand}</code>
-                            </p>
+                        <div style={{
+                            padding: '8px 14px', background: 'rgba(251,191,36,0.07)',
+                            borderBottom: `1px solid rgba(251,191,36,0.15)`,
+                            display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                        }}>
+                            <I.Terminal size={12} style={{ color: A.warn, flexShrink: 0 }}/>
+                            <span style={{ fontFamily: A.mono, fontSize: 11, color: A.warn }}>
+                                Kurulum komutu hazır:&nbsp;
+                                <span style={{ color: A.text, background: 'rgba(251,191,36,0.1)', padding: '1px 6px', borderRadius: 2 }}>
+                                    {pendingCommand}
+                                </span>
+                            </span>
                         </div>
                     )}
-                    <div
-                        ref={terminalRef}
-                        className="flex-1 p-2"
-                        style={{ minHeight: 0 }}
-                    />
 
-                    {/* ── Screen Komut Gönder ── */}
-                    <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5 flex items-center gap-2 flex-shrink-0">
-                        <HiOutlinePaperAirplane className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Screen'e gönder</span>
-                        <select
-                            value={cmdTarget}
-                            onChange={e => setCmdTarget(e.target.value)}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all flex-shrink-0"
-                        >
-                            <option value="">— screen seç —</option>
+                    {/* xterm viewport */}
+                    <div ref={terminalRef} style={{ flex: 1, minHeight: 0, padding: '6px' }}/>
+
+                    {/* Screen komut gönder */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 12px', borderTop: `1px solid ${A.border}`,
+                        background: A.bgDeeper, flexShrink: 0,
+                    }}>
+                        <I.Send size={11} style={{ color: A.faint, flexShrink: 0 }}/>
+                        <Cap style={{ flexShrink: 0 }}>Screen'e gönder</Cap>
+                        <select value={cmdTarget} onChange={e => setCmdTarget(e.target.value)}
+                            style={{
+                                background: A.bg, border: `1px solid ${A.border}`,
+                                color: A.text, fontFamily: A.mono, fontSize: 11,
+                                padding: '4px 8px', borderRadius: 2, outline: 'none', flexShrink: 0,
+                            }}>
+                            <option value="">— seç —</option>
                             {screens.map(s => (
                                 <option key={s.fullId} value={s.name}>{s.name}</option>
                             ))}
                         </select>
                         <input
-                            type="text"
                             value={cmdInput}
                             onChange={e => setCmdInput(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') handleSendCmd(); }}
-                            placeholder={cmdTarget ? `${cmdTarget} screen'ine komut gönder…` : 'Önce bir screen seçin…'}
-                            className="flex-1 text-sm font-mono px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition-all"
+                            placeholder={cmdTarget ? `${cmdTarget} → komut gir` : 'Önce screen seç'}
                             disabled={!cmdTarget}
+                            style={{
+                                flex: 1, background: A.bg, border: `1px solid ${A.border}`,
+                                color: A.text, fontFamily: A.mono, fontSize: 11,
+                                padding: '5px 8px', borderRadius: 2, outline: 'none',
+                                opacity: !cmdTarget ? 0.4 : 1,
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                            onBlur={e => e.target.style.borderColor = A.border}
                         />
-                        <button
-                            onClick={handleSendCmd}
+                        <button onClick={handleSendCmd}
                             disabled={!cmdTarget || !cmdInput.trim() || sendCmdMutation.isPending}
-                            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0"
-                        >
-                            <HiOutlinePaperAirplane className="w-3.5 h-3.5" />
-                            Gönder
+                            style={{
+                                ...btnPrimary, display: 'flex', alignItems: 'center',
+                                gap: 5, padding: '5px 12px', fontSize: 10,
+                                opacity: (!cmdTarget || !cmdInput.trim()) ? 0.4 : 1,
+                                cursor: (!cmdTarget || !cmdInput.trim()) ? 'not-allowed' : 'pointer',
+                            }}>
+                            <I.Send size={11}/> GÖNDER
                         </button>
                     </div>
                 </div>

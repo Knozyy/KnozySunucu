@@ -7,12 +7,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import {
-    HiOutlineFolder, HiOutlineDocument, HiOutlineArrowLeft,
-    HiOutlineTrash, HiOutlinePencil, HiOutlineFolderPlus,
-    HiOutlineDocumentPlus, HiOutlineArrowPath, HiOutlineDocumentText,
-    HiOutlineMagnifyingGlass, HiOutlineCheck, HiOutlineXMark,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Input } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 function formatSize(bytes, isDirectory) {
     if (isDirectory) return '-';
@@ -30,67 +27,139 @@ function getLanguageExt(filename) {
     return [];
 }
 
+// ── İkon yardımcıları ─────────────────────────────────────────────────────────
+
+function FileIcon({ size = 16, color }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke={color || 'currentColor'} strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+        </svg>
+    );
+}
+
+function ArrowLeftIcon({ size = 16 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"/>
+            <polyline points="12 19 5 12 12 5"/>
+        </svg>
+    );
+}
+
+function RefreshIcon({ size = 14 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+    );
+}
+
+function DocTextIcon({ size = 16 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+        </svg>
+    );
+}
+
 // ── Editör Modal ──────────────────────────────────────────────────────────────
-function EditorModal({ title, filePath, content, onChange, onSave, onClose, saving, dark = false }) {
+function EditorModal({ title, filePath, content, onChange, onSave, onClose, saving }) {
     const extensions = useMemo(() => getLanguageExt(filePath || title), [filePath, title]);
-    // Escape tuşu ile kapat
+
     useEffect(() => {
-        const handler = (e) => { if (e.key === 'Escape') onClose(); };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
+        const h = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', h);
+        return () => window.removeEventListener('keydown', h);
     }, [onClose]);
 
-    // Ctrl+S ile kaydet
     useEffect(() => {
-        const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); onSave(); } };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
+        const h = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); onSave(); } };
+        window.addEventListener('keydown', h);
+        return () => window.removeEventListener('keydown', h);
     }, [onSave]);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '16px 24px',
+        }}>
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+            <div onClick={onClose} style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+            }}/>
 
             {/* Panel */}
-            <div className="relative z-10 w-full max-w-5xl flex flex-col rounded-2xl shadow-2xl overflow-hidden"
-                style={{ height: 'min(85vh, 800px)' }}>
-
+            <div style={{
+                position: 'relative', zIndex: 1,
+                width: '100%', maxWidth: 1000,
+                height: 'min(85vh, 800px)',
+                display: 'flex', flexDirection: 'column',
+                background: A.bg, border: `1px solid ${A.border}`,
+                borderRadius: 4, overflow: 'hidden',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+            }}>
                 {/* Başlık çubuğu */}
-                <div className={`flex items-center gap-3 px-5 py-3.5 flex-shrink-0 border-b ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <HiOutlinePencil className={`w-4 h-4 flex-shrink-0 ${dark ? 'text-gray-400' : 'text-gray-500'}`} />
-                    <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold truncate ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</p>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 16px', flexShrink: 0,
+                    borderBottom: `1px solid ${A.border}`,
+                    background: A.panel,
+                }}>
+                    <FileIcon size={14} color={A.faint}/>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {title}
+                        </div>
                         {filePath && filePath !== title && (
-                            <p className={`text-xs font-mono truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{filePath}</p>
+                            <div style={{ fontSize: 10, fontFamily: A.mono, color: A.faint,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                                {filePath}
+                            </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Ctrl+S kaydet · Esc kapat</span>
-                        <button
-                            onClick={onSave}
-                            disabled={saving}
-                            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50"
-                        >
-                            <HiOutlineCheck className="w-3.5 h-3.5" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>
+                            Ctrl+S kaydet · Esc kapat
+                        </span>
+                        <button onClick={onSave} disabled={saving} style={{
+                            ...btnPrimary, padding: '5px 12px', fontSize: 11,
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            opacity: saving ? 0.6 : 1,
+                        }}>
+                            <I.Check size={12}/>
                             {saving ? 'Kaydediliyor...' : 'Kaydet'}
                         </button>
-                        <button
-                            onClick={onClose}
-                            className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
-                        >
-                            <HiOutlineXMark className="w-4 h-4" />
+                        <button onClick={onClose} style={{
+                            ...btnGhost, padding: '5px 6px',
+                            display: 'flex', alignItems: 'center', color: A.faint,
+                        }}>
+                            <I.X size={14}/>
                         </button>
                     </div>
                 </div>
 
                 {/* Kod editörü */}
-                <div className="flex-1 overflow-auto">
+                <div style={{ flex: 1, overflow: 'auto' }}>
                     <CodeMirror
                         value={content}
                         onChange={onChange}
                         extensions={extensions}
-                        theme={dark ? oneDark : undefined}
+                        theme={oneDark}
                         height="100%"
                         style={{ fontSize: '13px', height: '100%' }}
                         basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }}
@@ -105,17 +174,17 @@ function EditorModal({ title, filePath, content, onChange, onSave, onClose, savi
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function FilesPage() {
-    const [activeTab, setActiveTab] = useState('browser');
-    const [currentPath, setCurrentPath] = useState('');
-    const [editingFile, setEditingFile] = useState(null);
-    const [fileContent, setFileContent] = useState('');
-    const [newItemName, setNewItemName] = useState('');
+    const [activeTab, setActiveTab]       = useState('browser');
+    const [currentPath, setCurrentPath]   = useState('');
+    const [editingFile, setEditingFile]   = useState(null);
+    const [fileContent, setFileContent]   = useState('');
+    const [newItemName, setNewItemName]   = useState('');
     const [showNewDialog, setShowNewDialog] = useState(null);
-    // Config editörü state
     const [configSearch, setConfigSearch] = useState('');
     const [editingConfig, setEditingConfig] = useState(null);
     const [configContent, setConfigContent] = useState('');
     const queryClient = useQueryClient();
+    const { t } = useI18n();
 
     const { data, isLoading } = useQuery({
         queryKey: ['files', currentPath],
@@ -145,7 +214,6 @@ export default function FilesPage() {
         onError: (err) => toast.error(err.response?.data?.error || 'Kaydedilemedi'),
     });
 
-    // ── Config editörü ────────────────────────────────────────────────────────
     const { data: configsData, isLoading: loadingConfigs } = useQuery({
         queryKey: ['filePageConfigs'],
         queryFn: () => api.get('/mods/configs').then(r => r.data),
@@ -173,10 +241,7 @@ export default function FilesPage() {
     );
 
     const openFile = async (item) => {
-        if (item.isDirectory) {
-            setCurrentPath(item.path);
-            return;
-        }
+        if (item.isDirectory) { setCurrentPath(item.path); return; }
         try {
             const res = await api.get(`/files/read?path=${encodeURIComponent(item.path)}`);
             setEditingFile(item);
@@ -201,135 +266,193 @@ export default function FilesPage() {
     }, [editingConfig, configContent, saveConfigMutation]);
 
     const pathParts = currentPath.split('/').filter(Boolean);
-    const { t } = useI18n();
+
+    const handleCreate = () => {
+        if (!newItemName.trim()) return;
+        createMutation.mutate({
+            path: currentPath ? `${currentPath}/${newItemName}` : newItemName,
+            isDirectory: showNewDialog === 'folder',
+        });
+    };
 
     return (
-        <div className="space-y-6">
-            {/* ── Dosya Editörü Modal ── */}
+        <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
+            fontFamily: A.sans, color: A.text }}>
+            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+
+            {/* ── Modaller ── */}
             {editingFile && (
                 <EditorModal
-                    title={editingFile.name}
-                    filePath={editingFile.path}
-                    content={fileContent}
-                    onChange={setFileContent}
-                    onSave={handleSaveFile}
-                    onClose={() => setEditingFile(null)}
+                    title={editingFile.name} filePath={editingFile.path}
+                    content={fileContent} onChange={setFileContent}
+                    onSave={handleSaveFile} onClose={() => setEditingFile(null)}
                     saving={saveMutation.isPending}
-                    dark={false}
                 />
             )}
-
-            {/* ── Config Editörü Modal ── */}
             {editingConfig && (
                 <EditorModal
-                    title={editingConfig.name}
-                    filePath={editingConfig.path}
-                    content={configContent}
-                    onChange={setConfigContent}
-                    onSave={handleSaveConfig}
-                    onClose={() => setEditingConfig(null)}
+                    title={editingConfig.name} filePath={editingConfig.path}
+                    content={configContent} onChange={setConfigContent}
+                    onSave={handleSaveConfig} onClose={() => setEditingConfig(null)}
                     saving={saveConfigMutation.isPending}
-                    dark={true}
                 />
             )}
 
-            <div className="fade-in flex items-center justify-between">
+            {/* ── Başlık + Araçlar ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('files.title')}</h1>
+                    <Cap>dosyalar</Cap>
+                    <h1 style={{ fontSize: 22, fontWeight: 600, color: A.text,
+                        margin: '4px 0 4px', letterSpacing: '-0.01em' }}>
+                        {t('files.title')}
+                    </h1>
                     {activeTab === 'browser' && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                            <button onClick={() => setCurrentPath('')} className="hover:text-gray-900 transition-colors">root</button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 11, color: A.faint, fontFamily: A.mono }}>
+                            <button onClick={() => setCurrentPath('')}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                    color: A.dim, padding: 0, fontFamily: A.mono, fontSize: 11 }}>
+                                root
+                            </button>
                             {pathParts.map((part, i) => (
-                                <span key={i} className="flex items-center gap-1">
-                                    <span>/</span>
+                                <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ color: A.border }}>/</span>
                                     <button
                                         onClick={() => setCurrentPath(pathParts.slice(0, i + 1).join('/'))}
-                                        className="hover:text-gray-900 transition-colors"
-                                    >{part}</button>
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                            color: i === pathParts.length - 1 ? A.text : A.dim,
+                                            padding: 0, fontFamily: A.mono, fontSize: 11 }}>
+                                        {part}
+                                    </button>
                                 </span>
                             ))}
                         </div>
                     )}
                     {activeTab === 'configs' && (
-                        <p className="text-sm text-gray-500">config/ klasöründeki tüm yapılandırma dosyaları</p>
+                        <p style={{ fontSize: 12, color: A.dim, margin: 0 }}>
+                            config/ klasöründeki tüm yapılandırma dosyaları
+                        </p>
                     )}
                 </div>
+
+                {/* Sağ araç çubuğu */}
                 {activeTab === 'browser' && (
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowNewDialog('file')} className="btn-secondary text-xs">
-                            <HiOutlineDocumentPlus className="w-4 h-4" /> Dosya
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => setShowNewDialog('file')} style={{
+                            ...btnGhost, padding: '6px 12px', fontSize: 11,
+                            display: 'flex', alignItems: 'center', gap: 6,
+                        }}>
+                            <FileIcon size={13}/> Dosya
                         </button>
-                        <button onClick={() => setShowNewDialog('folder')} className="btn-secondary text-xs">
-                            <HiOutlineFolderPlus className="w-4 h-4" /> Klasör
+                        <button onClick={() => setShowNewDialog('folder')} style={{
+                            ...btnGhost, padding: '6px 12px', fontSize: 11,
+                            display: 'flex', alignItems: 'center', gap: 6,
+                        }}>
+                            <I.Folder size={13}/> Klasör
                         </button>
-                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['files'] })} className="btn-secondary text-xs">
-                            <HiOutlineArrowPath className="w-4 h-4" />
+                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['files'] })} style={{
+                            ...btnGhost, padding: '6px 8px',
+                            display: 'flex', alignItems: 'center', color: A.faint,
+                        }}>
+                            <RefreshIcon size={13}/>
                         </button>
                     </div>
                 )}
                 {activeTab === 'configs' && (
-                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['filePageConfigs'] })} className="btn-secondary text-xs">
-                        <HiOutlineArrowPath className="w-4 h-4" /> Yenile
+                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['filePageConfigs'] })} style={{
+                        ...btnGhost, padding: '6px 12px', fontSize: 11,
+                        display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                    }}>
+                        <RefreshIcon size={13}/> Yenile
                     </button>
                 )}
             </div>
 
             {/* ── Sekmeler ── */}
-            <div className="flex gap-2 fade-in">
-                <button onClick={() => setActiveTab('browser')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'browser' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>
-                    Dosya Gezgini
-                </button>
-                <button onClick={() => setActiveTab('configs')}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === 'configs' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>
-                    Config Editörü
-                </button>
+            <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${A.border}` }}>
+                {[
+                    { id: 'browser', label: 'Dosya Gezgini' },
+                    { id: 'configs', label: 'Config Editörü' },
+                ].map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                        padding: '7px 14px', fontSize: 11, fontFamily: A.mono,
+                        letterSpacing: '0.06em', textTransform: 'uppercase',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: activeTab === tab.id ? A.text : A.dim,
+                        borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                        marginBottom: -1, transition: 'color 0.15s',
+                    }}>
+                        {tab.label}
+                    </button>
+                ))}
             </div>
 
             {/* ── Config Editörü ── */}
             {activeTab === 'configs' && (
                 <>
-                    {/* Arama */}
-                    <div className="relative fade-in">
-                        <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            value={configSearch}
-                            onChange={e => setConfigSearch(e.target.value)}
-                            placeholder="Config dosyası ara... (örn: mekanism, jei, forge)"
-                            className="input-field pl-11 text-sm"
-                        />
+                    <div style={{ position: 'relative' }}>
+                        <span style={{
+                            position: 'absolute', left: 10, top: '50%',
+                            transform: 'translateY(-50%)', color: A.faint, display: 'flex',
+                        }}>
+                            <I.Search size={13}/>
+                        </span>
+                        <Input value={configSearch} onChange={e => setConfigSearch(e.target.value)}
+                            placeholder="Config dosyası ara... (örn: mekanism, jei, forge)" mono
+                            style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }}/>
                     </div>
 
-                    <div className="glass-card overflow-hidden fade-in">
+                    <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
                         {loadingConfigs ? (
-                            <div className="p-8 text-center text-gray-400">
-                                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-3" />
-                                Config dosyaları yükleniyor...
+                            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                <div style={{
+                                    width: 20, height: 20, margin: '0 auto 10px',
+                                    border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
+                                    borderRadius: '50%', animation: 'hodo-spin 0.8s linear infinite',
+                                }}/>
+                                <p style={{ fontSize: 12, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                    Config dosyaları yükleniyor...
+                                </p>
                             </div>
                         ) : filteredConfigs.length > 0 ? (
-                            filteredConfigs.map(file => (
-                                <button
-                                    key={file.path}
-                                    onClick={() => openConfig(file)}
-                                    className="w-full flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors text-left group"
-                                >
-                                    <HiOutlineDocumentText className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                                        <p className="text-xs text-gray-400 truncate font-mono">{file.path}</p>
+                            filteredConfigs.map((file, i) => (
+                                <button key={file.path} onClick={() => openConfig(file)} style={{
+                                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                    padding: '10px 16px', textAlign: 'left', cursor: 'pointer',
+                                    background: 'none', border: 'none',
+                                    borderTop: i > 0 ? `1px solid ${A.border}` : 'none',
+                                    transition: 'background 0.1s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = A.bgDeeper}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                    <DocTextIcon size={16} style={{ color: '#60a5fa', flexShrink: 0 }}/>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 500, color: A.text,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {file.name}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, marginTop: 1,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {file.path}
+                                        </div>
                                     </div>
-                                    <span className="text-xs text-gray-400 flex-shrink-0">{formatSize(file.size, false)}</span>
-                                    <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">Düzenle →</span>
+                                    <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, flexShrink: 0 }}>
+                                        {formatSize(file.size, false)}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: A.mono, flexShrink: 0 }}>
+                                        düzenle →
+                                    </span>
                                 </button>
                             ))
                         ) : (
-                            <div className="p-10 text-center text-gray-400">
-                                <HiOutlineDocumentText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                <p className="font-medium">
+                            <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                                <DocTextIcon size={32} style={{ color: A.faint, margin: '0 auto 10px', display: 'block', opacity: 0.3 }}/>
+                                <p style={{ fontSize: 12, color: A.dim, margin: '0 0 4px' }}>
                                     {configSearch ? 'Arama ile eşleşen config bulunamadı' : 'config/ klasöründe düzenlenebilir dosya bulunamadı'}
                                 </p>
-                                <p className="text-xs mt-1 text-gray-300">.toml · .cfg · .json · .properties · .yml · .yaml · .conf</p>
+                                <p style={{ fontSize: 10, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                    .toml · .cfg · .json · .properties · .yml · .yaml · .conf
+                                </p>
                             </div>
                         )}
                     </div>
@@ -337,61 +460,110 @@ export default function FilesPage() {
             )}
 
             {/* ── Dosya Gezgini ── */}
-            {activeTab === 'browser' && <>
-
-            {/* New Item Dialog */}
-            {showNewDialog && (
-                <div className="glass-card p-4 fade-in">
-                    <div className="flex gap-3">
-                        <input
-                            type="text" value={newItemName} onChange={e => setNewItemName(e.target.value)}
-                            className="input-field flex-1" placeholder={showNewDialog === 'folder' ? 'Klasör adı...' : 'Dosya adı...'}
-                            autoFocus onKeyDown={e => { if (e.key === 'Enter' && newItemName.trim()) createMutation.mutate({ path: currentPath ? `${currentPath}/${newItemName}` : newItemName, isDirectory: showNewDialog === 'folder' }); }}
-                        />
-                        <button onClick={() => { if (newItemName.trim()) createMutation.mutate({ path: currentPath ? `${currentPath}/${newItemName}` : newItemName, isDirectory: showNewDialog === 'folder' }); }} className="btn-primary text-xs">Oluştur</button>
-                        <button onClick={() => { setShowNewDialog(null); setNewItemName(''); }} className="btn-secondary text-xs">İptal</button>
-                    </div>
-                </div>
-            )}
-
-            {/* File List */}
-            <div className="glass-card overflow-hidden fade-in">
-                {currentPath && (
-                    <button onClick={goUp} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 text-gray-500">
-                        <HiOutlineArrowLeft className="w-5 h-5" /> Üst Dizin
-                    </button>
-                )}
-                {isLoading ? (
-                    <div className="p-8 text-center text-gray-400">
-                        <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-3" />
-                        Yükleniyor...
-                    </div>
-                ) : data?.items?.length > 0 ? (
-                    data.items.map(item => (
-                        <div key={item.path} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 group">
-                            <button onClick={() => openFile(item)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                                {item.isDirectory
-                                    ? <HiOutlineFolder className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                                    : <HiOutlineDocument className="w-5 h-5 text-gray-400 flex-shrink-0" />}
-                                <span className="text-sm text-gray-900 truncate">{item.name}</span>
-                            </button>
-                            <span className="text-xs text-gray-400 hidden sm:block">{formatSize(item.size, item.isDirectory)}</span>
-                            <button
-                                onClick={() => { if (confirm(`${item.name} silinecek. Emin misiniz?`)) deleteMutation.mutate(item.path); }}
-                                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-                            >
-                                <HiOutlineTrash className="w-4 h-4" />
-                            </button>
+            {activeTab === 'browser' && (
+                <>
+                    {/* Yeni öğe diyaloğu */}
+                    {showNewDialog && (
+                        <div style={{
+                            background: A.panel, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '12px 16px',
+                        }}>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <Input
+                                    value={newItemName}
+                                    onChange={e => setNewItemName(e.target.value)}
+                                    placeholder={showNewDialog === 'folder' ? 'Klasör adı...' : 'Dosya adı...'}
+                                    mono autoFocus
+                                    onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+                                    style={{ flex: 1 }}
+                                />
+                                <button onClick={handleCreate} style={{
+                                    ...btnPrimary, padding: '0 14px', fontSize: 11,
+                                }}>
+                                    Oluştur
+                                </button>
+                                <button onClick={() => { setShowNewDialog(null); setNewItemName(''); }} style={{
+                                    ...btnGhost, padding: '0 12px', fontSize: 11,
+                                }}>
+                                    İptal
+                                </button>
+                            </div>
                         </div>
-                    ))
-                ) : (
-                    <div className="p-8 text-center text-gray-400">
-                        <HiOutlineFolder className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Boş klasör</p>
+                    )}
+
+                    {/* Dosya listesi */}
+                    <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                        {currentPath && (
+                            <button onClick={goUp} style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                                padding: '10px 16px', background: 'none', border: 'none',
+                                borderBottom: `1px solid ${A.border}`,
+                                cursor: 'pointer', color: A.dim, transition: 'background 0.1s',
+                                fontSize: 12, fontFamily: A.mono,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = A.bgDeeper}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                <ArrowLeftIcon size={14}/> Üst Dizin
+                            </button>
+                        )}
+
+                        {isLoading ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                <div style={{
+                                    width: 20, height: 20, margin: '0 auto 10px',
+                                    border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
+                                    borderRadius: '50%', animation: 'hodo-spin 0.8s linear infinite',
+                                }}/>
+                                <p style={{ fontSize: 12, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                    Yükleniyor...
+                                </p>
+                            </div>
+                        ) : data?.items?.length > 0 ? (
+                            data.items.map((item, i) => (
+                                <div key={item.path} style={{
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '9px 16px',
+                                    borderTop: i > 0 ? `1px solid ${A.border}` : 'none',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = A.bgDeeper}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                    <button onClick={() => openFile(item)} style={{
+                                        display: 'flex', alignItems: 'center', gap: 10,
+                                        flex: 1, minWidth: 0, textAlign: 'left',
+                                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                                    }}>
+                                        {item.isDirectory
+                                            ? <I.Folder size={16} style={{ color: '#fbbf24', flexShrink: 0 }}/>
+                                            : <FileIcon size={16} color={A.faint}/>
+                                        }
+                                        <span style={{ fontSize: 13, color: A.text,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {item.name}
+                                        </span>
+                                    </button>
+                                    <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, flexShrink: 0 }}>
+                                        {formatSize(item.size, item.isDirectory)}
+                                    </span>
+                                    <button
+                                        onClick={() => { if (confirm(`${item.name} silinecek. Emin misiniz?`)) deleteMutation.mutate(item.path); }}
+                                        style={{
+                                            ...btnGhost, padding: '3px 5px', color: A.err,
+                                            borderColor: 'rgba(248,113,113,0.2)',
+                                            display: 'flex', alignItems: 'center', flexShrink: 0,
+                                        }}>
+                                        <I.Trash size={13}/>
+                                    </button>
+                                </div>
+                            ))
+                        ) : (
+                            <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                                <I.Folder size={36} style={{ color: A.faint, margin: '0 auto 10px', display: 'block', opacity: 0.3 }}/>
+                                <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>Boş klasör</p>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
-            </>}
+                </>
+            )}
         </div>
     );
 }

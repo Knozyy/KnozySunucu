@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/api';
 import toast from 'react-hot-toast';
-import {
-    HiOutlineUsers, HiOutlineClock, HiOutlineCalendarDays,
-    HiOutlineMagnifyingGlass, HiOutlineTrophy, HiOutlineNoSymbol,
-    HiOutlineCheckCircle, HiOutlineChatBubbleLeftEllipsis,
-    HiOutlinePlus, HiOutlineTrash, HiOutlineArrowPath,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
 
@@ -23,7 +20,10 @@ function fmtDuration(seconds) {
 
 function fmtDate(ts) {
     if (!ts) return '—';
-    return new Date(ts).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleString('tr-TR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    });
 }
 
 function timeAgo(ts) {
@@ -38,19 +38,67 @@ function timeAgo(ts) {
     return 'az önce';
 }
 
-function PlayerHead({ username, size = 8 }) {
+function PlayerHead({ username, size = 32 }) {
     return (
         <img
             src={`https://mc-heads.net/avatar/${username}/32`}
             alt={username}
-            className={`w-${size} h-${size} rounded-lg flex-shrink-0`}
+            style={{ width: size, height: size, borderRadius: 3, flexShrink: 0 }}
             onError={e => { e.target.src = 'https://mc-heads.net/avatar/steve/32'; }}
         />
     );
 }
 
+function Spinner({ size = 16 }) {
+    return (
+        <div style={{
+            width: size, height: size,
+            border: `2px solid ${A.border}`,
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+            animation: 'hodo-spin 0.8s linear infinite',
+        }}/>
+    );
+}
+
+function RefreshIcon({ size = 14, spinning }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            style={spinning ? { animation: 'hodo-spin 0.8s linear infinite' } : undefined}>
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+    );
+}
+
+function BanIcon({ size = 14, style: s }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+    );
+}
+
+function TrophyIcon({ size = 14, style: s }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+            <path d="M4 22h16"/>
+            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+            <path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/>
+        </svg>
+    );
+}
+
 export default function PlayersPage() {
-    const [search, setSearch] = useState('');
+    const [search, setSearch]     = useState('');
     const [activeTab, setActiveTab] = useState('sessions');
 
     const { data: online, isFetching: onlineFetching, refetch: refetchOnline } = useQuery({
@@ -65,7 +113,7 @@ export default function PlayersPage() {
         refetchInterval: 15000,
     });
 
-    // Her oyuncunun sadece en son oturumunu göster (tekrar eden oyuncuları gizle)
+    // Her oyuncunun sadece en son oturumunu göster
     const sessions = (() => {
         const seen = new Map();
         for (const s of sessionsRaw) {
@@ -90,119 +138,174 @@ export default function PlayersPage() {
     });
 
     const tabs = [
-        { id: 'sessions', label: 'Oturum Geçmişi', icon: HiOutlineCalendarDays },
-        { id: 'stats',    label: 'İstatistikler',  icon: HiOutlineTrophy },
-        { id: 'banlog',   label: 'Ban Günlüğü',    icon: HiOutlineNoSymbol },
-        { id: 'notes',    label: 'Oyuncu Notları', icon: HiOutlineChatBubbleLeftEllipsis },
+        { id: 'sessions', label: 'Oturum Geçmişi', icon: <I.Calendar size={12}/> },
+        { id: 'stats',    label: 'İstatistikler',  icon: <TrophyIcon size={12}/> },
+        { id: 'banlog',   label: 'Ban Günlüğü',    icon: <BanIcon size={12}/> },
+        { id: 'notes',    label: 'Oyuncu Notları', icon: <I.Console size={12}/> },
     ];
 
     return (
-        <div className="p-6 space-y-6">
+        <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
+            fontFamily: A.sans, color: A.text }}>
+            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+
+            {/* ── Başlık ── */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Oyuncular</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Oturum geçmişi ve oyuncu istatistikleri</p>
+                <Cap>oyuncular</Cap>
+                <h1 style={{ fontSize: 22, fontWeight: 600, color: A.text,
+                    margin: '4px 0 2px', letterSpacing: '-0.01em' }}>
+                    Oyuncular
+                </h1>
+                <p style={{ fontSize: 12, color: A.dim, margin: 0 }}>
+                    Oturum geçmişi ve oyuncu istatistikleri
+                </p>
             </div>
 
-            {/* Online şu an */}
-            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
-                <div className="flex items-center gap-2 mb-4">
-                    <div className={`w-2 h-2 rounded-full ${mcStatus === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Şu An Online</h2>
-                    <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
+            {/* ── Şu An Online ── */}
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '14px 16px' }}>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+                    paddingBottom: 10, borderBottom: `1px solid ${A.border}`,
+                }}>
+                    <Dot color={mcStatus === 'running' ? A.ok : A.faint} size={6}/>
+                    <Cap style={{ flex: 1 }}>Şu An Online</Cap>
+                    <span style={{
+                        fontFamily: A.mono, fontSize: 11, color: A.faint,
+                        background: A.bgDeeper, border: `1px solid ${A.border}`,
+                        padding: '1px 6px', borderRadius: 2,
+                    }}>
                         {onlinePlayers.length}
                     </span>
-                    <button
-                        onClick={() => refetchOnline()}
-                        title="Yenile"
-                        className="ml-auto p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                    >
-                        <HiOutlineArrowPath className={`w-4 h-4 ${onlineFetching ? 'animate-spin' : ''}`} />
+                    <button onClick={() => refetchOnline()} title="Yenile" style={{
+                        ...btnGhost, padding: '3px 6px', color: A.faint,
+                        display: 'flex', alignItems: 'center', gap: 4,
+                    }}>
+                        <RefreshIcon size={13} spinning={onlineFetching}/>
                     </button>
                 </div>
+
                 {onlinePlayers.length === 0 ? (
-                    <p className="text-sm text-gray-400 dark:text-gray-500">
-                        {mcStatus === 'running' ? 'Şu an online oyuncu yok.' : 'Sunucu çalışmıyor.'}
+                    <p style={{ fontSize: 12, color: A.faint, fontFamily: A.mono, margin: 0 }}>
+                        {mcStatus === 'running' ? '— şu an online oyuncu yok' : '— sunucu çalışmıyor'}
                     </p>
                 ) : (
-                    <div className="flex flex-wrap gap-3">
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {onlinePlayers.map(name => (
-                            <div key={name} className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl px-3 py-2">
-                                <PlayerHead username={name} size={6} />
-                                <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{name}</span>
+                            <div key={name} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                background: 'rgba(74,222,128,0.06)',
+                                border: '1px solid rgba(74,222,128,0.15)',
+                                borderRadius: 4, padding: '6px 10px',
+                            }}>
+                                <PlayerHead username={name} size={24}/>
+                                <span style={{ fontSize: 12, fontWeight: 500, color: A.ok, fontFamily: A.mono }}>
+                                    {name}
+                                </span>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2">
+            {/* ── Sekmeler ── */}
+            <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${A.border}` }}>
                 {tabs.map(tab => (
-                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            activeTab === tab.id
-                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
-                                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                        }`}>
-                        <tab.icon className="w-4 h-4" />{tab.label}
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '7px 14px', fontSize: 11, fontFamily: A.mono,
+                        letterSpacing: '0.06em', textTransform: 'uppercase',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: activeTab === tab.id ? A.text : A.dim,
+                        borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                        marginBottom: -1, transition: 'color 0.15s',
+                    }}>
+                        {tab.icon}{tab.label}
                     </button>
                 ))}
             </div>
 
+            {/* ── Oturum Geçmişi ── */}
             {activeTab === 'sessions' && (
-                <div className="space-y-4">
-                    <div className="relative max-w-xs">
-                        <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Oyuncu adı ara..."
-                            className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ position: 'relative', maxWidth: 280 }}>
+                        <span style={{
+                            position: 'absolute', left: 10, top: '50%',
+                            transform: 'translateY(-50%)', color: A.faint, display: 'flex',
+                        }}>
+                            <I.Search size={13}/>
+                        </span>
+                        <Input value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder="Oyuncu adı ara..." mono
+                            style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }}/>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Son Oturumlar</span>
-                            <span className="text-xs text-gray-400">{sessions.length} kayıt</span>
+                    <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 16px', borderBottom: `1px solid ${A.border}`,
+                        }}>
+                            <Cap>Son Oturumlar</Cap>
+                            <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>
+                                {sessions.length} kayıt
+                            </span>
                         </div>
+
                         {sessionsLoading ? (
-                            <div className="flex items-center justify-center py-12">
-                                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                                <Spinner size={20}/>
                             </div>
                         ) : sessions.length === 0 ? (
-                            <div className="py-12 text-center">
-                                <HiOutlineUsers className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                                <p className="text-sm text-gray-400 dark:text-gray-500">Henüz oturum kaydı yok.</p>
-                                <p className="text-xs text-gray-400 mt-1">Bir oyuncu sunucuya girdiğinde burada görünür.</p>
+                            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                                <I.Users size={28} style={{ color: A.faint, margin: '0 auto 10px', display: 'block' }}/>
+                                <p style={{ fontSize: 12, color: A.dim, margin: '0 0 4px' }}>Henüz oturum kaydı yok.</p>
+                                <p style={{ fontSize: 11, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                    Bir oyuncu sunucuya girdiğinde burada görünür.
+                                </p>
                             </div>
                         ) : (
-                            <div className="divide-y divide-gray-50 dark:divide-gray-800">
-                                {sessions.map(s => (
-                                    <div key={s.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                                        <PlayerHead username={s.username} size={8} />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{s.username}</span>
+                            <div>
+                                {sessions.map((s, i) => (
+                                    <div key={s.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '10px 16px',
+                                        borderTop: i > 0 ? `1px solid ${A.border}` : 'none',
+                                    }}>
+                                        <PlayerHead username={s.username} size={32}/>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>
+                                                    {s.username}
+                                                </span>
                                                 {!s.left_at && (
-                                                    <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full">online</span>
+                                                    <Pill style={{
+                                                        background: 'rgba(74,222,128,0.1)',
+                                                        color: A.ok,
+                                                        border: '1px solid rgba(74,222,128,0.2)',
+                                                        fontFamily: A.mono,
+                                                    }}>
+                                                        online
+                                                    </Pill>
                                                 )}
                                             </div>
-                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                            <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, marginTop: 2 }}>
                                                 {fmtDate(s.joined_at)}
                                             </div>
                                         </div>
-                                        <div className="text-right flex-shrink-0">
-                                            <div className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
-                                                <HiOutlineClock className="w-3.5 h-3.5 text-gray-400" />
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                            <div style={{
+                                                display: 'flex', alignItems: 'center', gap: 4,
+                                                fontSize: 12, color: A.dim, fontFamily: A.mono,
+                                            }}>
+                                                <I.Clock size={12} style={{ color: A.faint }}/>
                                                 {s.left_at
                                                     ? fmtDuration(s.duration_seconds)
-                                                    : <span className="text-emerald-600 dark:text-emerald-400">aktif</span>
+                                                    : <span style={{ color: A.ok }}>aktif</span>
                                                 }
                                             </div>
                                             {s.left_at && (
-                                                <div className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(s.left_at)}</div>
+                                                <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, marginTop: 2 }}>
+                                                    {timeAgo(s.left_at)}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -213,47 +316,70 @@ export default function PlayersPage() {
                 </div>
             )}
 
+            {/* ── İstatistikler ── */}
             {activeTab === 'stats' && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800">
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">En Fazla Oynayan (Top 20)</span>
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ padding: '10px 16px', borderBottom: `1px solid ${A.border}` }}>
+                        <Cap>En Fazla Oynayan — Top 20</Cap>
                     </div>
+
                     {statsLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                            <Spinner size={20}/>
                         </div>
                     ) : stats.length === 0 ? (
-                        <div className="py-12 text-center">
-                            <HiOutlineTrophy className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                            <p className="text-sm text-gray-400 dark:text-gray-500">Henüz istatistik yok.</p>
+                        <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                            <TrophyIcon size={28} style={{ color: A.faint, margin: '0 auto 10px', display: 'block' }}/>
+                            <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>Henüz istatistik yok.</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                        <div>
                             {stats.map((p, idx) => {
                                 const maxSeconds = stats[0]?.total_seconds || 1;
                                 const pct = Math.round((p.total_seconds / maxSeconds) * 100);
                                 const medals = ['🥇', '🥈', '🥉'];
                                 return (
-                                    <div key={p.username} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                                        <span className="w-6 text-center text-sm flex-shrink-0">
-                                            {idx < 3
-                                                ? medals[idx]
-                                                : <span className="text-gray-400 dark:text-gray-500 text-xs">#{idx + 1}</span>
-                                            }
+                                    <div key={p.username} style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '10px 16px',
+                                        borderTop: idx > 0 ? `1px solid ${A.border}` : 'none',
+                                    }}>
+                                        <span style={{
+                                            width: 24, textAlign: 'center', flexShrink: 0,
+                                            fontSize: idx < 3 ? 14 : 10,
+                                            color: A.faint, fontFamily: A.mono,
+                                        }}>
+                                            {idx < 3 ? medals[idx] : `#${idx + 1}`}
                                         </span>
-                                        <PlayerHead username={p.username} size={8} />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{p.username}</span>
-                                                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{fmtDuration(p.total_seconds)}</span>
+                                        <PlayerHead username={p.username} size={32}/>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{
+                                                display: 'flex', alignItems: 'center',
+                                                justifyContent: 'space-between', marginBottom: 5,
+                                            }}>
+                                                <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>
+                                                    {p.username}
+                                                </span>
+                                                <span style={{ fontSize: 12, fontFamily: A.mono, color: A.dim }}>
+                                                    {fmtDuration(p.total_seconds)}
+                                                </span>
                                             </div>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                    <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <div style={{
+                                                    flex: 1, height: 3,
+                                                    background: A.bgDeeper, borderRadius: 2, overflow: 'hidden',
+                                                }}>
+                                                    <div style={{
+                                                        height: '100%', borderRadius: 2,
+                                                        background: 'var(--accent)',
+                                                        width: `${pct}%`, transition: 'width 0.5s',
+                                                    }}/>
                                                 </div>
-                                                <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{p.session_count} oturum</span>
+                                                <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, flexShrink: 0 }}>
+                                                    {p.session_count} oturum
+                                                </span>
                                             </div>
-                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                            <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, marginTop: 3 }}>
                                                 Son görülme: {timeAgo(p.last_seen)}
                                             </div>
                                         </div>
@@ -267,42 +393,77 @@ export default function PlayersPage() {
 
             {activeTab === 'notes' && <PlayerNotesPanel />}
 
+            {/* ── Ban Günlüğü ── */}
             {activeTab === 'banlog' && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Ban Geçmişi</span>
-                        <span className="text-xs text-gray-400">{banlog.length} kayıt</span>
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 16px', borderBottom: `1px solid ${A.border}`,
+                    }}>
+                        <Cap>Ban Geçmişi</Cap>
+                        <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>
+                            {banlog.length} kayıt
+                        </span>
                     </div>
+
                     {banloading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                            <Spinner size={20}/>
                         </div>
                     ) : banlog.length === 0 ? (
-                        <div className="py-12 text-center">
-                            <HiOutlineNoSymbol className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                            <p className="text-sm text-gray-400 dark:text-gray-500">Ban geçmişi yok.</p>
+                        <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                            <BanIcon size={28} style={{ color: A.faint, margin: '0 auto 10px', display: 'block' }}/>
+                            <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>Ban geçmişi yok.</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-gray-50 dark:divide-gray-800">
-                            {banlog.map(b => {
+                        <div>
+                            {banlog.map((b, i) => {
                                 const isBan = b.action === 'ban' || b.action === 'ban-ip';
                                 return (
-                                    <div key={b.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isBan ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'}`}>
-                                            {isBan ? <HiOutlineNoSymbol className="w-4 h-4" /> : <HiOutlineCheckCircle className="w-4 h-4" />}
+                                    <div key={b.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '10px 16px',
+                                        borderTop: i > 0 ? `1px solid ${A.border}` : 'none',
+                                    }}>
+                                        <div style={{
+                                            width: 32, height: 32, borderRadius: 4, flexShrink: 0,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            background: isBan ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)',
+                                            color: isBan ? A.err : A.ok,
+                                        }}>
+                                            {isBan ? <BanIcon size={14}/> : <I.Check size={14}/>}
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-sm text-gray-900 dark:text-white">{b.username}</span>
-                                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isBan ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
-                                                    {b.action}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>
+                                                    {b.username}
                                                 </span>
+                                                <Pill style={{
+                                                    background: isBan ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)',
+                                                    color: isBan ? A.err : A.ok,
+                                                    border: `1px solid ${isBan ? 'rgba(248,113,113,0.2)' : 'rgba(74,222,128,0.2)'}`,
+                                                    fontFamily: A.mono, textTransform: 'lowercase',
+                                                }}>
+                                                    {b.action}
+                                                </Pill>
                                             </div>
-                                            {b.reason && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">Neden: {b.reason}</p>}
+                                            {b.reason && (
+                                                <p style={{
+                                                    fontSize: 11, color: A.faint, fontFamily: A.mono,
+                                                    margin: '2px 0 0', overflow: 'hidden',
+                                                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}>
+                                                    Neden: {b.reason}
+                                                </p>
+                                            )}
                                         </div>
-                                        <div className="text-right flex-shrink-0">
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">{b.banned_by}</div>
-                                            <div className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(new Date(b.created_at).getTime())}</div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                            <div style={{ fontSize: 11, color: A.dim, fontFamily: A.mono }}>
+                                                {b.banned_by}
+                                            </div>
+                                            <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, marginTop: 2 }}>
+                                                {timeAgo(new Date(b.created_at).getTime())}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -323,69 +484,121 @@ function PlayerNotesPanel() {
 
     const { data: notes = [], isLoading } = useQuery({
         queryKey: ['player-notes', searched],
-        queryFn: () => searched ? apiClient.get(`/players/notes/${encodeURIComponent(searched)}`).then(r => r.data) : Promise.resolve([]),
+        queryFn: () => searched
+            ? apiClient.get(`/players/notes/${encodeURIComponent(searched)}`).then(r => r.data)
+            : Promise.resolve([]),
         enabled: !!searched,
     });
 
     const addMutation = useMutation({
         mutationFn: () => apiClient.post(`/players/notes/${encodeURIComponent(searched)}`, { note }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['player-notes', searched] }); setNote(''); toast.success('Not eklendi'); },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['player-notes', searched] });
+            setNote('');
+            toast.success('Not eklendi');
+        },
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
     const deleteMutation = useMutation({
         mutationFn: (id) => apiClient.delete(`/players/notes/${id}`),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['player-notes', searched] }); toast.success('Not silindi'); },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['player-notes', searched] });
+            toast.success('Not silindi');
+        },
     });
 
     return (
-        <div className="space-y-4">
-            <div className="flex gap-2">
-                <div className="relative flex-1 max-w-xs">
-                    <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input value={username} onChange={e => setUsername(e.target.value)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1, maxWidth: 280 }}>
+                    <span style={{
+                        position: 'absolute', left: 10, top: '50%',
+                        transform: 'translateY(-50%)', color: A.faint, display: 'flex',
+                    }}>
+                        <I.Search size={13}/>
+                    </span>
+                    <Input value={username} onChange={e => setUsername(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && setSearched(username)}
-                        placeholder="Oyuncu adı..."
-                        className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        placeholder="Oyuncu adı..." mono
+                        style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }}/>
                 </div>
-                <button onClick={() => setSearched(username)} disabled={!username.trim()}
-                    className="px-4 py-2 text-sm font-medium rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 disabled:opacity-40">
-                    Ara
+                <button onClick={() => setSearched(username)} disabled={!username.trim()} style={{
+                    ...btnPrimary, padding: '0 16px', fontSize: 11,
+                    opacity: !username.trim() ? 0.4 : 1,
+                    cursor: !username.trim() ? 'not-allowed' : 'pointer',
+                }}>
+                    ARA
                 </button>
             </div>
 
             {searched && (
-                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-3">
-                    <div className="flex items-center gap-3">
-                        <PlayerHead username={searched} size={8} />
-                        <span className="font-semibold text-gray-900 dark:text-white">{searched}</span>
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '12px 16px', borderBottom: `1px solid ${A.border}`,
+                    }}>
+                        <PlayerHead username={searched} size={28}/>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>{searched}</span>
                     </div>
-                    <div className="flex gap-2">
-                        <input value={note} onChange={e => setNote(e.target.value)}
+
+                    <div style={{
+                        padding: '10px 16px', display: 'flex', gap: 8,
+                        borderBottom: `1px solid ${A.border}`,
+                    }}>
+                        <Input value={note} onChange={e => setNote(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && note.trim() && addMutation.mutate()}
-                            placeholder="Yeni not ekle..."
-                            className="flex-1 px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <button onClick={() => addMutation.mutate()} disabled={!note.trim() || addMutation.isPending}
-                            className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
-                            <HiOutlinePlus className="w-4 h-4" />
+                            placeholder="Yeni not ekle..." mono
+                            style={{ flex: 1 }}/>
+                        <button onClick={() => addMutation.mutate()}
+                            disabled={!note.trim() || addMutation.isPending} style={{
+                                ...btnPrimary, padding: '0 12px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                opacity: (!note.trim() || addMutation.isPending) ? 0.4 : 1,
+                                cursor: (!note.trim() || addMutation.isPending) ? 'not-allowed' : 'pointer',
+                            }}>
+                            <I.Plus size={14}/>
                         </button>
                     </div>
+
                     {isLoading ? (
-                        <div className="text-center py-4 text-gray-400 text-sm">Yükleniyor...</div>
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+                            <Spinner size={16}/>
+                        </div>
                     ) : notes.length === 0 ? (
-                        <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-2">Bu oyuncu için not yok.</p>
+                        <p style={{
+                            fontSize: 12, color: A.faint, textAlign: 'center',
+                            padding: '20px 16px', margin: 0, fontFamily: A.mono,
+                        }}>
+                            Bu oyuncu için not yok.
+                        </p>
                     ) : (
-                        <div className="space-y-2">
+                        <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {notes.map(n => (
-                                <div key={n.id} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800">
-                                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.color || '#6366f1' }} />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-gray-700 dark:text-gray-300">{n.note}</p>
-                                        <p className="text-xs text-gray-400 mt-0.5">{n.created_by} · {new Date(n.created_at).toLocaleDateString('tr-TR')}</p>
+                                <div key={n.id} style={{
+                                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                                    padding: '10px 12px',
+                                    background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                    borderRadius: 4,
+                                }}>
+                                    <div style={{
+                                        width: 6, height: 6, borderRadius: '50%',
+                                        marginTop: 5, flexShrink: 0,
+                                        background: n.color || 'var(--accent)',
+                                    }}/>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <p style={{ fontSize: 12, color: A.text, margin: '0 0 3px' }}>
+                                            {n.note}
+                                        </p>
+                                        <p style={{ fontSize: 10, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                            {n.created_by} · {new Date(n.created_at).toLocaleDateString('tr-TR')}
+                                        </p>
                                     </div>
-                                    <button onClick={() => deleteMutation.mutate(n.id)}
-                                        className="p-1 text-gray-400 hover:text-red-500 rounded-lg">
-                                        <HiOutlineTrash className="w-3.5 h-3.5" />
+                                    <button onClick={() => deleteMutation.mutate(n.id)} style={{
+                                        ...btnGhost, padding: '2px 4px', color: A.faint,
+                                        display: 'flex', alignItems: 'center',
+                                    }}>
+                                        <I.Trash size={12}/>
                                     </button>
                                 </div>
                             ))}

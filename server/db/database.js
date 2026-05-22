@@ -213,7 +213,7 @@ function initDatabase() {
             .run('Varsayılan Sunucu', defaultPath, 25565,
                 process.env.MINECRAFT_MIN_RAM || '2G',
                 process.env.MINECRAFT_MAX_RAM || '4G',
-                process.env.JVM_ARGS || '', );
+                process.env.JVM_ARGS || '');
     }
   } catch (err) { console.error('Migration error:', err.message) }
 

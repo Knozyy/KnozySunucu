@@ -3,22 +3,60 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import {
-    HiOutlineClock, HiOutlineTrash, HiOutlinePlus,
-    HiOutlinePlay, HiOutlinePause, HiOutlineDocumentText,
-    HiOutlineArrowPath, HiOutlineExclamationTriangle,
-} from 'react-icons/hi2';
+import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
+import { Cap, Input } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
 function formatCountdown(ms) {
-    if (ms <= 0) return "Çalışıyor / Bekliyor...";
+    if (ms <= 0) return 'Çalışıyor / Bekliyor...';
     const totalSeconds = Math.floor(ms / 1000);
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
-
     if (h > 0) return `${h}s ${m}d ${s}sn`;
     return `${m}d ${s}sn`;
 }
+
+function PauseIcon({ size = 14 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="6" y="4" width="4" height="16"/>
+            <rect x="14" y="4" width="4" height="16"/>
+        </svg>
+    );
+}
+
+function DocTextIcon({ size = 14 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+    );
+}
+
+function RefreshIcon({ size = 14 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+    );
+}
+
+// Seçim kutusu için ortak stil
+const selectStyle = {
+    background: A.bgDeeper, border: `1px solid ${A.border}`,
+    borderRadius: 3, color: A.text, fontSize: 12,
+    fontFamily: A.mono, padding: '7px 10px', outline: 'none',
+    width: '100%', cursor: 'pointer',
+};
 
 function CountdownTimer({ nextRunStr, enabled }) {
     const [timeLeft, setTimeLeft] = useState(0);
@@ -26,29 +64,41 @@ function CountdownTimer({ nextRunStr, enabled }) {
     useEffect(() => {
         if (!enabled || !nextRunStr) { setTimeLeft(0); return; }
         const nextRun = parseInt(nextRunStr, 10);
-        const updateTimer = () => {
-            const diff = nextRun - Date.now();
-            setTimeLeft(Math.max(0, diff));
-        };
-        updateTimer();
-        const interval = setInterval(updateTimer, 1000);
-        return () => clearInterval(interval);
+        const update = () => setTimeLeft(Math.max(0, nextRun - Date.now()));
+        update();
+        const id = setInterval(update, 1000);
+        return () => clearInterval(id);
     }, [nextRunStr, enabled]);
 
-    if (!enabled) return <span className="text-gray-400">Görev durduruldu</span>;
-    if (!nextRunStr) return <span className="text-amber-500">Planlanıyor...</span>;
+    if (!enabled) return <span style={{ color: A.faint }}>Görev durduruldu</span>;
+    if (!nextRunStr) return <span style={{ color: A.warn }}>Planlanıyor...</span>;
 
+    const urgent = timeLeft < 60000 && timeLeft > 0;
     return (
-        <span className={`font-mono ${timeLeft < 60000 && timeLeft > 0 ? 'text-amber-600 font-bold' : 'text-blue-600'}`}>
+        <span style={{
+            fontFamily: A.mono, fontSize: 11,
+            color: urgent ? A.warn : 'var(--accent)',
+            fontWeight: urgent ? 700 : 400,
+        }}>
             {formatCountdown(timeLeft)}
         </span>
     );
 }
 
+function LabelText({ children }) {
+    return (
+        <Cap style={{ display: 'block', marginBottom: 5 }}>{children}</Cap>
+    );
+}
+
 export default function SchedulerPage() {
     const [showForm, setShowForm] = useState(false);
-    const [showLog, setShowLog] = useState(false);
-    const [form, setForm] = useState({ name: '', action: 'restart', intervalMinutes: 360, type: 'interval', actionData: {} });
+    const [showLog,  setShowLog]  = useState(false);
+    const [form, setForm] = useState({
+        name: '', action: 'restart', intervalMinutes: 360,
+        type: 'interval', actionData: {},
+    });
+    const [formInput, setFormInput] = useState({ intervalValue: 6, intervalUnit: 'hours' });
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
@@ -66,7 +116,7 @@ export default function SchedulerPage() {
     });
 
     const createMutation = useMutation({
-        mutationFn: (data) => api.post('/scheduler', data),
+        mutationFn: (d) => api.post('/scheduler', d),
         onSuccess: () => {
             toast.success('Görev oluşturuldu');
             setShowForm(false);
@@ -86,7 +136,6 @@ export default function SchedulerPage() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduler'] }),
     });
 
-    // ── Otomatik Yeniden Başlatma ayarı ──
     const { data: autoRestartData } = useQuery({
         queryKey: ['autoRestart'],
         queryFn: () => api.get('/minecraft/auto-restart').then(r => r.data),
@@ -104,81 +153,96 @@ export default function SchedulerPage() {
 
     const autoRestartEnabled = autoRestartData?.enabled ?? true;
     const crashHistory = autoRestartData?.crashes || [];
-
     const tasks = data?.tasks || [];
 
     const actionLabels = {
-        restart: '🔄 Yeniden Başlat',
-        backup: '💾 Yedek Al',
-        announce: '📢 Duyuru Yap',
-        webhook: '🔔 Webhook Gönder',
-        clear_items: '🗑️ Yerdeki Eşyaları Sil',
-        custom_command: '⚡ Özel Komut Çalıştır'
+        restart:        '🔄 Yeniden Başlat',
+        backup:         '💾 Yedek Al',
+        announce:       '📢 Duyuru Yap',
+        webhook:        '🔔 Webhook Gönder',
+        clear_items:    '🗑️ Yerdeki Eşyaları Sil',
+        custom_command: '⚡ Özel Komut Çalıştır',
     };
-
-    const [formInput, setFormInput] = useState({
-        intervalValue: 6,
-        intervalUnit: 'hours', // 'minutes' veya 'hours'
-    });
 
     const handleFormSubmit = () => {
         let finalMinutes = formInput.intervalValue;
-        if (formInput.intervalUnit === 'hours') {
-            finalMinutes = formInput.intervalValue * 60;
-        }
-
-        const dataToSubmit = {
-            ...form,
-            intervalMinutes: finalMinutes,
-        };
-
-        createMutation.mutate(dataToSubmit);
+        if (formInput.intervalUnit === 'hours') finalMinutes = formInput.intervalValue * 60;
+        createMutation.mutate({ ...form, intervalMinutes: finalMinutes });
     };
 
+    function logColor(entry) {
+        const m = entry.message;
+        if (m.includes('HATA') || m.includes('hatası')) return A.err;
+        if (m.includes('başarıyla') || m.includes('tamamlandı') || m.includes('temizlendi')) return A.ok;
+        if (m.includes('atlandı')) return A.warn;
+        return A.faint;
+    }
+
     return (
-        <div className="space-y-6">
-            <div className="fade-in flex items-center justify-between">
+        <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
+            fontFamily: A.sans, color: A.text }}>
+            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+
+            {/* ── Başlık ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('scheduler.title')}</h1>
-                    <p className="text-gray-500">{t('scheduler.subtitle')}</p>
+                    <Cap>zamanlayıcı</Cap>
+                    <h1 style={{ fontSize: 22, fontWeight: 600, color: A.text,
+                        margin: '4px 0 2px', letterSpacing: '-0.01em' }}>
+                        {t('scheduler.title')}
+                    </h1>
+                    <p style={{ fontSize: 12, color: A.dim, margin: 0 }}>{t('scheduler.subtitle')}</p>
                 </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setShowLog(!showLog)}
-                        className={`btn-secondary text-sm ${showLog ? 'ring-2 ring-blue-400' : ''}`}
-                    >
-                        <HiOutlineDocumentText className="w-4 h-4" /> Log
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => setShowLog(!showLog)} style={{
+                        ...btnGhost, padding: '7px 12px', fontSize: 11,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        borderColor: showLog ? 'var(--accent)' : undefined,
+                        color: showLog ? 'var(--accent)' : A.dim,
+                    }}>
+                        <DocTextIcon size={13}/> Log
                     </button>
-                    <button onClick={() => setShowForm(!showForm)} className="btn-primary">
-                        <HiOutlinePlus className="w-5 h-5" /> Yeni Görev
+                    <button onClick={() => setShowForm(!showForm)} style={{
+                        ...btnPrimary, padding: '7px 14px', fontSize: 11,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                        <I.Plus size={13}/> Yeni Görev
                     </button>
                 </div>
             </div>
 
-            {/* Execution Log */}
+            {/* ── Çalışma Logu ── */}
             {showLog && (
-                <div className="glass-card p-4 fade-in">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <HiOutlineDocumentText className="w-4 h-4 text-blue-600" />
-                        Görev Çalışma Geçmişi
-                    </h3>
-                    <div className="max-h-60 overflow-y-auto bg-gray-900 rounded-xl p-3 text-xs font-mono space-y-1">
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '10px 16px', borderBottom: `1px solid ${A.border}` }}>
+                        <DocTextIcon size={13} style={{ color: '#60a5fa' }}/>
+                        <Cap>Görev Çalışma Geçmişi</Cap>
+                    </div>
+                    <div style={{
+                        maxHeight: 240, overflowY: 'auto',
+                        background: A.bg, padding: '8px 16px',
+                        display: 'flex', flexDirection: 'column', gap: 2,
+                    }}>
                         {logData?.log?.length > 0 ? (
                             [...logData.log].reverse().map((entry, i) => (
-                                <div key={i} className={`px-2 py-0.5 rounded ${entry.message.includes('HATA') || entry.message.includes('hatası') ? 'text-red-400 bg-red-900/10' :
-                                    entry.message.includes('başarıyla') || entry.message.includes('tamamlandı') || entry.message.includes('temizlendi') ? 'text-green-400' :
-                                        entry.message.includes('atlandı') ? 'text-amber-400' :
-                                            'text-gray-400'
-                                    }`}>
-                                    <span className="text-gray-600">{new Date(entry.time).toLocaleString('tr-TR')}</span>
+                                <div key={i} style={{
+                                    fontSize: 11, fontFamily: A.mono,
+                                    padding: '2px 4px', borderRadius: 2,
+                                    color: logColor(entry),
+                                }}>
+                                    <span style={{ color: A.border }}>
+                                        {new Date(entry.time).toLocaleString('tr-TR')}
+                                    </span>
                                     {' '}
-                                    <span className="text-cyan-400">[{entry.task}]</span>
+                                    <span style={{ color: '#67e8f9' }}>[{entry.task}]</span>
                                     {' '}
                                     {entry.message}
                                 </div>
                             ))
                         ) : (
-                            <div className="text-gray-500 text-center py-4">
+                            <div style={{ padding: '20px 0', textAlign: 'center',
+                                fontSize: 11, color: A.faint, fontFamily: A.mono }}>
                                 Henüz çalışma kaydı yok. Görev çalıştığında burada gözükecek.
                             </div>
                         )}
@@ -186,38 +250,38 @@ export default function SchedulerPage() {
                 </div>
             )}
 
+            {/* ── Yeni Görev Formu ── */}
             {showForm && (
-                <div className="glass-card p-6 fade-in">
-                    <h3 className="font-semibold text-gray-900 mb-4">Yeni Görev</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '16px' }}>
+                    <Cap style={{ marginBottom: 14, display: 'block', fontSize: 11 }}>Yeni Görev</Cap>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Görev Adı</label>
-                            <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="input-field" placeholder="Örn: Otomatik restart" />
+                            <LabelText>Görev Adı</LabelText>
+                            <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                                placeholder="Örn: Otomatik restart" mono style={{ width: '100%', boxSizing: 'border-box' }}/>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">İşlem</label>
-                            <select value={form.action} onChange={e => setForm(p => ({ ...p, action: e.target.value }))} className="input-field">
+                            <LabelText>İşlem</LabelText>
+                            <select value={form.action} onChange={e => setForm(p => ({ ...p, action: e.target.value }))}
+                                style={selectStyle}>
                                 <option value="restart">Sunucu Yeniden Başlat</option>
                                 <option value="backup">Yedek Al</option>
                                 <option value="announce">Oyun İçi Duyuru</option>
-                                <option value="clear_items">Yerdeki Eşyaları Sil (Clear Items)</option>
+                                <option value="clear_items">Yerdeki Eşyaları Sil</option>
                                 <option value="custom_command">Özel Komut Çalıştır</option>
                                 <option value="webhook">Discord Webhook</option>
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tekrar Süresi</label>
-                            <div className="flex gap-2">
-                                <input type="number"
-                                    className="input-field flex-1" min={1}
+                            <LabelText>Tekrar Süresi</LabelText>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <Input type="number" min={1}
                                     value={formInput.intervalValue}
                                     onChange={e => setFormInput(p => ({ ...p, intervalValue: parseInt(e.target.value) || 1 }))}
-                                />
-                                <select
-                                    className="input-field w-28"
-                                    value={formInput.intervalUnit}
+                                    mono style={{ flex: 1 }}/>
+                                <select value={formInput.intervalUnit}
                                     onChange={e => setFormInput(p => ({ ...p, intervalUnit: e.target.value }))}
-                                >
+                                    style={{ ...selectStyle, width: 100 }}>
                                     <option value="minutes">Dakika</option>
                                     <option value="hours">Saat</option>
                                 </select>
@@ -225,22 +289,44 @@ export default function SchedulerPage() {
                         </div>
                         {(form.action === 'announce' || form.action === 'webhook' || form.action === 'custom_command') && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {form.action === 'announce' ? 'Duyuru Mesajı' : form.action === 'custom_command' ? 'Özel Sunucu Komutu' : 'Webhook URL'}
-                                </label>
-                                <input type="text"
-                                    value={form.action === 'announce' ? (form.actionData.message || '') : form.action === 'custom_command' ? (form.actionData.command || '') : (form.actionData.url || '')}
-                                    onChange={e => setForm(p => ({ ...p, actionData: form.action === 'announce' ? { message: e.target.value } : form.action === 'custom_command' ? { command: e.target.value } : { url: e.target.value, message: form.name } }))}
-                                    className="input-field"
-                                    placeholder={form.action === 'announce' ? 'Sunucu 5 dakika içinde kapanacak!' : form.action === 'custom_command' ? 'say Komut testi && kill @a' : 'https://discord.com/api/webhooks/...'}
-                                />
-                                {form.action === 'custom_command' && <p className="text-xs text-gray-500 mt-1">Başına '/' koymanıza gerek yoktur.</p>}
+                                <LabelText>
+                                    {form.action === 'announce' ? 'Duyuru Mesajı'
+                                        : form.action === 'custom_command' ? 'Özel Sunucu Komutu'
+                                        : 'Webhook URL'}
+                                </LabelText>
+                                <Input type="text"
+                                    value={form.action === 'announce' ? (form.actionData.message || '')
+                                        : form.action === 'custom_command' ? (form.actionData.command || '')
+                                        : (form.actionData.url || '')}
+                                    onChange={e => setForm(p => ({
+                                        ...p,
+                                        actionData: form.action === 'announce' ? { message: e.target.value }
+                                            : form.action === 'custom_command' ? { command: e.target.value }
+                                            : { url: e.target.value, message: form.name },
+                                    }))}
+                                    placeholder={form.action === 'announce'
+                                        ? 'Sunucu 5 dakika içinde kapanacak!'
+                                        : form.action === 'custom_command' ? 'say Komut testi'
+                                        : 'https://discord.com/api/webhooks/...'}
+                                    mono style={{ width: '100%', boxSizing: 'border-box' }}/>
+                                {form.action === 'custom_command' && (
+                                    <p style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, marginTop: 4 }}>
+                                        Başına '/' koymanıza gerek yoktur.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>
-                    <div className="flex gap-3 mt-4 justify-end">
-                        <button onClick={() => setShowForm(false)} className="btn-secondary">İptal</button>
-                        <button onClick={handleFormSubmit} disabled={!form.name || createMutation.isPending} className="btn-primary">
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                        <button onClick={() => setShowForm(false)} style={{ ...btnGhost, padding: '7px 14px', fontSize: 11 }}>
+                            İptal
+                        </button>
+                        <button onClick={handleFormSubmit}
+                            disabled={!form.name || createMutation.isPending} style={{
+                                ...btnPrimary, padding: '7px 16px', fontSize: 11,
+                                opacity: (!form.name || createMutation.isPending) ? 0.5 : 1,
+                                cursor: (!form.name || createMutation.isPending) ? 'not-allowed' : 'pointer',
+                            }}>
                             {createMutation.isPending ? 'Oluşturuluyor...' : 'Oluştur'}
                         </button>
                     </div>
@@ -248,26 +334,41 @@ export default function SchedulerPage() {
             )}
 
             {/* ── Otomatik Yeniden Başlatma ── */}
-            <div className="glass-card p-5 fade-in">
-                <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${autoRestartEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
-                        <HiOutlineArrowPath className={`w-5 h-5 ${autoRestartEnabled ? 'text-green-600' : 'text-gray-400'}`} />
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                        width: 36, height: 36, borderRadius: 4, flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: autoRestartEnabled ? 'rgba(74,222,128,0.08)' : A.bgDeeper,
+                        border: `1px solid ${autoRestartEnabled ? 'rgba(74,222,128,0.15)' : A.border}`,
+                        color: autoRestartEnabled ? A.ok : A.faint,
+                    }}>
+                        <RefreshIcon size={16}/>
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900">Çökme Sonrası Otomatik Yeniden Başlatma</p>
-                        <p className="text-sm text-gray-500">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text, marginBottom: 2 }}>
+                            Çökme Sonrası Otomatik Yeniden Başlatma
+                        </div>
+                        <div style={{ fontSize: 11, color: A.dim }}>
                             Sunucu beklenmedik şekilde kapanırsa otomatik olarak yeniden başlatılır.
                             {crashHistory.length > 0 && (
-                                <span className="ml-1 text-amber-600 font-medium">
+                                <span style={{ marginLeft: 6, color: A.warn, fontFamily: A.mono }}>
                                     Son çöküm: {new Date(crashHistory[0].occurred_at).toLocaleString('tr-TR')}
                                 </span>
                             )}
-                        </p>
+                        </div>
                         {crashHistory.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                                 {crashHistory.slice(0, 5).map(c => (
-                                    <span key={c.id} className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${c.auto_restarted ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                                        <HiOutlineExclamationTriangle className="w-3 h-3" />
+                                    <span key={c.id} style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                                        fontSize: 10, fontFamily: A.mono,
+                                        padding: '2px 7px', borderRadius: 2,
+                                        background: c.auto_restarted ? 'rgba(96,165,250,0.08)' : 'rgba(248,113,113,0.08)',
+                                        border: `1px solid ${c.auto_restarted ? 'rgba(96,165,250,0.2)' : 'rgba(248,113,113,0.2)'}`,
+                                        color: c.auto_restarted ? '#60a5fa' : A.err,
+                                    }}>
+                                        <I.Alert size={9}/>
                                         {new Date(c.occurred_at).toLocaleTimeString('tr-TR')} — code {c.exit_code}
                                         {c.auto_restarted ? ' ↻' : ' ✗'}
                                     </span>
@@ -275,69 +376,115 @@ export default function SchedulerPage() {
                             </div>
                         )}
                     </div>
-                    {/* Toggle switch */}
+                    {/* Toggle */}
                     <button
                         onClick={() => autoRestartMutation.mutate(!autoRestartEnabled)}
                         disabled={autoRestartMutation.isPending}
-                        className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 focus:outline-none ${autoRestartEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
                         title={autoRestartEnabled ? 'Kapat' : 'Aç'}
-                    >
-                        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${autoRestartEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+                        style={{
+                            position: 'relative', width: 44, height: 24, borderRadius: 12,
+                            background: autoRestartEnabled ? A.ok : A.border,
+                            border: 'none', cursor: autoRestartMutation.isPending ? 'not-allowed' : 'pointer',
+                            transition: 'background 0.2s', flexShrink: 0, outline: 'none',
+                        }}>
+                        <span style={{
+                            position: 'absolute', top: 3, width: 18, height: 18,
+                            borderRadius: '50%', background: '#fff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                            transition: 'transform 0.2s',
+                            transform: `translateX(${autoRestartEnabled ? 22 : 3}px)`,
+                        }}/>
                     </button>
                 </div>
             </div>
 
-            {/* Task List */}
-            <div className="space-y-3">
-                {tasks.length > 0 ? tasks.map(task => {
-                    // Dakikayı daha güzel formatlama logic
-                    let displayInterval = `${task.interval_minutes} dakika`;
-                    if (task.interval_minutes >= 60 && task.interval_minutes % 60 === 0) {
-                        displayInterval = `${task.interval_minutes / 60} saat`;
-                    }
+            {/* ── Görev Listesi ── */}
+            {tasks.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '56px 20px' }}>
+                    <I.Clock size={40} style={{ color: A.faint, margin: '0 auto 12px', display: 'block', opacity: 0.2 }}/>
+                    <p style={{ fontSize: 14, color: A.dim, margin: '0 0 4px' }}>Henüz zamanlanmış görev yok</p>
+                    <p style={{ fontSize: 12, color: A.faint, margin: 0 }}>
+                        Otomatik restart, yedek veya duyuru planlayın
+                    </p>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {tasks.map(task => {
+                        let displayInterval = `${task.interval_minutes} dakika`;
+                        if (task.interval_minutes >= 60 && task.interval_minutes % 60 === 0)
+                            displayInterval = `${task.interval_minutes / 60} saat`;
 
-                    return (
-                        <div key={task.id} className="glass-card p-5 fade-in flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${task.enabled ? 'bg-green-50' : 'bg-gray-100'}`}>
-                                <HiOutlineClock className={`w-5 h-5 ${task.enabled ? 'text-green-600' : 'text-gray-400'}`} />
-                            </div>
-                            <div className="flex-1">
-                                <p className="font-semibold text-gray-900">
-                                    {task.name}
-                                    {task.action === 'custom_command' && task.action_data && (
-                                        <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono">
-                                            /{JSON.parse(task.action_data).command}
-                                        </span>
-                                    )}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    {actionLabels[task.action] || task.action} • Her {displayInterval}'da
-                                </p>
-                                <div className="flex items-center gap-4 mt-1.5">
-                                    {task.last_run && <p className="text-xs text-gray-400">Son: {new Date(task.last_run).toLocaleString('tr-TR')}</p>}
-                                    <p className="text-xs bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                        Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled} />
-                                    </p>
+                        return (
+                            <div key={task.id} style={{
+                                background: A.panel, border: `1px solid ${A.border}`,
+                                borderRadius: 4, padding: '14px 16px',
+                                display: 'flex', alignItems: 'center', gap: 14,
+                            }}>
+                                <div style={{
+                                    width: 36, height: 36, borderRadius: 4, flexShrink: 0,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: task.enabled ? 'rgba(74,222,128,0.08)' : A.bgDeeper,
+                                    border: `1px solid ${task.enabled ? 'rgba(74,222,128,0.15)' : A.border}`,
+                                    color: task.enabled ? A.ok : A.faint,
+                                }}>
+                                    <I.Clock size={16}/>
                                 </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: A.text, marginBottom: 2,
+                                        display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        {task.name}
+                                        {task.action === 'custom_command' && task.action_data && (
+                                            <span style={{
+                                                fontSize: 10, fontFamily: A.mono, color: A.dim,
+                                                background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                                padding: '1px 6px', borderRadius: 2,
+                                            }}>
+                                                /{JSON.parse(task.action_data).command}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: A.dim, marginBottom: 6 }}>
+                                        {actionLabels[task.action] || task.action} · Her {displayInterval}'da
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        {task.last_run && (
+                                            <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>
+                                                Son: {new Date(task.last_run).toLocaleString('tr-TR')}
+                                            </span>
+                                        )}
+                                        <span style={{
+                                            fontSize: 10, fontFamily: A.mono,
+                                            background: A.bgDeeper, border: `1px solid ${A.border}`,
+                                            padding: '2px 7px', borderRadius: 2,
+                                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        }}>
+                                            Sonraki: <CountdownTimer nextRunStr={task.next_run} enabled={task.enabled}/>
+                                        </span>
+                                    </div>
+                                </div>
+                                {/* Pause / Play */}
+                                <button onClick={() => toggleMutation.mutate(task.id)} style={{
+                                    padding: '6px 8px', borderRadius: 3, cursor: 'pointer',
+                                    background: task.enabled ? 'rgba(74,222,128,0.1)' : A.bgDeeper,
+                                    border: `1px solid ${task.enabled ? 'rgba(74,222,128,0.2)' : A.border}`,
+                                    color: task.enabled ? A.ok : A.faint,
+                                    display: 'flex', alignItems: 'center',
+                                }}>
+                                    {task.enabled ? <PauseIcon size={14}/> : <I.Play size={14}/>}
+                                </button>
+                                {/* Sil */}
+                                <button onClick={() => deleteMutation.mutate(task.id)} style={{
+                                    ...btnGhost, padding: '6px 7px', color: A.err,
+                                    borderColor: 'rgba(248,113,113,0.2)',
+                                    display: 'flex', alignItems: 'center',
+                                }}>
+                                    <I.Trash size={14}/>
+                                </button>
                             </div>
-                            <button onClick={() => toggleMutation.mutate(task.id)}
-                                className={`p-2 rounded-lg transition-colors ${task.enabled ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                            >
-                                {task.enabled ? <HiOutlinePause className="w-5 h-5" /> : <HiOutlinePlay className="w-5 h-5" />}
-                            </button>
-                            <button onClick={() => deleteMutation.mutate(task.id)} className="text-red-400 hover:text-red-600 transition-colors p-2">
-                                <HiOutlineTrash className="w-5 h-5" />
-                            </button>
-                        </div>
-                    );
-                }) : (
-                    <div className="text-center py-12 text-gray-400">
-                        <HiOutlineClock className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                        <p className="text-lg">Henüz zamanlanmış görev yok</p>
-                        <p className="text-sm">Otomatik restart, yedek veya duyuru planlayın</p>
-                    </div>
-                )}
-            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
