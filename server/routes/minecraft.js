@@ -29,8 +29,11 @@ function noServer(res) {
 router.get('/status', authMiddleware, (req, res) => {
     try {
         const inst = resolveInstance(req);
-        if (!inst) return res.json({ status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } });
-        res.json(inst.getStatus());
+        if (!inst) return res.json({ status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 }, name: 'Sunucu' });
+        const statusData = inst.getStatus();
+        // Sunucu adını da ekle (Discord botu için)
+        statusData.name = inst._serverConfig?.name || 'Sunucu';
+        res.json(statusData);
     } catch (error) {
         console.error('[MC] Status error:', error.message);
         res.status(500).json({ error: 'Durum bilgisi alınamadı' });

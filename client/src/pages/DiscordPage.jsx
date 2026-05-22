@@ -193,6 +193,7 @@ export default function DiscordPage() {
     const [newMcNick, setNewMcNick] = useState('');
     const [botDirInput, setBotDirInput] = useState('');
     const [showConfig, setShowConfig] = useState(false);
+    const [statusTextInput, setStatusTextInput] = useState('');
 
     // ── Queries ───────────────────────────────────────────────────────────────
 
@@ -201,6 +202,12 @@ export default function DiscordPage() {
         queryFn: () => api.get('/discord/status').then(r => r.data),
         refetchInterval: 10000,
         onSuccess: (d) => { if (!botDirInput && d.botDir) setBotDirInput(d.botDir); },
+    });
+
+    useQuery({
+        queryKey: ['discord-bot-settings'],
+        queryFn: () => api.get('/discord/bot-settings').then(r => r.data),
+        onSuccess: (d) => { if (d.status_text) setStatusTextInput(d.status_text); },
     });
 
     const { data: wlData, isLoading: wlLoading } = useQuery({
@@ -251,6 +258,12 @@ export default function DiscordPage() {
     const configMutation = useMutation({
         mutationFn: (botDir) => api.put('/discord/config', { botDir }),
         onSuccess: () => { toast.success('Bot dizini kaydedildi.'); queryClient.invalidateQueries({ queryKey: ['discord-status'] }); setShowConfig(false); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+
+    const botSettingsMutation = useMutation({
+        mutationFn: (settings) => api.put('/discord/bot-settings', settings),
+        onSuccess: () => toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.'),
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
 
@@ -393,33 +406,65 @@ export default function DiscordPage() {
 
                 {/* Dizin ayar formu */}
                 {showConfig && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                            Bot Dizini (sunucudaki mutlak yol)
-                        </label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={botDirInput}
-                                onChange={e => setBotDirInput(e.target.value)}
-                                placeholder="/home/user/KnozyBot"
-                                className="input-field flex-1 font-mono text-sm"
-                            />
-                            <button
-                                onClick={() => configMutation.mutate(botDirInput)}
-                                disabled={configMutation.isPending || !botDirInput.trim()}
-                                className="btn-primary text-xs flex items-center gap-1.5"
-                            >
-                                <HiOutlineCheck className="w-3.5 h-3.5" />
-                                {configMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-                            </button>
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-4">
+                        {/* Bot Dizini */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                                Bot Dizini (sunucudaki mutlak yol)
+                            </label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={botDirInput}
+                                    onChange={e => setBotDirInput(e.target.value)}
+                                    placeholder="/home/user/KnozyBot"
+                                    className="input-field flex-1 font-mono text-sm"
+                                />
+                                <button
+                                    onClick={() => configMutation.mutate(botDirInput)}
+                                    disabled={configMutation.isPending || !botDirInput.trim()}
+                                    className="btn-primary text-xs flex items-center gap-1.5"
+                                >
+                                    <HiOutlineCheck className="w-3.5 h-3.5" />
+                                    {configMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                                </button>
+                            </div>
+                            {status && !status.dirExists && status.botDir && (
+                                <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                                    <HiOutlineExclamationTriangle className="w-3.5 h-3.5" />
+                                    Dizin sunucuda bulunamadı. Yolu kontrol edin.
+                                </p>
+                            )}
                         </div>
-                        {status && !status.dirExists && status.botDir && (
-                            <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
-                                <HiOutlineExclamationTriangle className="w-3.5 h-3.5" />
-                                Dizin sunucuda bulunamadı. Yolu kontrol edin.
+
+                        {/* Bot Status Metni */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                                Discord Status Metni
+                                <span className="ml-2 text-gray-400 font-normal">— Bot bu metni "oynuyor" olarak gösterir</span>
+                            </label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={statusTextInput}
+                                    onChange={e => setStatusTextInput(e.target.value)}
+                                    placeholder="HooDoo FTB Evolution"
+                                    className="input-field flex-1 text-sm"
+                                    maxLength={128}
+                                />
+                                <button
+                                    onClick={() => botSettingsMutation.mutate({ status_text: statusTextInput.trim() || null })}
+                                    disabled={botSettingsMutation.isPending}
+                                    className="btn-primary text-xs flex items-center gap-1.5"
+                                >
+                                    <HiOutlineCheck className="w-3.5 h-3.5" />
+                                    {botSettingsMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                                Boş bırakırsan oyuncu sayısı otomatik gösterilir: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">5/20 oyuncu</code>
                             </p>
-                        )}
+                        </div>
                     </div>
                 )}
             </div>
