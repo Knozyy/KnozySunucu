@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { I18nProvider } from '@/context/I18nContext';
+import { CommandPalette, useCommandPalette } from '@/components/CommandPalette';
 
 import MainLayout from '@/components/layout/MainLayout';
 import LoginPage from '@/pages/LoginPage';
@@ -53,6 +54,53 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function AppInner() {
+  const cmdPalette = useCommandPalette();
+
+  return (
+    <>
+      <CommandPalette
+        open={cmdPalette.open}
+        onClose={cmdPalette.closePalette}
+        query={cmdPalette.query}
+        setQuery={cmdPalette.setQuery}
+        selectedIndex={cmdPalette.selectedIndex}
+        setSelectedIndex={cmdPalette.setSelectedIndex}
+      />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<DashboardPage />} />
+          <Route path="modpacks" element={<ModpacksPage />} />
+          <Route path="mods" element={<ModsPage />} />
+          <Route path="console" element={<ConsolePage />} />
+          <Route path="files" element={<FilesPage />} />
+          <Route path="worlds" element={<WorldsPage />} />
+          <Route path="scheduler" element={<SchedulerPage />} />
+          <Route path="terminal" element={<TerminalPage />} />
+          <Route path="backup" element={<BackupPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="discord" element={<DiscordPage />} />
+          <Route path="automation" element={<AutomationPage />} />
+          <Route path="performance" element={<PerformancePage />} />
+          <Route path="players" element={<PlayersPage />} />
+          <Route path="servers" element={<ServersPage />} />
+        </Route>
+        {/* Eski URL'ler → yenilere yönlendir */}
+        <Route path="/server" element={<Navigate to="/" replace />} />
+        <Route path="/logs" element={<Navigate to="/console" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -81,36 +129,7 @@ function App() {
                 }}
               />
 
-              <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route
-                  element={
-                    <ProtectedRoute>
-                      <MainLayout />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route index element={<DashboardPage />} />
-                  <Route path="modpacks" element={<ModpacksPage />} />
-                  <Route path="mods" element={<ModsPage />} />
-                  <Route path="console" element={<ConsolePage />} />
-                  <Route path="files" element={<FilesPage />} />
-                  <Route path="worlds" element={<WorldsPage />} />
-                  <Route path="scheduler" element={<SchedulerPage />} />
-                  <Route path="terminal" element={<TerminalPage />} />
-                  <Route path="backup" element={<BackupPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="discord" element={<DiscordPage />} />
-                  <Route path="automation" element={<AutomationPage />} />
-                  <Route path="performance" element={<PerformancePage />} />
-                  <Route path="players" element={<PlayersPage />} />
-                  <Route path="servers" element={<ServersPage />} />
-                </Route>
-                {/* Eski URL'ler → yenilere yönlendir */}
-                <Route path="/server" element={<Navigate to="/" replace />} />
-                <Route path="/logs" element={<Navigate to="/console" replace />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+              <AppInner />
             </I18nProvider>
           </ThemeProvider>
         </AuthProvider>
