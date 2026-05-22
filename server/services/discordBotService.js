@@ -37,7 +37,18 @@ class DiscordBotService {
         if (!fs.existsSync(dir)) throw new Error(`Bot dizini bulunamadı: ${dir}`);
         if (this.isBotRunning()) throw new Error('Bot zaten çalışıyor.');
 
-        const cmd = `screen -dmS ${SCREEN_NAME} bash -c "cd ${dir} && python3 main.py 2>&1 | tee /tmp/knozy-discord.log"`;
+        // Node.js bot (yeni sistem) veya Python bot (eski sistem) için
+        const packageJsonPath = path.join(dir, 'package.json');
+        const isNodeBot = fs.existsSync(packageJsonPath);
+
+        let cmd;
+        if (isNodeBot) {
+            cmd = `screen -dmS ${SCREEN_NAME} bash -c "cd ${dir} && npm install > /dev/null 2>&1 && node index.js 2>&1 | tee /tmp/knozy-discord.log"`;
+        } else {
+            // Python bot (eski)
+            cmd = `screen -dmS ${SCREEN_NAME} bash -c "cd ${dir} && python3 main.py 2>&1 | tee /tmp/knozy-discord.log"`;
+        }
+
         try {
             execSync(cmd, { stdio: 'ignore' });
         } catch (e) {
@@ -183,16 +194,67 @@ class DiscordBotService {
         return this._readJson('player_history.json', []);
     }
 
+    // ── Bot Settings (Node.js bot için) ──────────────────────────────────────
+
+    getBotSettings() {
+        try {
+            const db = getDb();
+            const settings = {};
+            const rows = db.prepare("SELECT key, value FROM app_settings WHERE key LIKE 'discord_bot_%'").all();
+
+            for (const row of rows) {
+                const key = row.key.replace('discord_bot_', '');
+                try {
+                    settings[key] = JSON.parse(row.value);
+                } catch {
+                    settings[key] = row.value;
+                }
+            }
+
+            return settings;
+        } catch (e) {
+            return {};
+        }
+    }
+
+    saveBotSettings(settings) {
+        try {
+            const db = getDb();
+            for (const [key, value] of Object.entries(settings)) {
+                const dbKey = `discord_bot_${key}`;
+                const dbValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+
+                db.prepare(`
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (?, ?, datetime('now'))
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                `).run(dbKey, dbValue);
+            }
+        } catch (e) {
+            throw new Error(`Bot ayarları kaydedilemedi: ${e.message}`);
+        }
+    }
+
+    getBotStatus() {
+        const botDir = this.getBotDir();
+        const running = this.isBotRunning();
+        const packageJsonPath = botDir ? path.join(botDir, 'package.json') : null;
+        const isNodeBot = packageJsonPath && fs.existsSync(packageJsonPath);
+
+        return {
+            running,
+            botDir: botDir || '',
+            botType: isNodeBot ? 'node' : 'python',
+            screenName: SCREEN_NAME,
+            dirExists: botDir ? fs.existsSync(botDir) : false,
+            lastLog: this.getRecentLog(5),
+        };
+    }
+
     // ── Status summary ────────────────────────────────────────────────────────
 
     getStatus() {
-        const botDir = this.getBotDir();
-        return {
-            running: this.isBotRunning(),
-            botDir: botDir || '',
-            screenName: SCREEN_NAME,
-            dirExists: botDir ? fs.existsSync(botDir) : false,
-        };
+        return this.getBotStatus();
     }
 }
 

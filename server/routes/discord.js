@@ -237,4 +237,70 @@ router.get('/player-history', authMiddleware, (req, res) => {
     }
 });
 
+// ── Bot Settings (Node.js bot için) ───────────────────────────────────────
+
+// GET /api/discord/bot-settings
+router.get('/bot-settings', authMiddleware, (req, res) => {
+    try {
+        const settings = discordBotService.getBotSettings();
+        res.json(settings);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PUT /api/discord/bot-settings
+router.put('/bot-settings', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        discordBotService.saveBotSettings(req.body);
+        res.json({ message: 'Bot ayarları kaydedildi' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/discord/bot-status
+router.get('/bot-status', authMiddleware, (req, res) => {
+    try {
+        const status = discordBotService.getBotStatus();
+        res.json(status);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/discord/bot-command (start/stop/restart)
+router.post('/bot-command', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { command } = req.body;
+        if (!command) return res.status(400).json({ error: 'command gerekli' });
+
+        switch (command.toLowerCase()) {
+            case 'start':
+                discordBotService.startBot();
+                res.json({ message: 'Bot başlatılıyor...' });
+                break;
+            case 'stop':
+                discordBotService.stopBot();
+                res.json({ message: 'Bot durduruldu' });
+                break;
+            case 'restart':
+                discordBotService.stopBot();
+                setTimeout(() => {
+                    try {
+                        discordBotService.startBot();
+                    } catch (e) {
+                        console.error('Restart start error:', e.message);
+                    }
+                }, 1000);
+                res.json({ message: 'Bot yeniden başlatılıyor...' });
+                break;
+            default:
+                res.status(400).json({ error: 'Bilinmeyen komut' });
+        }
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
 module.exports = router;
