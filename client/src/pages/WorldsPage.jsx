@@ -121,6 +121,7 @@ export default function WorldsPage() {
 
     const worlds = data?.worlds || [];
     const totalSize = data?.totalSize;
+    const resolvedPath = data?.resolvedPath;
 
     const hasSeed = seedData?.seed
         && seedData.seed !== '(rastgele)'
@@ -165,9 +166,24 @@ export default function WorldsPage() {
                     ))}
                 </div>
             ) : worlds.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <div style={{ textAlign: 'center', padding: '48px 20px' }}>
                     <I.World size={40} style={{ color: A.faint, margin: '0 auto 12px', display: 'block', opacity: 0.3 }}/>
-                    <p style={{ fontSize: 13, color: A.faint, margin: 0 }}>Dünya bulunamadı</p>
+                    <p style={{ fontSize: 13, color: A.faint, margin: '0 0 8px' }}>Dünya bulunamadı</p>
+                    {resolvedPath && (
+                        <div style={{
+                            display: 'inline-block', marginTop: 8,
+                            background: A.bgDeeper, border: `1px solid ${A.border}`,
+                            borderRadius: 4, padding: '8px 14px', textAlign: 'left',
+                        }}>
+                            <p style={{ fontSize: 11, color: A.faint, margin: '0 0 4px', fontFamily: A.mono }}>
+                                Taranan yol:
+                            </p>
+                            <code style={{ fontSize: 12, color: A.warn, fontFamily: A.mono }}>{resolvedPath}/world</code>
+                            <p style={{ fontSize: 11, color: A.faintest, margin: '6px 0 0', fontFamily: A.mono }}>
+                                Sunucular sayfasından sunucu yolunu kontrol edin.
+                            </p>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div style={{

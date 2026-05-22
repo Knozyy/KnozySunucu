@@ -160,6 +160,9 @@ function ServerModal({ initial, onClose, onSaved }) {
                             placeholder="/home/minecraft/server"
                             className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                         />
+                        <p className="text-xs text-gray-400 mt-1 font-mono">
+                            server.jar dosyasının bulunduğu tam yol (ör. <code>/home/mc/server</code>)
+                        </p>
                     </div>
                     <div>
                         <label className="text-xs font-medium text-gray-500 mb-1 block">

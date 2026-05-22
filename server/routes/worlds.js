@@ -15,7 +15,7 @@ function wmFor(req) {
 
 router.get('/', authMiddleware, (req, res) => {
     const wm = wmFor(req);
-    res.json({ worlds: wm.list(), totalSize: wm.totalSize() });
+    res.json({ worlds: wm.list(), totalSize: wm.totalSize(), resolvedPath: wm.serverPath });
 });
 
 router.post('/reset', authMiddleware, (req, res) => {
