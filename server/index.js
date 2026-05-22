@@ -33,6 +33,7 @@ const apiTokenRoutes = require('./routes/apiTokens');
 const auditRoutes = require('./routes/audit');
 const templateRoutes = require('./routes/templates');
 const serverListRoutes = require('./routes/servers');
+const dashboardRoutes = require('./routes/dashboard');
 const minecraftService = require('./services/minecraftService');
 const serverRegistry = require('./services/serverRegistry');
 
@@ -76,6 +77,7 @@ app.use('/api/tokens', apiTokenRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/servers', serverListRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check — startTime sunucu yeniden başlayınca değişir, frontend bunu algılar
 const SERVER_START_TIME = Date.now();
