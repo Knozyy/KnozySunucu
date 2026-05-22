@@ -3,9 +3,10 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
+    // HODO panel her zaman koyu — Tailwind dark variant'larını da aktif et
     const [isDark, setIsDark] = useState(() => {
         const saved = localStorage.getItem('theme');
-        return saved === 'dark';
+        return saved !== 'light'; // varsayılan: dark
     });
 
     useEffect(() => {
