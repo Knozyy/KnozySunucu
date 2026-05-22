@@ -98,8 +98,9 @@ function TrophyIcon({ size = 14, style: s }) {
 }
 
 export default function PlayersPage() {
-    const [search, setSearch]     = useState('');
+    const [search, setSearch]       = useState('');
     const [activeTab, setActiveTab] = useState('sessions');
+    const [profileUser, setProfileUser] = useState(null);
 
     const { data: online, isFetching: onlineFetching, refetch: refetchOnline } = useQuery({
         queryKey: ['players-online'],
@@ -191,11 +192,12 @@ export default function PlayersPage() {
                 ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {onlinePlayers.map(name => (
-                            <div key={name} style={{
+                            <div key={name} onClick={() => setProfileUser(name)} style={{
                                 display: 'flex', alignItems: 'center', gap: 8,
                                 background: 'rgba(74,222,128,0.06)',
                                 border: '1px solid rgba(74,222,128,0.15)',
                                 borderRadius: 4, padding: '6px 10px',
+                                cursor: 'pointer',
                             }}>
                                 <PlayerHead username={name} size={24}/>
                                 <span style={{ fontSize: 12, fontWeight: 500, color: A.ok, fontFamily: A.mono }}>
@@ -265,11 +267,14 @@ export default function PlayersPage() {
                         ) : (
                             <div>
                                 {sessions.map((s, i) => (
-                                    <div key={s.id} style={{
+                                    <div key={s.id} onClick={() => setProfileUser(s.username)} style={{
                                         display: 'flex', alignItems: 'center', gap: 12,
                                         padding: '10px 16px',
                                         borderTop: i > 0 ? `1px solid ${A.border}` : 'none',
-                                    }}>
+                                        cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                         <PlayerHead username={s.username} size={32}/>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -339,11 +344,14 @@ export default function PlayersPage() {
                                 const pct = Math.round((p.total_seconds / maxSeconds) * 100);
                                 const medals = ['🥇', '🥈', '🥉'];
                                 return (
-                                    <div key={p.username} style={{
+                                    <div key={p.username} onClick={() => setProfileUser(p.username)} style={{
                                         display: 'flex', alignItems: 'center', gap: 12,
                                         padding: '10px 16px',
                                         borderTop: idx > 0 ? `1px solid ${A.border}` : 'none',
-                                    }}>
+                                        cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                         <span style={{
                                             width: 24, textAlign: 'center', flexShrink: 0,
                                             fontSize: idx < 3 ? 14 : 10,
@@ -391,7 +399,7 @@ export default function PlayersPage() {
                 </div>
             )}
 
-            {activeTab === 'notes' && <PlayerNotesPanel />}
+            {activeTab === 'notes' && <PlayerNotesPanel onPlayerClick={setProfileUser} />}
 
             {/* ── Ban Günlüğü ── */}
             {activeTab === 'banlog' && (
@@ -472,11 +480,15 @@ export default function PlayersPage() {
                     )}
                 </div>
             )}
+            {/* ── Oyuncu Profil Modal ── */}
+            {profileUser && (
+                <PlayerProfileModal username={profileUser} onClose={() => setProfileUser(null)} />
+            )}
         </div>
     );
 }
 
-function PlayerNotesPanel() {
+function PlayerNotesPanel({ onPlayerClick }) {
     const qc = useQueryClient();
     const [username, setUsername] = useState('');
     const [searched, setSearched] = useState('');
@@ -605,6 +617,255 @@ function PlayerNotesPanel() {
                         </div>
                     )}
                 </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// OYUNCU PROFİL MODALI
+// ============================================================
+function PlayerProfileModal({ username, onClose }) {
+    const qc = useQueryClient();
+    const [tab, setTab] = useState('overview');
+
+    const { data: profile, isLoading } = useQuery({
+        queryKey: ['player-profile', username],
+        queryFn: () => apiClient.get(`/players/profile/${encodeURIComponent(username)}`).then(r => r.data),
+    });
+
+    const { data: notes = [], refetch: refetchNotes } = useQuery({
+        queryKey: ['player-notes', username],
+        queryFn: () => apiClient.get(`/players/notes/${encodeURIComponent(username)}`).then(r => r.data),
+    });
+
+    const [note, setNote] = useState('');
+    const addNote = useMutation({
+        mutationFn: () => apiClient.post(`/players/notes/${encodeURIComponent(username)}`, { note }),
+        onSuccess: () => { refetchNotes(); setNote(''); toast.success('Not eklendi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+    const delNote = useMutation({
+        mutationFn: (id) => apiClient.delete(`/players/notes/${id}`),
+        onSuccess: () => refetchNotes(),
+    });
+
+    const banMutation = useMutation({
+        mutationFn: (reason) => apiClient.post('/players/ban', { name: username, reason }),
+        onSuccess: () => { toast.success(`${username} banlandı`); qc.invalidateQueries({ queryKey: ['banlog'] }); onClose(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+
+    const handleBan = () => {
+        const reason = window.prompt(`${username} için ban sebebi:`);
+        if (reason !== null) banMutation.mutate(reason);
+    };
+
+    const tabs = [
+        { id: 'overview', label: 'GENEL' },
+        { id: 'sessions', label: 'OTURUMLAR' },
+        { id: 'notes',    label: 'NOTLAR' },
+    ];
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', padding: 16,
+        }} onClick={onClose}>
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                width: '100%', maxWidth: 640, maxHeight: '90vh',
+                display: 'flex', flexDirection: 'column',
+                boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+            }} onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div style={{
+                    padding: '14px 18px', borderBottom: `1px solid ${A.border}`,
+                    display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+                }}>
+                    <PlayerHead username={username} size={40}/>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16, fontWeight: 600, color: A.text }}>{username}</span>
+                            {profile?.isOnline && (
+                                <Pill color={A.ok} bg="rgba(74,222,128,0.1)">● online</Pill>
+                            )}
+                        </div>
+                        <div style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, marginTop: 2 }}>
+                            {profile?.sessionCount || 0} oturum · Son görülme: {timeAgo(profile?.lastSeen ? new Date(profile.lastSeen).getTime() : null)}
+                        </div>
+                    </div>
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={handleBan} style={{
+                            ...btnGhost, fontSize: 10, padding: '4px 10px',
+                            color: A.err, borderColor: 'rgba(248,113,113,0.25)',
+                        }}>
+                            🚫 BAN
+                        </button>
+                        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}>
+                            <I.X size={16}/>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${A.border}`, flexShrink: 0 }}>
+                    {tabs.map(t => (
+                        <button key={t.id} onClick={() => setTab(t.id)} style={{
+                            padding: '8px 16px', background: 'none', border: 'none',
+                            borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
+                            cursor: 'pointer', fontFamily: A.mono, fontSize: 10,
+                            letterSpacing: '0.08em', color: tab === t.id ? A.text : A.dim,
+                            marginBottom: -1, transition: 'color 0.15s',
+                        }}>
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Body */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
+                    {isLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+                            <Spinner size={24}/>
+                        </div>
+                    ) : tab === 'overview' ? (
+                        <ProfileOverview profile={profile}/>
+                    ) : tab === 'sessions' ? (
+                        <ProfileSessions sessions={profile?.sessions || []}/>
+                    ) : (
+                        <ProfileNotes
+                            notes={notes} note={note} setNote={setNote}
+                            onAdd={() => addNote.mutate()} onDelete={id => delNote.mutate(id)}
+                            adding={addNote.isPending}
+                        />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ProfileOverview({ profile }) {
+    if (!profile) return null;
+    const mc = profile.mcStats || {};
+
+    const stat = (label, value) => (
+        <div style={{
+            background: A.bgDeeper, border: `1px solid ${A.border}`,
+            borderRadius: 3, padding: '10px 12px',
+            display: 'flex', flexDirection: 'column', gap: 3,
+        }}>
+            <span style={{ fontFamily: A.mono, fontSize: 9, color: A.faint, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: A.text, fontFamily: A.mono }}>{value ?? '—'}</span>
+        </div>
+    );
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Zaman istatistikleri */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {stat('Toplam Oynama', fmtDuration(profile.totalSeconds))}
+                {stat('Oturum Sayısı', profile.sessionCount)}
+                {stat('İlk Görülme', profile.firstSeen ? new Date(profile.firstSeen).toLocaleDateString('tr-TR') : '—')}
+                {stat('Son Görülme', profile.lastSeen ? new Date(profile.lastSeen).toLocaleDateString('tr-TR') : '—')}
+            </div>
+
+            {/* MC stats — yalnızca varsa */}
+            {Object.keys(mc).length > 0 && (
+                <>
+                    <Cap>Minecraft İstatistikleri</Cap>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                        {stat('Ölüm', mc.deaths)}
+                        {stat('Oyuncu Öldürme', mc.playerKills)}
+                        {stat('Mob Öldürme', mc.mobKills)}
+                        {stat('Blok Kırma', mc.blocksMined?.toLocaleString())}
+                        {stat('Blok Yerleştirme', mc.blocksPlaced?.toLocaleString())}
+                        {stat('Yürüme (m)', mc.distanceWalked?.toLocaleString())}
+                    </div>
+                </>
+            )}
+
+            {Object.keys(mc).length === 0 && (
+                <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faint, textAlign: 'center', padding: '12px 0' }}>
+                    MC istatistikleri bulunamadı (sunucu yolu veya UUID eksik olabilir)
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ProfileSessions({ sessions }) {
+    if (!sessions.length) return (
+        <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+            Oturum kaydı yok
+        </div>
+    );
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {sessions.map((s, i) => (
+                <div key={s.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '8px 12px', borderRadius: 3,
+                    background: i % 2 === 0 ? A.bgDeeper : 'transparent',
+                }}>
+                    <div style={{ flex: 1 }}>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>
+                            {fmtDate(s.joined_at)}
+                        </span>
+                        {!s.left_at && (
+                            <Pill color={A.ok} bg="rgba(74,222,128,0.1)" style={{ marginLeft: 8 }}>aktif</Pill>
+                        )}
+                    </div>
+                    <span style={{ fontFamily: A.mono, fontSize: 11, color: A.dim }}>
+                        {s.left_at ? fmtDuration(s.duration_seconds) : '—'}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ProfileNotes({ notes, note, setNote, onAdd, onDelete, adding }) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+                <Input value={note} onChange={e => setNote(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && note.trim() && onAdd()}
+                    placeholder="Yeni not ekle..." mono style={{ flex: 1 }}/>
+                <button onClick={onAdd} disabled={!note.trim() || adding} style={{
+                    ...btnPrimary, padding: '0 12px', display: 'flex', alignItems: 'center',
+                    opacity: (!note.trim() || adding) ? 0.4 : 1,
+                }}>
+                    <I.Plus size={14}/>
+                </button>
+            </div>
+            {notes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                    Not yok
+                </div>
+            ) : (
+                notes.map(n => (
+                    <div key={n.id} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10,
+                        padding: '10px 12px', background: A.bgDeeper,
+                        border: `1px solid ${A.border}`, borderRadius: 3,
+                    }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: n.color || 'var(--accent)' }}/>
+                        <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 12, color: A.text, margin: '0 0 3px' }}>{n.note}</p>
+                            <p style={{ fontSize: 10, color: A.faint, margin: 0, fontFamily: A.mono }}>
+                                {n.created_by} · {new Date(n.created_at).toLocaleDateString('tr-TR')}
+                            </p>
+                        </div>
+                        <button onClick={() => onDelete(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 2 }}>
+                            <I.Trash size={12}/>
+                        </button>
+                    </div>
+                ))
             )}
         </div>
     );

@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const authMiddleware = require('../middleware/authMiddleware');
 const PlayerManager = require('../services/playerManager');
 const { getDb } = require('../db/database');
@@ -138,6 +140,74 @@ router.get('/stats', authMiddleware, (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// GET /api/players/profile/:username — oyuncu profili (DB + MC stats JSON)
+router.get('/profile/:username', authMiddleware, (req, res) => {
+    try {
+        const username = req.params.username;
+        const db = getDb();
+
+        // Oturum verileri
+        const sessionStats = db.prepare(`
+            SELECT
+                COUNT(*) AS session_count,
+                SUM(COALESCE(duration_seconds, 0)) AS total_seconds,
+                MIN(joined_at) AS first_seen,
+                MAX(joined_at) AS last_seen
+            FROM player_sessions WHERE username = ?
+        `).get(username);
+
+        const sessions = db.prepare(
+            'SELECT * FROM player_sessions WHERE username = ? ORDER BY joined_at DESC LIMIT 20'
+        ).all(username);
+
+        // MC stats JSON okuma
+        const inst = serverRegistry.getDefault();
+        const serverPath = inst?.getServerPath() || '';
+        let mcStats = {};
+
+        try {
+            // usercache.json'dan UUID bul
+            const cacheFile = path.join(serverPath, 'usercache.json');
+            if (fs.existsSync(cacheFile)) {
+                const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+                const entry = cache.find(e => e.name?.toLowerCase() === username.toLowerCase());
+                if (entry?.uuid) {
+                    const statsFile = path.join(serverPath, 'world', 'stats', `${entry.uuid}.json`);
+                    if (fs.existsSync(statsFile)) {
+                        const raw = JSON.parse(fs.readFileSync(statsFile, 'utf-8'));
+                        const custom = raw?.stats?.['minecraft:custom'] || {};
+                        const mined  = raw?.stats?.['minecraft:mined']  || {};
+                        const placed = raw?.stats?.['minecraft:used']   || {};
+                        mcStats = {
+                            deaths:        custom['minecraft:deaths'] || 0,
+                            playerKills:   custom['minecraft:player_kills'] || 0,
+                            mobKills:      custom['minecraft:mob_kills'] || 0,
+                            blocksPlaced:  Object.values(placed).reduce((a, b) => a + b, 0),
+                            blocksMined:   Object.values(mined).reduce((a, b) => a + b, 0),
+                            damageTaken:   Math.round((custom['minecraft:damage_taken'] || 0) / 10),
+                            distanceWalked: Math.round((custom['minecraft:walk_one_cm'] || 0) / 100),
+                        };
+                    }
+                }
+            }
+        } catch { /* MC stats okunamadı, boş döner */ }
+
+        // Online kontrolü
+        const isOnline = inst?.players?.includes(username) || false;
+
+        res.json({
+            username,
+            isOnline,
+            sessionCount:  sessionStats?.session_count || 0,
+            totalSeconds:  sessionStats?.total_seconds || 0,
+            firstSeen:     sessionStats?.first_seen || null,
+            lastSeen:      sessionStats?.last_seen || null,
+            sessions,
+            mcStats,
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Oyuncu notları (DB global) ────────────────────────────────────────────────

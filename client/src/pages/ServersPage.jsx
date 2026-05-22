@@ -96,24 +96,11 @@ function ServerModal({ initial, onClose, onSaved }) {
     const [saving, setSaving] = useState(false);
     const isNew = !initial?.id;
 
-    // Sadece yeni sunucu eklerken öneri göster
     const { data: rec } = useQuery({
         queryKey: ['server-recommendations'],
         queryFn: () => api.get('/servers/recommendations').then(r => r.data),
         enabled: isNew,
         staleTime: 30000,
-    });
-
-    // Öneri gelince otomatik doldur
-    useState(() => {
-        if (rec && isNew && form.port === 25565) {
-            setForm(f => ({
-                ...f,
-                port:    rec.suggestedPort,
-                max_ram: rec.recommendedMaxRam || f.max_ram,
-                min_ram: rec.recommendedMinRam || f.min_ram,
-            }));
-        }
     });
 
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -149,8 +136,11 @@ function ServerModal({ initial, onClose, onSaved }) {
                     </button>
                 </div>
 
-                {/* Kaynak önerileri (sadece yeni sunucuda) */}
-                {isNew && <RecommendationPanel rec={rec} />}
+                {isNew && rec && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-xs text-blue-700 dark:text-blue-300">
+                        Önerilen port: <strong>{rec.suggestedPort}</strong>
+                    </div>
+                )}
 
                 <div className="space-y-3">
                     <div>
@@ -167,7 +157,7 @@ function ServerModal({ initial, onClose, onSaved }) {
                         <input
                             value={form.path}
                             onChange={e => set('path', e.target.value)}
-                            placeholder="/home/minecraft/server2"
+                            placeholder="/home/minecraft/server"
                             className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                         />
                     </div>
@@ -175,9 +165,7 @@ function ServerModal({ initial, onClose, onSaved }) {
                         <label className="text-xs font-medium text-gray-500 mb-1 block">
                             Port
                             {rec && isNew && (
-                                <span className="ml-2 text-blue-500 font-normal">
-                                    (Öneri: {rec.suggestedPort})
-                                </span>
+                                <span className="ml-2 text-blue-500 font-normal">(Öneri: {rec.suggestedPort})</span>
                             )}
                         </label>
                         <input
@@ -187,44 +175,15 @@ function ServerModal({ initial, onClose, onSaved }) {
                             className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-xs font-medium text-gray-500 mb-1 block">
-                                Min RAM
-                                {rec?.recommendedMinRam && isNew && (
-                                    <span className="ml-1 text-blue-500 font-normal">({rec.recommendedMinRam})</span>
-                                )}
-                            </label>
-                            <select
-                                value={form.min_ram}
-                                onChange={e => set('min_ram', e.target.value)}
-                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                {RAM_OPTIONS.map(r => <option key={r}>{r}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-gray-500 mb-1 block">
-                                Maks RAM
-                                {rec?.recommendedMaxRam && isNew && (
-                                    <span className="ml-1 text-blue-500 font-normal">({rec.recommendedMaxRam})</span>
-                                )}
-                            </label>
-                            <select
-                                value={form.max_ram}
-                                onChange={e => set('max_ram', e.target.value)}
-                                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                {RAM_OPTIONS.map(r => <option key={r}>{r}</option>)}
-                            </select>
-                        </div>
-                    </div>
                     <div>
                         <label className="text-xs font-medium text-gray-500 mb-1 block">JVM Argümanları (isteğe bağlı)</label>
                         <input
                             value={form.jvm_args}
                             onChange={e => set('jvm_args', e.target.value)}
-                            placeholder="-XX:+UseG1GC ..."
+                            placeholder="-Xmx4G -Xms2G -XX:+UseG1GC"
                             className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                         />
+                        <p className="text-xs text-gray-400 mt-1">RAM ayarı için: -Xmx4G -Xms2G (4GB maks, 2GB min)</p>
                     </div>
                 </div>
 

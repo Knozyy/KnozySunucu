@@ -79,11 +79,19 @@ export default function MainLayout() {
     const status = useDefaultServerStatus();
     const clock = useClock();
     const [collapsed, setCollapsed] = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
+
+    // Sayfa değişince mobil menüyü kapat
+    useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
     const cpu = status.processStats?.cpuPercent ?? 0;
     const ramMB = status.processStats?.memoryMB ?? 0;
     const ramPct = Math.min(100, (ramMB / 8192) * 100);
     const playerCount = status.playerCount ?? 0;
+
+    const currentLabel = NAV.find(n =>
+        n.path === '/' ? location.pathname === '/' : location.pathname.startsWith(n.path)
+    )?.label || 'Panel';
 
     return (
         <div style={{
@@ -94,6 +102,46 @@ export default function MainLayout() {
             display: 'flex',
             position: 'relative',
         }}>
+            <style>{`
+                @media (max-width: 768px) {
+                    .hodo-sidebar {
+                        position: fixed !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        height: 100vh !important;
+                        z-index: 40 !important;
+                        transform: translateX(-100%);
+                        transition: transform 200ms ease !important;
+                        width: 220px !important;
+                    }
+                    .hodo-sidebar.open {
+                        transform: translateX(0) !important;
+                    }
+                    .hodo-sidebar-overlay {
+                        display: block !important;
+                    }
+                    .hodo-main {
+                        margin-left: 0 !important;
+                    }
+                    .hodo-topbar-metrics {
+                        display: none !important;
+                    }
+                    .hodo-topbar-sep {
+                        display: none !important;
+                    }
+                    .hodo-hamburger {
+                        display: flex !important;
+                    }
+                    .hodo-topbar-clock {
+                        display: none !important;
+                    }
+                }
+                @media (min-width: 769px) {
+                    .hodo-hamburger { display: none !important; }
+                    .hodo-sidebar-overlay { display: none !important; }
+                }
+            `}</style>
+
             {showBanner && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
@@ -107,17 +155,21 @@ export default function MainLayout() {
                         Panel güncellendi veya sunucu yeniden başladı. Yenileyin.
                     </span>
                     <button onClick={() => window.location.reload()}
-                        style={{
-                            ...btnGhost, color: 'var(--accent)',
-                            borderColor: 'var(--accent)',
-                        }}>
+                        style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
                         Yenile
                     </button>
                 </div>
             )}
 
+            {/* ── Mobile overlay ── */}
+            <div className="hodo-sidebar-overlay" onClick={() => setMobileOpen(false)} style={{
+                display: 'none',
+                position: 'fixed', inset: 0, zIndex: 39,
+                background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)',
+            }}/>
+
             {/* ── Sidebar ── */}
-            <aside style={{
+            <aside className={`hodo-sidebar${mobileOpen ? ' open' : ''}`} style={{
                 width: collapsed ? 56 : 208,
                 background: A.bgDeeper,
                 borderRight: `1px solid ${A.border}`,
@@ -197,45 +249,55 @@ export default function MainLayout() {
             </aside>
 
             {/* ── Main column ── */}
-            <div style={{
+            <div className="hodo-main" style={{
                 flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
                 paddingTop: showBanner ? 38 : 0,
             }}>
                 {/* Top bar */}
                 <div style={{
-                    height: 56,
+                    height: 48,
                     borderBottom: `1px solid ${A.border}`,
                     display: 'flex', alignItems: 'center',
-                    padding: '0 20px', gap: 16,
+                    padding: '0 16px', gap: 12,
                     background: A.bgTop,
                     position: 'sticky',
                     top: showBanner ? 38 : 0,
                     zIndex: 10,
                 }}>
+                    {/* Hamburger (mobile only) */}
+                    <button className="hodo-hamburger" onClick={() => setMobileOpen(o => !o)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: A.faint, padding: 4, display: 'flex', alignItems: 'center',
+                    }}>
+                        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                            <line x1="3" y1="6" x2="21" y2="6"/>
+                            <line x1="3" y1="12" x2="21" y2="12"/>
+                            <line x1="3" y1="18" x2="21" y2="18"/>
+                        </svg>
+                    </button>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Cap>{NAV.find(n =>
-                            n.path === '/' ? location.pathname === '/' : location.pathname.startsWith(n.path)
-                        )?.label || 'Panel'}</Cap>
+                        <Cap>{currentLabel}</Cap>
                         <span style={{ color: A.faintest }}>/</span>
                         <span style={{ fontSize: 13, color: A.text, fontFamily: A.mono }}>hodo-panel</span>
                     </div>
 
                     <div style={{ flex: 1 }}/>
 
-                    {/* Live metrics */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                    {/* Live metrics — desktop only */}
+                    <div className="hodo-topbar-metrics" style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
                         <TickStat label="CPU" value={`${cpu.toFixed(0)}%`} ok={cpu < 70}/>
                         <TickStat label="RAM" value={`${ramPct.toFixed(0)}%`} ok={ramPct < 80}/>
                         <TickStat label="PL"  value={`${playerCount}/20`} ok/>
                     </div>
 
-                    <div style={{ width: 1, height: 24, background: A.border }}/>
+                    <div className="hodo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 
                     <ServerStatus status={status.status}/>
 
-                    <div style={{ width: 1, height: 24, background: A.border }}/>
+                    <div className="hodo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 
-                    <div style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                    <div className="hodo-topbar-clock" style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
                         {clock.toTimeString().slice(0, 8)}
                     </div>
                 </div>
