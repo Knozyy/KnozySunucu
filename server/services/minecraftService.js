@@ -316,14 +316,15 @@ class MinecraftService extends EventEmitter {
             const db = getDb();
             const srv = db.prepare('SELECT path, active_modpack_id FROM servers WHERE id = ?')
                 .get(this._serverConfig.id);
-            // 1) Sunucunun kendi path'i varsa kullan (existsSync kontrolü YOK — yol doğruysa kullan)
-            if (srv?.path?.trim()) return srv.path.trim();
-            // 2) Sunucuya atanmış modpack install_path'i
+            // 1) Sunucuya atanmış paketin yolu — her zaman önce paket klasörüne bak
+            //    (mods/config/world pakete özeldir, sunucu base path'ine değil)
             if (srv?.active_modpack_id) {
                 const pack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?')
                     .get(srv.active_modpack_id);
                 if (pack?.install_path?.trim()) return pack.install_path.trim();
             }
+            // 2) Paketsiz sunucu — kendi path'ini kullan
+            if (srv?.path?.trim()) return srv.path.trim();
             // 3) Global fallback: herhangi bir aktif modpack (geriye dönük uyumluluk)
             const globalPack = db.prepare('SELECT install_path FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
             if (globalPack?.install_path?.trim()) return globalPack.install_path.trim();
