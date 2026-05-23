@@ -156,6 +156,21 @@ function initDatabase() {
       fetched_at   INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS discord_role_cache (
+      role_id      TEXT PRIMARY KEY,
+      guild_id     TEXT,
+      name         TEXT,
+      color        INTEGER,
+      fetched_at   INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS discord_guild_cache (
+      guild_id     TEXT PRIMARY KEY,
+      name         TEXT,
+      icon         TEXT,
+      fetched_at   INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS servers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

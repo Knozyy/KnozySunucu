@@ -391,6 +391,149 @@ class DiscordBotService {
         return result;
     }
 
+    // ── Discord API genel yardımcı ────────────────────────────────────────────
+
+    _discordApiGet(path) {
+        const token = this.getDiscordToken();
+        if (!token) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const opts = {
+                hostname: 'discord.com',
+                path: `/api/v10${path}`,
+                method: 'GET',
+                headers: { 'Authorization': `Bot ${token}`, 'User-Agent': 'KnozyPanel (1.0)' },
+            };
+            const req = https.request(opts, (res) => {
+                let data = '';
+                res.on('data', c => { data += c; });
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+                    } else if (res.statusCode === 404 || res.statusCode === 403) {
+                        resolve({ __notfound: true });
+                    } else {
+                        resolve(null);
+                    }
+                });
+            });
+            req.on('error', () => resolve(null));
+            req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+            req.end();
+        });
+    }
+
+    /**
+     * Rol bilgilerini cache'le (guildId + roleIds[])
+     * @returns {Promise<Object<string,{name, color, guild_id}>>}
+     */
+    async resolveDiscordRoles(roleEntries) {
+        // roleEntries: [{ role_id, guild_id }]
+        if (!roleEntries || roleEntries.length === 0) return {};
+        const db = getDb();
+        const now = Date.now();
+        const result = {};
+
+        // Önce cache'i oku
+        const ids = roleEntries.map(e => String(e.role_id));
+        const placeholders = ids.map(() => '?').join(',');
+        const cached = db.prepare(
+            `SELECT role_id, guild_id, name, color, fetched_at FROM discord_role_cache WHERE role_id IN (${placeholders})`
+        ).all(...ids);
+        const cachedMap = new Map(cached.map(r => [r.role_id, r]));
+
+        // Hangi guild'ler için yeni veri lazım?
+        const guildsToFetch = new Set();
+        for (const e of roleEntries) {
+            const row = cachedMap.get(String(e.role_id));
+            if (row && (now - row.fetched_at) < CACHE_TTL_MS) {
+                result[String(e.role_id)] = { name: row.name, color: row.color, guild_id: row.guild_id };
+            } else {
+                guildsToFetch.add(String(e.guild_id));
+                if (row) result[String(e.role_id)] = { name: row.name, color: row.color, guild_id: row.guild_id };
+            }
+        }
+
+        if (guildsToFetch.size === 0) return result;
+        if (!this.getDiscordToken()) return result;
+
+        const upsert = db.prepare(`
+            INSERT INTO discord_role_cache (role_id, guild_id, name, color, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(role_id) DO UPDATE SET
+              guild_id = excluded.guild_id,
+              name = excluded.name,
+              color = excluded.color,
+              fetched_at = excluded.fetched_at
+        `);
+
+        // Her guild için role listesi çek
+        await Promise.all([...guildsToFetch].map(async (gid) => {
+            const roles = await this._discordApiGet(`/guilds/${gid}/roles`);
+            if (!roles || roles.__notfound || !Array.isArray(roles)) return;
+            for (const r of roles) {
+                upsert.run(String(r.id), String(gid), r.name || null, r.color || 0, Date.now());
+                if (ids.includes(String(r.id))) {
+                    result[String(r.id)] = { name: r.name || null, color: r.color || 0, guild_id: gid };
+                }
+            }
+        }));
+
+        return result;
+    }
+
+    /**
+     * Guild bilgilerini cache'le
+     */
+    async resolveDiscordGuilds(guildIds) {
+        if (!guildIds || guildIds.length === 0) return {};
+        const db = getDb();
+        const now = Date.now();
+        const result = {};
+        const stale = [];
+
+        const ids = guildIds.map(String);
+        const placeholders = ids.map(() => '?').join(',');
+        const cached = db.prepare(
+            `SELECT guild_id, name, icon, fetched_at FROM discord_guild_cache WHERE guild_id IN (${placeholders})`
+        ).all(...ids);
+        const cachedMap = new Map(cached.map(r => [r.guild_id, r]));
+
+        for (const id of ids) {
+            const row = cachedMap.get(id);
+            if (row && (now - row.fetched_at) < CACHE_TTL_MS) {
+                result[id] = { name: row.name, icon: row.icon };
+            } else {
+                stale.push(id);
+                if (row) result[id] = { name: row.name, icon: row.icon };
+            }
+        }
+
+        if (stale.length === 0 || !this.getDiscordToken()) return result;
+
+        const upsert = db.prepare(`
+            INSERT INTO discord_guild_cache (guild_id, name, icon, fetched_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+              name = excluded.name,
+              icon = excluded.icon,
+              fetched_at = excluded.fetched_at
+        `);
+
+        await Promise.all(stale.map(async (gid) => {
+            const g = await this._discordApiGet(`/guilds/${gid}`);
+            if (!g) return;
+            if (g.__notfound) {
+                upsert.run(gid, '(Erişim Yok)', null, Date.now());
+                result[gid] = { name: '(Erişim Yok)', icon: null };
+                return;
+            }
+            upsert.run(gid, g.name || null, g.icon || null, Date.now());
+            result[gid] = { name: g.name || null, icon: g.icon || null };
+        }));
+
+        return result;
+    }
+
     // ── Status summary ────────────────────────────────────────────────────────
 
     getStatus() {

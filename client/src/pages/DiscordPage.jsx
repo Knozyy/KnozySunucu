@@ -741,16 +741,43 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                 ) : (
                     timedRoles.map((r, i) => {
                         const expired = r.expiry_timestamp <= now;
+                        const userLabel  = r.discordName || r.username || `ID: ${r.user_id}`;
+                        const roleLabel  = r.roleName   ? `@${r.roleName}` : `Rol ID: ${r.role_id}`;
+                        const guildLabel = r.guildName  || `Guild ID: ${r.guild_id}`;
+                        // Rol rengi int (0–0xFFFFFF) — hex'e çevir
+                        const roleHex = r.roleColor && r.roleColor > 0
+                            ? `#${r.roleColor.toString(16).padStart(6, '0')}`
+                            : null;
                         return (
                             <Row key={i} last={i === timedRoles.length - 1}
                                 style={{ opacity: expired ? 0.55 : 1 }}>
                                 <Dot color={expired ? A.faint : A.ok} size={6}/>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 11.5, color: A.text, fontFamily: A.mono }}>
-                                        <span style={{ color: A.faint }}>Kullanıcı:</span> {r.user_id}
-                                        <span style={{ color: A.faint }}> · Rol:</span> {r.role_id}
+                                    {/* 1. satır: Discord kullanıcı + rol */}
+                                    <div style={{
+                                        fontSize: 12.5, color: A.text, display: 'flex',
+                                        alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                                    }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                                            title={`Discord ID: ${r.user_id}`}>
+                                            <I.Chat size={11} style={{ color: '#5865f2' }}/>
+                                            <strong style={{ fontWeight: 600 }}>{userLabel}</strong>
+                                        </span>
+                                        <span style={{ color: A.faintest }}>→</span>
+                                        <span style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                                            padding: '2px 8px', borderRadius: 99,
+                                            background: roleHex ? `${roleHex}1f` : 'rgba(167,139,250,0.10)',
+                                            color: roleHex || 'var(--accent)',
+                                            fontSize: 11, fontWeight: 500,
+                                        }} title={`Rol ID: ${r.role_id}`}>
+                                            {roleLabel}
+                                        </span>
                                     </div>
-                                    <div style={{ fontSize: 10.5, color: A.faint, marginTop: 2 }}>
+                                    {/* 2. satır: Guild + süre */}
+                                    <div style={{ fontSize: 10.5, color: A.faint, marginTop: 4, fontFamily: A.mono }}>
+                                        <span title={`Guild ID: ${r.guild_id}`}>{guildLabel}</span>
+                                        {' · '}
                                         {expired ? '⏹ Süresi doldu' : `⏳ ${timeAgo(r.expiry_timestamp)} kaldı`}
                                         {' · '}{formatExpiry(r.expiry_timestamp)}
                                     </div>

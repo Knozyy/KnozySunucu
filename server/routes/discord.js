@@ -120,9 +120,41 @@ router.delete('/whitelist/:userId', authMiddleware, requireRole('admin'), (req, 
 // ── Timed roles ───────────────────────────────────────────────────────────────
 
 // GET /api/discord/timed-roles
-router.get('/timed-roles', authMiddleware, (req, res) => {
+router.get('/timed-roles', authMiddleware, async (req, res) => {
     try {
-        res.json({ roles: discordBotService.getTimedRoles() });
+        const roles = discordBotService.getTimedRoles();
+
+        // Discord isimlerini çöz (kullanıcı + rol + guild)
+        const userIds  = [...new Set(roles.map(r => String(r.user_id)).filter(Boolean))];
+        const guildIds = [...new Set(roles.map(r => String(r.guild_id)).filter(Boolean))];
+        const roleRefs = roles
+            .filter(r => r.role_id && r.guild_id)
+            .map(r => ({ role_id: String(r.role_id), guild_id: String(r.guild_id) }));
+
+        let users = {}, rolesInfo = {}, guilds = {};
+        try {
+            [users, rolesInfo, guilds] = await Promise.all([
+                discordBotService.resolveDiscordUsers(userIds),
+                discordBotService.resolveDiscordRoles(roleRefs),
+                discordBotService.resolveDiscordGuilds(guildIds),
+            ]);
+        } catch { /* token yoksa boş döner */ }
+
+        const enriched = roles.map(r => {
+            const u = users[String(r.user_id)] || null;
+            const ro = rolesInfo[String(r.role_id)] || null;
+            const g = guilds[String(r.guild_id)] || null;
+            return {
+                ...r,
+                discordName: u?.global_name || u?.username || null,
+                username:    u?.username || null,
+                roleName:    ro?.name || null,
+                roleColor:   ro?.color || null,
+                guildName:   g?.name || null,
+            };
+        });
+
+        res.json({ roles: enriched });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
