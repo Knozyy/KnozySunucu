@@ -147,6 +147,7 @@ class MinecraftService extends EventEmitter {
             lower.includes('thread/info]: done')) {
             if (this.status !== 'running') {
                 this.status = 'running';
+                this._startedAt = Date.now();
                 this.emit('status', this.status);
                 if (this._useScreen()) this._javaPid = this._findJavaPid();
             }
@@ -234,6 +235,7 @@ class MinecraftService extends EventEmitter {
         this.status       = 'stopped';
         this.players      = [];
         this._javaPid     = null;
+        this._startedAt   = null;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
         this._lastTps     = { one: null, five: null, fifteen: null };
 
@@ -390,6 +392,10 @@ class MinecraftService extends EventEmitter {
     }
 
     getStatus() {
+        const tps = this._lastTps?.one ?? null;
+        // MSPT yaklaşık: 20 TPS = 50ms; düşerse 1000/TPS
+        let mspt = null;
+        if (tps != null) mspt = tps >= 20 ? 50 : Math.round((1000 / Math.max(tps, 1)) * 10) / 10;
         return {
             status: this.status,
             players: this.players,
@@ -397,7 +403,63 @@ class MinecraftService extends EventEmitter {
             pid: this._javaPid || (this.process ? this.process.pid : null),
             processStats: this.processStats,
             maxRamGB: this.getEffectiveMaxRamGB(),
+            tps,
+            mspt,
+            connection: this._getConnectionInfo(),
+            startedAt: this._startedAt || null,
+            uptimeSec: this._startedAt ? Math.floor((Date.now() - this._startedAt) / 1000) : 0,
         };
+    }
+
+    /**
+     * server.properties + modpack'ten bağlantı bilgisi.
+     */
+    _getConnectionInfo() {
+        try {
+            const serverPath = this.getServerPath();
+            const propsPath = path.join(serverPath, 'server.properties');
+            let port = this._serverConfig?.port || 25565;
+            let motd = '';
+            let whitelist = false;
+            if (fs.existsSync(propsPath)) {
+                const content = fs.readFileSync(propsPath, 'utf-8');
+                const portMatch = content.match(/^server-port=(\d+)/m);
+                if (portMatch) port = parseInt(portMatch[1]);
+                const motdMatch = content.match(/^motd=(.*)$/m);
+                if (motdMatch) motd = motdMatch[1].trim();
+                const wlMatch = content.match(/^white-list=(true|false)/m);
+                if (wlMatch) whitelist = wlMatch[1] === 'true';
+            }
+            // MC versiyonu — modpack veya log üzerinden
+            let mcVersion = null, loader = null;
+            try {
+                const db = getDb();
+                if (this._serverConfig?.id) {
+                    const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+                    if (srv?.active_modpack_id) {
+                        const pack = db.prepare('SELECT version FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
+                        if (pack?.version) {
+                            const mc = pack.version.match(/MC\s*([\d.]+)/i) || pack.version.match(/(\d+\.\d+(?:\.\d+)?)/);
+                            if (mc) mcVersion = mc[1];
+                        }
+                    }
+                }
+            } catch { /* ignore */ }
+            // Loader — server.jar veya install_path'ten tahmin
+            try {
+                const items = fs.readdirSync(serverPath);
+                for (const it of items) {
+                    const low = it.toLowerCase();
+                    if (low.includes('forge') && low.endsWith('.jar'))      { loader = 'Forge';     break; }
+                    if (low.includes('fabric') && low.endsWith('.jar'))     { loader = 'Fabric';    break; }
+                    if (low.includes('neoforge') && low.endsWith('.jar'))   { loader = 'NeoForge';  break; }
+                    if (low.includes('quilt') && low.endsWith('.jar'))      { loader = 'Quilt';     break; }
+                    if (low.includes('paper') && low.endsWith('.jar'))      { loader = 'Paper';     break; }
+                    if (low.includes('spigot') && low.endsWith('.jar'))     { loader = 'Spigot';    break; }
+                }
+            } catch { /* ignore */ }
+            return { port, motd, whitelist, mcVersion, loader };
+        } catch { return { port: 25565, motd: '', whitelist: false, mcVersion: null, loader: null }; }
     }
 
     /**
@@ -494,6 +556,7 @@ class MinecraftService extends EventEmitter {
                     // Sunucu hâlâ çalışıyor; durumu düzelt ve başlatmayı iptal et
                     this._javaPid = existingPid;
                     this.status   = 'running';
+                    if (!this._startedAt) this._startedAt = Date.now();
                     this.emit('status', this.status);
                     this._startLogTail(true);
                     this._startStatsTracking();

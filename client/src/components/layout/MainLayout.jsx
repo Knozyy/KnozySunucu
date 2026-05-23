@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { A, btnGhost } from '@/hodo/tokens';
-import { Cap, Pill, NavItem, ServerStatus, TickStat } from '@/hodo/primitives';
+import { Cap, Dot, NavItem, TickStat } from '@/hodo/primitives';
 import { I } from '@/hodo/icons';
 
 // ── Panel yeniden başlama banner'ı ──────────────────────────────────────
@@ -45,14 +46,16 @@ function useClock() {
     return now;
 }
 
-// ── Default sunucu durumu (topbar live ticker için) ─────────────────────
-function useDefaultServerStatus() {
+// ── Birincil sunucu (topbar için) ───────────────────────────────────────
+function usePrimaryServer() {
     const { data } = useQuery({
-        queryKey: ['mc-status'],
-        queryFn: () => api.get('/minecraft/status').then(r => r.data),
+        queryKey: ['servers-status-topbar'],
+        queryFn: () => api.get('/servers/status-all').then(r => r.data),
         refetchInterval: 3000,
     });
-    return data || { status: 'stopped', players: [], playerCount: 0, processStats: { cpuPercent: 0, memoryMB: 0 } };
+    const servers = data?.servers || [];
+    return servers[0] || { id: null, name: 'hodo-panel', status: 'stopped', playerCount: 0,
+        processStats: { cpuPercent: 0, memoryMB: 0 }, tps: null, maxRamGB: 4 };
 }
 
 // ── Nav haritası ────────────────────────────────────────────────────────
@@ -76,8 +79,9 @@ export default function MainLayout() {
     const showBanner = useUpdateBanner();
     const navigate = useNavigate();
     const location = useLocation();
+    const qc = useQueryClient();
     const { user, logout } = useAuth();
-    const status = useDefaultServerStatus();
+    const server = usePrimaryServer();
     const clock = useClock();
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
@@ -85,10 +89,32 @@ export default function MainLayout() {
     // Sayfa değişince mobil menüyü kapat
     useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
-    const cpu = status.processStats?.cpuPercent ?? 0;
-    const ramMB = status.processStats?.memoryMB ?? 0;
-    const ramPct = Math.min(100, (ramMB / 8192) * 100);
-    const playerCount = status.playerCount ?? 0;
+    const cpu = server.processStats?.cpuPercent ?? 0;
+    const ramMB = server.processStats?.memoryMB ?? 0;
+    const maxRamGB = server.maxRamGB || 4;
+    const ramPct = Math.min(100, (ramMB / (maxRamGB * 1024)) * 100);
+    const playerCount = server.playerCount ?? 0;
+    const maxPlayers = server.connection?.maxPlayers || 20;
+    const tps = server.tps;
+    const isRunning  = server.status === 'running';
+    const isStarting = server.status === 'starting';
+    const isStopping = server.status === 'stopping';
+
+    const startM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/start`),
+        onSuccess: () => { toast.success('Başlatılıyor...'); qc.invalidateQueries({ queryKey: ['servers-status-topbar'] }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+    const stopM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/stop`),
+        onSuccess: () => { toast.success('Durduruluyor...'); qc.invalidateQueries({ queryKey: ['servers-status-topbar'] }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
+    const restartM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/restart`),
+        onSuccess: () => { toast.success('Yeniden başlatılıyor...'); qc.invalidateQueries({ queryKey: ['servers-status-topbar'] }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
 
     const currentLabel = NAV.find(n =>
         n.path === '/' ? location.pathname === '/' : location.pathname.startsWith(n.path)
@@ -280,7 +306,9 @@ export default function MainLayout() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Cap>{currentLabel}</Cap>
                         <span style={{ color: A.faintest }}>/</span>
-                        <span style={{ fontSize: 13, color: A.text, fontFamily: A.mono }}>hodo-panel</span>
+                        <span style={{ fontSize: 13, color: A.text, fontFamily: A.mono }}>
+                            {server.name || 'hodo-panel'}
+                        </span>
                     </div>
 
                     <div style={{ flex: 1 }}/>
@@ -289,12 +317,50 @@ export default function MainLayout() {
                     <div className="hodo-topbar-metrics" style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
                         <TickStat label="CPU" value={`${cpu.toFixed(0)}%`} ok={cpu < 70}/>
                         <TickStat label="RAM" value={`${ramPct.toFixed(0)}%`} ok={ramPct < 80}/>
-                        <TickStat label="PL"  value={`${playerCount}/20`} ok/>
+                        <TickStat label="TPS" value={tps != null ? tps.toFixed(2) : '—'} ok={tps == null || tps >= 19}/>
+                        <TickStat label="PL"  value={`${playerCount}/${maxPlayers}`} ok/>
                     </div>
 
                     <div className="hodo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 
-                    <ServerStatus status={status.status}/>
+                    {/* Sunucu kontrol butonları */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isRunning || isStarting ? (
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '5px 11px', borderRadius: 2,
+                                background: 'rgba(74,222,128,0.10)', color: A.ok,
+                                fontSize: 10.5, fontFamily: A.mono, letterSpacing: '0.08em', fontWeight: 600,
+                            }}>
+                                <Dot color={A.ok} size={6}/>
+                                {isStarting ? 'BAŞLIYOR' : 'ÇALIŞIYOR'}
+                            </span>
+                        ) : (
+                            <button onClick={() => server.id && startM.mutate()}
+                                disabled={!server.id || startM.isPending}
+                                style={{
+                                    ...btnGhost, color: A.ok, borderColor: 'rgba(74,222,128,0.25)',
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                }}>
+                                <I.Play size={10}/>BAŞLAT
+                            </button>
+                        )}
+                        <button onClick={() => server.id && stopM.mutate()}
+                            disabled={!server.id || !isRunning || stopM.isPending}
+                            style={{ ...btnGhost, display: 'inline-flex', alignItems: 'center', gap: 5, opacity: !isRunning ? 0.4 : 1 }}>
+                            <I.Stop size={10}/>STOP
+                        </button>
+                        <button onClick={() => server.id && restartM.mutate()}
+                            disabled={!server.id || !isRunning || restartM.isPending}
+                            style={{ ...btnGhost, display: 'inline-flex', alignItems: 'center', gap: 5, opacity: !isRunning ? 0.4 : 1 }}>
+                            <I.Restart size={10}/>RESTART
+                        </button>
+                        {isStopping && (
+                            <span style={{ fontSize: 10, color: A.warn, fontFamily: A.mono, marginLeft: 6 }}>
+                                DURUYOR…
+                            </span>
+                        )}
+                    </div>
 
                     <div className="hodo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 

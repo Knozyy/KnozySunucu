@@ -1,26 +1,26 @@
 // client/src/components/Dashboard/widgetMap.js
-import { CpuKpi } from './widgets/CpuKpi';
-import { RamKpi } from './widgets/RamKpi';
-import { PlayersKpi } from './widgets/PlayersKpi';
-import { StatusKpi } from './widgets/StatusKpi';
-import { UptimeKpi } from './widgets/UptimeKpi';
-import { ProfileKpi } from './widgets/ProfileKpi';
-import { ResourceChart } from './widgets/ResourceChart';
-import { ServerInfoWidget } from './widgets/ServerInfoWidget';
+import { CpuKpi }         from './widgets/CpuKpi';
+import { RamKpi }         from './widgets/RamKpi';
+import { TpsKpi }         from './widgets/TpsKpi';
+import { MsptKpi }        from './widgets/MsptKpi';
+import { PlayersKpi }     from './widgets/PlayersKpi';
+import { UptimeKpi }      from './widgets/UptimeKpi';
+import { ResourceChart }       from './widgets/ResourceChart';
+import { ConnectionWidget }    from './widgets/ConnectionWidget';
 import { OnlinePlayersWidget } from './widgets/OnlinePlayersWidget';
 import { ActiveProfileWidget } from './widgets/ActiveProfileWidget';
-import { QuickActionsWidget } from './widgets/QuickActionsWidget';
+import { ScheduledTasksWidget } from './widgets/ScheduledTasksWidget';
 
 export const WIDGET_MAP = {
-    'cpu-kpi':        CpuKpi,
-    'ram-kpi':        RamKpi,
-    'players-kpi':    PlayersKpi,
-    'status-kpi':     StatusKpi,
-    'uptime-kpi':     UptimeKpi,
-    'profile-kpi':    ProfileKpi,
-    'resource-chart': ResourceChart,
-    'server-info':    ServerInfoWidget,
-    'online-players': OnlinePlayersWidget,
-    'active-profile': ActiveProfileWidget,
-    'quick-actions':  QuickActionsWidget,
+    'cpu-kpi':         CpuKpi,
+    'ram-kpi':         RamKpi,
+    'tps-kpi':         TpsKpi,
+    'mspt-kpi':        MsptKpi,
+    'players-kpi':     PlayersKpi,
+    'uptime-kpi':      UptimeKpi,
+    'resource-chart':  ResourceChart,
+    'connection':      ConnectionWidget,
+    'online-players':  OnlinePlayersWidget,
+    'active-profile':  ActiveProfileWidget,
+    'scheduled-tasks': ScheduledTasksWidget,
 };

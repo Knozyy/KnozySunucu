@@ -1,20 +1,14 @@
 // client/src/components/Dashboard/widgets/PlayersKpi.jsx
-import { useQuery } from '@tanstack/react-query';
-import api from '@/services/api';
 import { KPI } from '@/hodo/primitives';
 
 export function PlayersKpi({ server }) {
-    const { data } = useQuery({
-        queryKey: ['players-online', server?.id],
-        queryFn: () => api.get(`/players/online?serverId=${server?.id}`).then(r => r.data),
-        refetchInterval: 5000,
-        enabled: !!server?.id,
-    });
-    const count = data?.players?.length || 0;
+    const count = server?.playerCount ?? 0;
+    const maxPlayers = server?.connection?.maxPlayers || 20;
+    const isOnline = server?.status === 'running';
     return (
-        <KPI label="OYUNCU"
+        <KPI label="OYUNCULAR"
             value={count}
-            unit="/20"
-            sub={server?.status === 'running' ? 'online' : 'offline'}/>
+            unit={`/${maxPlayers}`}
+            sub={isOnline ? `${maxPlayers - count} offline` : 'sunucu kapalı'}/>
     );
 }

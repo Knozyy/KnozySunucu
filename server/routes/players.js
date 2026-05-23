@@ -91,12 +91,59 @@ router.get('/banlog', authMiddleware, (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/players/online?serverId=X — anlık online oyuncular
+// GET /api/players/online?serverId=X — anlık online oyuncular (+playtime, +role)
 router.get('/online', authMiddleware, (req, res) => {
-    const sid = req.query.serverId || null;
-    const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
-    if (!inst) return res.json({ players: [], count: 0, status: 'stopped' });
-    res.json({ players: inst.players, count: inst.players.length, status: inst.status });
+    try {
+        const sid = req.query.serverId || null;
+        const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+        if (!inst) return res.json({ players: [], count: 0, status: 'stopped' });
+
+        const db = getDb();
+        let opsByName = new Map();
+        try {
+            const serverPath = inst.getServerPath();
+            const fs = require('fs');
+            const path = require('path');
+            const opsPath = path.join(serverPath, 'ops.json');
+            if (fs.existsSync(opsPath)) {
+                const ops = JSON.parse(fs.readFileSync(opsPath, 'utf-8'));
+                for (const o of ops) opsByName.set((o.name || '').toLowerCase(), o.level || 4);
+            }
+        } catch { /* ignore */ }
+
+        // Online oyuncular için playtime özet
+        const stmt = db.prepare(`
+            SELECT username,
+                   COALESCE(SUM(duration_seconds), 0) AS total_seconds,
+                   COUNT(*) AS session_count
+            FROM player_sessions
+            WHERE username = ? AND duration_seconds IS NOT NULL
+            GROUP BY username
+        `);
+        const enriched = inst.players.map(name => {
+            const row = stmt.get(name);
+            const opLevel = opsByName.get(name.toLowerCase());
+            let role = 'PLAYER';
+            if (opLevel === 4)      role = 'ADMIN';
+            else if (opLevel === 3) role = 'OP';
+            else if (opLevel === 2) role = 'MOD';
+            return {
+                name,
+                role,
+                playtimeSec: row?.total_seconds || 0,
+                sessions:    row?.session_count || 0,
+                ping: null, // RCON üzerinden henüz çekilmiyor
+            };
+        });
+
+        res.json({
+            players: enriched,
+            // Geriye dönük uyumluluk: eski kod hâlâ array of strings bekliyor olabilir
+            names: inst.players,
+            count: inst.players.length,
+            status: inst.status,
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/players/sessions?limit=50&username=xxx — DB global, sunucu bağımsız
