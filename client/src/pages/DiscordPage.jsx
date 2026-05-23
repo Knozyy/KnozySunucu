@@ -642,7 +642,7 @@ export default function DiscordPage() {
             )}
 
             {/* ══ Gece Koruması ══ */}
-            {activeTab === 'night-guard' && <NightGuardTab/>}
+            {activeTab === 'night-guard' && <NightGuardTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
 
             {/* ══ Grafik ══ */}
             {activeTab === 'graph' && (
@@ -924,36 +924,97 @@ function StatusMessagesTab({ statusMsgData, statusMsgLoading, addStatusMsgMutati
 
 // ── Gece Koruması ────────────────────────────────────────────────────────────
 
-function NightGuardTab() {
+function NightGuardTab({ botSettings, botSettingsMutation }) {
+    const [enabled, setEnabled] = useState(false);
+    const [startHour, setStartHour] = useState(0);
+    const [endHour, setEndHour] = useState(8);
+    const [adminId, setAdminId] = useState('');
+    const [protectedRoleId, setProtectedRoleId] = useState('');
+    const [dirty, setDirty] = useState(false);
+
+    useEffect(() => {
+        if (!botSettings?.nightGuard) return;
+        const ng = botSettings.nightGuard;
+        setEnabled(!!ng.enabled);
+        setStartHour(ng.startHour !== undefined ? ng.startHour : 0);
+        setEndHour(ng.endHour !== undefined ? ng.endHour : 8);
+        setAdminId(ng.adminId || '');
+        setProtectedRoleId(ng.protectedRoleId || '');
+        setDirty(false);
+    }, [botSettings]);
+
+    const handleSave = () => {
+        botSettingsMutation.mutate({
+            nightGuard: {
+                enabled,
+                startHour: parseInt(startHour, 10) || 0,
+                endHour: parseInt(endHour, 10) || 0,
+                adminId: adminId.trim(),
+                protectedRoleId: protectedRoleId.trim(),
+            }
+        }, {
+            onSuccess: () => setDirty(false)
+        });
+    };
+
     return (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ ...card, padding: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <I.Alert size={20} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }}/>
-                    <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>Gece Koruması (Night Guard)</div>
-                        <p style={{ fontSize: 12, color: A.dim, margin: '4px 0 0', lineHeight: 1.6 }}>
-                            Belirlenen saatler arasında admin veya korumalı rollere mention atan kullanıcıları
-                            otomatik timeout'a alır. İhlal sayısına göre süre artar.
-                        </p>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <I.Alert size={20} style={{ color: enabled ? 'var(--accent)' : A.faint, flexShrink: 0, marginTop: 2 }}/>
+                        <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>Gece Koruması (Night Guard)</div>
+                            <p style={{ fontSize: 12, color: A.dim, margin: '4px 0 0', lineHeight: 1.6 }}>
+                                Belirlenen saatler arasında admin veya korumalı rollere mention atan kullanıcıları otomatik timeout'a alır. İhlal sayısına göre süre artar.
+                            </p>
+                        </div>
                     </div>
+                    <button onClick={() => { setEnabled(!enabled); setDirty(true); }}
+                        style={{
+                            background: enabled ? 'var(--accent)' : A.bgDeeper,
+                            border: `1px solid ${enabled ? 'var(--accent)' : A.border}`,
+                            width: 36, height: 20, borderRadius: 10, position: 'relative',
+                            cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
+                        }}>
+                        <div style={{
+                            width: 14, height: 14, borderRadius: '50%', background: A.bg,
+                            position: 'absolute', top: 2, left: enabled ? 18 : 2, transition: 'all 0.2s',
+                        }}/>
+                    </button>
                 </div>
             </div>
 
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
                 <div style={{ ...card, padding: 14 }}>
-                    <Cap style={{ display: 'block', marginBottom: 10 }}>AKTİF SAATLER</Cap>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                            width: 36, height: 36, borderRadius: 4,
-                            background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.20)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)',
-                        }}>
-                            <I.Clock size={16}/>
+                    <Cap style={{ display: 'block', marginBottom: 10 }}>AYARLAR</Cap>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Başlangıç Saati (0-23)</div>
+                                <input type="number" min="0" max="23" value={startHour} onChange={e => { setStartHour(e.target.value); setDirty(true); }} style={inputStyle} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Bitiş Saati (0-23)</div>
+                                <input type="number" min="0" max="23" value={endHour} onChange={e => { setEndHour(e.target.value); setDirty(true); }} style={inputStyle} />
+                            </div>
                         </div>
+
                         <div>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: A.text, fontFamily: A.mono }}>00:00 – 08:00</div>
-                            <div style={{ fontSize: 10.5, color: A.faint, marginTop: 2 }}>İstanbul Saati (UTC+3)</div>
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Botun Admini (Kullanıcı ID)</div>
+                            <input type="text" value={adminId} onChange={e => { setAdminId(e.target.value); setDirty(true); }} placeholder="Discord ID..." style={inputStyle} />
+                        </div>
+
+                        <div>
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Korunan Rol ID</div>
+                            <input type="text" value={protectedRoleId} onChange={e => { setProtectedRoleId(e.target.value); setDirty(true); }} placeholder="Rol ID..." style={inputStyle} />
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                            <button onClick={handleSave} disabled={botSettingsMutation.isPending || !dirty} style={btnPrimary}>
+                                <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                {botSettingsMutation.isPending ? 'KAYDEDİLİYOR...' : 'KAYDET'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -973,18 +1034,15 @@ function NightGuardTab() {
                             </div>
                         ))}
                     </div>
+                    <div style={{ marginTop: 24, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <I.Alert size={14} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
+                        <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6 }}>
+                            İhlal sayacı her gün otomatik sıfırlanır. Ayarlar bot yeniden başlatılana kadar geçerli olmaz.
+                        </div>
+                    </div>
                 </div>
             </div>
-
-            <div style={{ ...card, padding: 12, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <I.Alert size={14} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
-                <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6 }}>
-                    İhlal sayacı her gün otomatik sıfırlanır. Koruma konfigürasyonu bot'un
-                    {' '}<code style={{ background: A.bgDeeper, padding: '2px 5px', borderRadius: 2, color: A.text, fontFamily: A.mono }}>config.py</code>
-                    {' '}dosyasından yönetilir.
-                </div>
-            </div>
-        </>
+        </div>
     );
 }
 
