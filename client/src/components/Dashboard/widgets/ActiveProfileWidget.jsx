@@ -55,7 +55,10 @@ export function ActiveProfileWidget({ server, installedModpacks }) {
         staleTime: 60000,
     });
 
-    const modCount = modsData?.count ?? null;
+    // modsData.count: { active, disabled, total } — sadece total'ı kullan
+    const modCount = typeof modsData?.count === 'object'
+        ? modsData.count?.total ?? null
+        : (modsData?.count ?? null);
     const totalSize = worldsData?.totalSize?.formatted ?? '—';
     const mcVer = server?.connection?.mcVersion;
     const loader = server?.connection?.loader;
