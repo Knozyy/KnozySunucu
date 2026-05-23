@@ -16,15 +16,16 @@ router.get('/', authMiddleware, (req, res) => {
 });
 
 // POST /api/servers
+// NOT: RAM artık sunucuya özel değil; modpack veya jvm_args üzerinden okunur.
 router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
     try {
-        const { name, path, port = 25565, min_ram = '2G', max_ram = '4G', jvm_args = '' } = req.body;
+        const { name, path, port = 25565, jvm_args = '' } = req.body;
         if (!name?.trim()) return res.status(400).json({ error: 'Sunucu adı gerekli' });
         if (!path?.trim()) return res.status(400).json({ error: 'Sunucu yolu gerekli' });
         const db = getDb();
         const result = db.prepare(
-            'INSERT INTO servers (name, path, port, min_ram, max_ram, jvm_args, is_active) VALUES (?, ?, ?, ?, ?, ?, 0)'
-        ).run(name.trim(), path.trim(), port, min_ram, max_ram, jvm_args);
+            'INSERT INTO servers (name, path, port, jvm_args, is_active) VALUES (?, ?, ?, ?, 0)'
+        ).run(name.trim(), path.trim(), port, jvm_args);
         logAudit(req.user?.username || 'admin', 'sunucu_ekle', name.trim(), req.ip);
         res.status(201).json({ id: result.lastInsertRowid, message: 'Sunucu eklendi' });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -33,11 +34,11 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
 // PUT /api/servers/:id
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
-        const { name, path, port, min_ram, max_ram, jvm_args } = req.body;
+        const { name, path, port, jvm_args } = req.body;
         const db = getDb();
         db.prepare(
-            'UPDATE servers SET name = ?, path = ?, port = ?, min_ram = ?, max_ram = ?, jvm_args = ? WHERE id = ?'
-        ).run(name, path, port, min_ram, max_ram, jvm_args, req.params.id);
+            'UPDATE servers SET name = ?, path = ?, port = ?, jvm_args = ? WHERE id = ?'
+        ).run(name, path, port, jvm_args, req.params.id);
         logAudit(req.user?.username || 'admin', 'sunucu_guncelle', name, req.ip);
         res.json({ message: 'Güncellendi' });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -118,7 +119,12 @@ router.get('/recommendations', authMiddleware, (req, res) => {
             if (!m) return 0;
             return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : Math.ceil(parseInt(m[1]) / 1024);
         };
-        const usedRamGB = servers.reduce((acc, s) => acc + parseGB(s.max_ram), 0);
+        // Aktif modpack'lerin max_ram toplamı (sunucuya özel RAM yok)
+        const usedRamGB = servers.reduce((acc, s) => {
+            if (!s.active_modpack_id) return acc;
+            const pack = db.prepare('SELECT max_ram FROM installed_modpacks WHERE id = ?').get(s.active_modpack_id);
+            return acc + parseGB(pack?.max_ram);
+        }, 0);
         const freeRamGB = Math.max(0, totalRamGB - 2 - usedRamGB); // 2GB OS için ayrıldı
         const recMaxGB  = Math.max(2, freeRamGB);
         const recMinGB  = Math.max(1, Math.floor(recMaxGB * 0.6));

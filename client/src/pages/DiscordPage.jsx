@@ -1,19 +1,12 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import {
-    HiOutlineChatBubbleLeftRight, HiOutlinePlay, HiOutlineStop,
-    HiOutlineCog6Tooth, HiOutlineTrash, HiOutlinePlus, HiOutlineArrowPath,
-    HiOutlineUserGroup, HiOutlineClock, HiOutlineCheckCircle,
-    HiOutlineXCircle, HiOutlineExclamationTriangle, HiOutlineCheck,
-    HiOutlineMagnifyingGlass, HiOutlineClipboard, HiOutlineQueueList,
-    HiOutlineSpeakerWave, HiOutlineShieldExclamation, HiOutlineInformationCircle,
-    HiOutlineBell, HiOutlineLink, HiOutlineXMark,
-} from 'react-icons/hi2';
-import { SiDiscord } from 'react-icons/si';
+import { A, btnGhost, btnPrimary } from '@/hodo/tokens';
+import { Cap, Dot, Pill } from '@/hodo/primitives';
+import { I } from '@/hodo/icons';
 
-// ── Küçük yardımcılar ─────────────────────────────────────────────────────────
+// ── Yardımcılar ──────────────────────────────────────────────────────────────
 
 function timeAgo(ts) {
     const diff = Math.floor((ts * 1000 - Date.now()) / 1000);
@@ -27,22 +20,52 @@ function timeAgo(ts) {
 
 function formatExpiry(ts) {
     const d = new Date(ts * 1000);
-    return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString('tr-TR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    });
 }
 
-// ── Oyuncu grafiği (SVG — smooth bezier, eksanlar, istatistikler) ─────────────
+const card = {
+    background: A.panel,
+    border: `1px solid ${A.border}`,
+    borderRadius: 4,
+};
+
+const inputStyle = {
+    background: A.bg,
+    border: `1px solid ${A.border}`,
+    color: A.text,
+    fontFamily: A.mono,
+    fontSize: 12,
+    padding: '7px 10px',
+    borderRadius: 2,
+    outline: 'none',
+    width: '100%',
+};
+
+// ── Discord Logo ─────────────────────────────────────────────────────────────
+
+function DiscordIcon({ size = 16 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.84 19.84 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.42c0-1.336.956-2.42 2.157-2.42c1.21 0 2.176 1.094 2.157 2.42c0 1.335-.956 2.42-2.157 2.42zm7.975 0c-1.183 0-2.157-1.085-2.157-2.42c0-1.336.955-2.42 2.157-2.42c1.21 0 2.176 1.094 2.157 2.42c0 1.335-.946 2.42-2.157 2.42z"/>
+        </svg>
+    );
+}
+
+// ── Oyuncu grafiği ───────────────────────────────────────────────────────────
+
 function PlayerGraph({ history }) {
     const chart = useMemo(() => {
         const cutoff = Date.now() / 1000 - 86400;
         const raw = history.filter(h => h.timestamp > cutoff);
         if (raw.length < 2) return null;
 
-        // Çok fazla veri noktası varsa örnekle (max 150)
         const MAX_PTS = 150;
         const step = Math.max(1, Math.ceil(raw.length / MAX_PTS));
         const sampled = raw.filter((_, i) => i % step === 0 || i === raw.length - 1);
 
-        // SVG boyutları
         const W = 700, H = 200;
         const PADL = 44, PADR = 20, PADT = 12, PADB = 32;
         const CW = W - PADL - PADR;
@@ -60,14 +83,12 @@ function PlayerGraph({ history }) {
             ts: h.timestamp,
         }));
 
-        // Y ekseni tick'leri (0 dahil 5 adet)
         const Y_TICKS = 4;
         const yLines = Array.from({ length: Y_TICKS + 1 }, (_, i) => ({
             y: PADT + (i / Y_TICKS) * CH,
             label: Math.round(maxCount * (1 - i / Y_TICKS)),
         }));
 
-        // X ekseni tick'leri (max 6 saat etiketi)
         const X_TICKS = Math.min(6, sampled.length);
         const xTicks = Array.from({ length: X_TICKS }, (_, i) => {
             const idx = Math.round(i * (sampled.length - 1) / Math.max(X_TICKS - 1, 1));
@@ -78,27 +99,28 @@ function PlayerGraph({ history }) {
             };
         });
 
-        // Smooth bezier path
         let linePath = `M ${pts[0].x} ${pts[0].y}`;
         for (let i = 1; i < pts.length; i++) {
             const cp = (pts[i - 1].x + pts[i].x) / 2;
             linePath += ` C ${cp} ${pts[i - 1].y}, ${cp} ${pts[i].y}, ${pts[i].x} ${pts[i].y}`;
         }
         const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${PADT + CH} L ${pts[0].x} ${PADT + CH} Z`;
-
         const avgCount = Math.round(sampled.reduce((s, h) => s + h.count, 0) / sampled.length);
 
-        return { W, H, PADL, PADR, PADT, PADB, CW, CH, pts, yLines, xTicks, linePath, areaPath, maxCount, avgCount };
+        return { W, H, PADL, PADT, CW, CH, pts, yLines, xTicks, linePath, areaPath, maxCount, avgCount };
     }, [history]);
 
     if (!chart) {
         return (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-400 gap-2">
-                <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center">
-                    <HiOutlineChatBubbleLeftRight className="w-6 h-6 opacity-30" />
-                </div>
-                <p className="text-sm font-medium">Yeterli veri yok</p>
-                <p className="text-xs text-gray-300">Bot çalışırken her 30 saniyede bir kayıt oluşturulur</p>
+            <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'center', height: 200, color: A.faint, gap: 10,
+            }}>
+                <I.Chat size={28} style={{ opacity: 0.3 }}/>
+                <p style={{ fontSize: 12, margin: 0 }}>Yeterli veri yok</p>
+                <p style={{ fontSize: 10, color: A.faintest, margin: 0 }}>
+                    Bot çalışırken her 30 saniyede bir kayıt oluşturulur
+                </p>
             </div>
         );
     }
@@ -107,82 +129,89 @@ function PlayerGraph({ history }) {
     const currentCount = pts[pts.length - 1].count;
 
     return (
-        <div className="space-y-4">
-            {/* İstatistik şeridi */}
-            <div className="flex items-center gap-8">
-                <div className="text-center">
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{currentCount}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Şu an online</p>
-                </div>
-                <div className="w-px h-10 bg-gray-200" />
-                <div className="text-center">
-                    <p className="text-3xl font-bold text-indigo-600 tabular-nums">{maxCount}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Son 24sa maks.</p>
-                </div>
-                <div className="w-px h-10 bg-gray-200" />
-                <div className="text-center">
-                    <p className="text-3xl font-bold text-gray-500 tabular-nums">{avgCount}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Ortalama</p>
-                </div>
-                <div className="ml-auto flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
-                    <span className="text-xs text-gray-400">{pts.length} veri noktası · son 24 saat</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                <Stat label="Şu an online" value={currentCount}/>
+                <div style={{ width: 1, height: 30, background: A.border }}/>
+                <Stat label="Son 24sa maks." value={maxCount} accent/>
+                <div style={{ width: 1, height: 30, background: A.border }}/>
+                <Stat label="Ortalama" value={avgCount} dim/>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Dot color="var(--accent)" size={6}/>
+                    <span style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>
+                        {pts.length} nokta · son 24 saat
+                    </span>
                 </div>
             </div>
 
-            {/* Grafik */}
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: '200px' }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 200 }}>
                 <defs>
                     <linearGradient id="pg-grad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0.01" />
+                        <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.25"/>
+                        <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.01"/>
                     </linearGradient>
                     <clipPath id="pg-clip">
-                        <rect x={PADL} y={PADT} width={CW} height={CH + 1} />
+                        <rect x={PADL} y={PADT} width={CW} height={CH + 1}/>
                     </clipPath>
                 </defs>
 
-                {/* Yatay grid çizgileri + Y etiketleri */}
                 {yLines.map((t, i) => (
                     <g key={i}>
-                        <line
-                            x1={PADL} y1={t.y} x2={W - 20} y2={t.y}
-                            stroke={i === yLines.length - 1 ? '#d1d5db' : '#f3f4f6'}
-                            strokeWidth="1"
-                        />
-                        <text x={PADL - 10} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9ca3af">
-                            {t.label}
-                        </text>
+                        <line x1={PADL} y1={t.y} x2={W - 20} y2={t.y}
+                            stroke={i === yLines.length - 1 ? A.borderHi : A.border} strokeWidth="1"/>
+                        <text x={PADL - 10} y={t.y + 4} textAnchor="end" fontSize="11"
+                            fill={A.faint} fontFamily={A.mono}>{t.label}</text>
                     </g>
                 ))}
 
-                {/* Alan dolgusu + çizgi (clip ile sınırlandırılmış) */}
                 <g clipPath="url(#pg-clip)">
-                    <path d={areaPath} fill="url(#pg-grad)" />
-                    <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d={areaPath} fill="url(#pg-grad)"/>
+                    <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.5"
+                        strokeLinecap="round" strokeLinejoin="round"/>
                 </g>
 
-                {/* Son nokta vurgusu */}
-                <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="5" fill="#6366f1" stroke="white" strokeWidth="2.5" />
+                <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y}
+                    r="5" fill="var(--accent)" stroke={A.panel} strokeWidth="2.5"/>
 
-                {/* X ekseni çizgisi */}
-                <line x1={PADL} y1={PADT + CH} x2={W - 20} y2={PADT + CH} stroke="#e5e7eb" strokeWidth="1" />
-
-                {/* X zaman etiketleri */}
+                <line x1={PADL} y1={PADT + CH} x2={W - 20} y2={PADT + CH} stroke={A.border} strokeWidth="1"/>
                 {xTicks.map((t, i) => (
-                    <text key={i} x={t.x} y={H - 8} textAnchor="middle" fontSize="11" fill="#9ca3af">
-                        {t.label}
-                    </text>
+                    <text key={i} x={t.x} y={H - 8} textAnchor="middle" fontSize="11"
+                        fill={A.faint} fontFamily={A.mono}>{t.label}</text>
                 ))}
-
-                {/* Y ekseni çizgisi */}
-                <line x1={PADL} y1={PADT} x2={PADL} y2={PADT + CH} stroke="#e5e7eb" strokeWidth="1" />
+                <line x1={PADL} y1={PADT} x2={PADL} y2={PADT + CH} stroke={A.border} strokeWidth="1"/>
             </svg>
         </div>
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+function Stat({ label, value, accent, dim }) {
+    return (
+        <div style={{ textAlign: 'center' }}>
+            <div style={{
+                fontFamily: A.mono, fontSize: 22, fontWeight: 600,
+                color: accent ? 'var(--accent)' : (dim ? A.faint : A.text),
+                letterSpacing: '-0.02em',
+            }}>{value}</div>
+            <div style={{ fontSize: 10, color: A.faint, marginTop: 2 }}>{label}</div>
+        </div>
+    );
+}
+
+// ── Tek satır oyuncu/rol/log ────────────────────────────────────────────────
+
+function Row({ children, last, style }) {
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
+            borderBottom: last ? 'none' : `1px solid ${A.border}`,
+            ...style,
+        }}>{children}</div>
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ANA SAYFA
+// ═════════════════════════════════════════════════════════════════════════════
 
 export default function DiscordPage() {
     const queryClient = useQueryClient();
@@ -201,14 +230,18 @@ export default function DiscordPage() {
         queryKey: ['discord-status'],
         queryFn: () => api.get('/discord/status').then(r => r.data),
         refetchInterval: 10000,
-        onSuccess: (d) => { if (!botDirInput && d.botDir) setBotDirInput(d.botDir); },
     });
+    useEffect(() => {
+        if (!botDirInput && status?.botDir) setBotDirInput(status.botDir);
+    }, [status, botDirInput]);
 
-    useQuery({
+    const { data: botSettings } = useQuery({
         queryKey: ['discord-bot-settings'],
         queryFn: () => api.get('/discord/bot-settings').then(r => r.data),
-        onSuccess: (d) => { if (d.status_text) setStatusTextInput(d.status_text); },
     });
+    useEffect(() => {
+        if (botSettings?.status_text) setStatusTextInput(botSettings.status_text);
+    }, [botSettings]);
 
     const { data: wlData, isLoading: wlLoading } = useQuery({
         queryKey: ['discord-whitelist'],
@@ -248,25 +281,21 @@ export default function DiscordPage() {
         onSuccess: () => { toast.success('Bot başlatılıyor...'); queryClient.invalidateQueries({ queryKey: ['discord-status'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Başlatılamadı'),
     });
-
     const stopMutation = useMutation({
         mutationFn: () => api.post('/discord/stop'),
         onSuccess: () => { toast.success('Bot durduruldu.'); queryClient.invalidateQueries({ queryKey: ['discord-status'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Durdurulamadı'),
     });
-
     const configMutation = useMutation({
         mutationFn: (botDir) => api.put('/discord/config', { botDir }),
         onSuccess: () => { toast.success('Bot dizini kaydedildi.'); queryClient.invalidateQueries({ queryKey: ['discord-status'] }); setShowConfig(false); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
-
     const botSettingsMutation = useMutation({
         mutationFn: (settings) => api.put('/discord/bot-settings', settings),
         onSuccess: () => toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.'),
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
-
     const addWlMutation = useMutation({
         mutationFn: ({ userId, mcNick }) => api.post('/discord/whitelist', { userId, mcNick }),
         onSuccess: () => {
@@ -276,37 +305,31 @@ export default function DiscordPage() {
         },
         onError: (e) => toast.error(e.response?.data?.error || 'Eklenemedi'),
     });
-
     const delWlMutation = useMutation({
         mutationFn: (userId) => api.delete(`/discord/whitelist/${userId}`),
         onSuccess: () => { toast.success('Silindi.'); queryClient.invalidateQueries({ queryKey: ['discord-whitelist'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Silinemedi'),
     });
-
     const addRoleMutation = useMutation({
         mutationFn: (data) => api.post('/discord/timed-roles', data),
         onSuccess: () => { toast.success('Süreli rol eklendi.'); queryClient.invalidateQueries({ queryKey: ['discord-timed-roles'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Eklenemedi'),
     });
-
     const delRoleMutation = useMutation({
         mutationFn: (index) => api.delete(`/discord/timed-roles/${index}`),
         onSuccess: () => { toast.success('Silindi.'); queryClient.invalidateQueries({ queryKey: ['discord-timed-roles'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Silinemedi'),
     });
-
     const clearQueueMutation = useMutation({
         mutationFn: () => api.delete('/discord/rcon-queue'),
         onSuccess: () => { toast.success('RCON kuyruğu temizlendi.'); queryClient.invalidateQueries({ queryKey: ['discord-rcon-queue'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Temizlenemedi'),
     });
-
     const addStatusMsgMutation = useMutation({
         mutationFn: ({ serverName, message }) => api.post('/discord/status-messages', { serverName, message }),
         onSuccess: () => { toast.success('Mesaj eklendi.'); queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Eklenemedi'),
     });
-
     const delStatusMsgMutation = useMutation({
         mutationFn: ({ serverName, index }) => api.delete('/discord/status-messages', { data: { serverName, index } }),
         onSuccess: () => { toast.success('Mesaj silindi.'); queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] }); },
@@ -322,147 +345,144 @@ export default function DiscordPage() {
         return entries.filter(e => e.mcNick.toLowerCase().includes(q) || e.userId.includes(q));
     }, [wlData, wlSearch]);
 
-    // ── Active timed roles ────────────────────────────────────────────────────
-
     const now = Math.floor(Date.now() / 1000);
     const timedRoles = rolesData?.roles || [];
-    const activeRoles = timedRoles.filter(r => r.expiry_timestamp > now);
+    const activeRoles  = timedRoles.filter(r => r.expiry_timestamp > now);
     const expiredRoles = timedRoles.filter(r => r.expiry_timestamp <= now);
-
-    // ── Render ────────────────────────────────────────────────────────────────
 
     const isRunning = status?.running;
 
+    const TABS = [
+        { key: 'whitelist',       label: 'Whitelist',        icon: I.Users },
+        { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
+        { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
+        { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
+        { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
+        { key: 'graph',           label: 'Oyuncu Grafiği',   icon: I.ArrowUpRight },
+        { key: 'webhook',         label: 'Webhook',          icon: I.Send },
+    ];
+
     return (
-        <div className="space-y-6">
+        <div style={{
+            padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
+            fontFamily: A.sans, color: A.text,
+        }}>
+            <style>{`@keyframes hodo-spin{to{transform:rotate(360deg)}}`}</style>
 
             {/* ── Başlık ── */}
-            <div className="fade-in flex items-center justify-between">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-3">
-                        <SiDiscord className="w-7 h-7 text-indigo-500" />
+                    <Cap>discord</Cap>
+                    <h1 style={{
+                        fontSize: 22, fontWeight: 600, color: A.text,
+                        margin: '4px 0 2px', letterSpacing: '-0.01em',
+                        display: 'flex', alignItems: 'center', gap: 10,
+                    }}>
+                        <span style={{ color: '#5865f2' }}><DiscordIcon size={22}/></span>
                         Discord Bot
                     </h1>
-                    <p className="text-sm text-gray-500">KnozyBot — Discord ↔ Minecraft entegrasyonu</p>
+                    <p style={{ fontSize: 12, color: A.dim, margin: 0, fontFamily: A.mono }}>
+                        KnozyBot — Discord ↔ Minecraft entegrasyonu
+                    </p>
                 </div>
-                <button
-                    onClick={() => { queryClient.invalidateQueries({ queryKey: ['discord-status'] }); queryClient.invalidateQueries({ queryKey: ['discord-whitelist'] }); }}
-                    className="btn-secondary text-xs"
-                >
-                    <HiOutlineArrowPath className="w-4 h-4" />
+                <button onClick={() => {
+                    queryClient.invalidateQueries({ queryKey: ['discord-status'] });
+                    queryClient.invalidateQueries({ queryKey: ['discord-whitelist'] });
+                }} style={btnGhost}>
+                    <I.Restart size={12} style={{ verticalAlign: -1 }}/>
                 </button>
             </div>
 
             {/* ── Bot Durum Kartı ── */}
-            <div className="glass-card p-5 fade-in">
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                    <div className="flex items-center gap-4">
+            <div style={{ ...card, padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                         {statusLoading ? (
-                            <div className="w-5 h-5 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin" />
-                        ) : isRunning ? (
-                            <HiOutlineCheckCircle className="w-8 h-8 text-green-500 flex-shrink-0" />
+                            <div style={{
+                                width: 16, height: 16, border: `2px solid ${A.border}`,
+                                borderTopColor: 'var(--accent)', borderRadius: '50%',
+                                animation: 'hodo-spin 0.8s linear infinite',
+                            }}/>
                         ) : (
-                            <HiOutlineXCircle className="w-8 h-8 text-red-400 flex-shrink-0" />
+                            <Dot color={isRunning ? A.ok : A.err} size={10}/>
                         )}
                         <div>
-                            <p className="font-semibold text-gray-900 dark:text-white">
+                            <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>
                                 {isRunning ? 'Bot Çalışıyor' : 'Bot Kapalı'}
-                            </p>
-                            <p className="text-xs text-gray-400 font-mono mt-0.5">
+                            </div>
+                            <div style={{ fontSize: 10.5, color: A.faint, fontFamily: A.mono, marginTop: 2 }}>
                                 screen: {status?.screenName || 'knozy-discord'}
                                 {status?.botDir ? ` · ${status.botDir}` : ' · dizin ayarlanmamış'}
-                            </p>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowConfig(v => !v)}
-                            className="btn-secondary text-xs"
-                            title="Bot dizinini ayarla"
-                        >
-                            <HiOutlineCog6Tooth className="w-4 h-4" />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => setShowConfig(v => !v)} style={btnGhost} title="Bot dizinini ayarla">
+                            <I.Cog size={11}/>
                         </button>
                         {isRunning ? (
-                            <button
-                                onClick={() => stopMutation.mutate()}
-                                disabled={stopMutation.isPending}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition-colors"
-                            >
-                                <HiOutlineStop className="w-4 h-4" />
-                                {stopMutation.isPending ? 'Durduruluyor...' : 'Durdur'}
+                            <button onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}
+                                style={{ ...btnGhost, color: A.err, borderColor: 'rgba(248,113,113,0.3)' }}>
+                                <I.Stop size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                {stopMutation.isPending ? 'DURDURULUYOR...' : 'DURDUR'}
                             </button>
                         ) : (
-                            <button
-                                onClick={() => startMutation.mutate()}
-                                disabled={startMutation.isPending || !status?.botDir}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium transition-colors disabled:opacity-40"
-                            >
-                                <HiOutlinePlay className="w-4 h-4" />
-                                {startMutation.isPending ? 'Başlatılıyor...' : 'Başlat'}
+                            <button onClick={() => startMutation.mutate()}
+                                disabled={startMutation.isPending || !status?.botDir} style={btnPrimary}>
+                                <I.Play size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                {startMutation.isPending ? 'BAŞLATILIYOR...' : 'BAŞLAT'}
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Dizin ayar formu */}
+                {/* Bot dizini + status ayar formu */}
                 {showConfig && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-4">
-                        {/* Bot Dizini */}
+                    <div style={{
+                        marginTop: 14, paddingTop: 14, borderTop: `1px solid ${A.border}`,
+                        display: 'flex', flexDirection: 'column', gap: 14,
+                    }}>
                         <div>
-                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>
                                 Bot Dizini (sunucudaki mutlak yol)
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={botDirInput}
+                            </Cap>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <input type="text" value={botDirInput}
                                     onChange={e => setBotDirInput(e.target.value)}
                                     placeholder="/home/user/KnozyBot"
-                                    className="input-field flex-1 font-mono text-sm"
-                                />
-                                <button
-                                    onClick={() => configMutation.mutate(botDirInput)}
+                                    style={{ ...inputStyle, flex: 1 }}/>
+                                <button onClick={() => configMutation.mutate(botDirInput)}
                                     disabled={configMutation.isPending || !botDirInput.trim()}
-                                    className="btn-primary text-xs flex items-center gap-1.5"
-                                >
-                                    <HiOutlineCheck className="w-3.5 h-3.5" />
-                                    {configMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                                    style={btnPrimary}>
+                                    <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                    {configMutation.isPending ? 'KAYDET...' : 'KAYDET'}
                                 </button>
                             </div>
                             {status && !status.dirExists && status.botDir && (
-                                <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
-                                    <HiOutlineExclamationTriangle className="w-3.5 h-3.5" />
-                                    Dizin sunucuda bulunamadı. Yolu kontrol edin.
-                                </p>
+                                <div style={{ fontSize: 11, color: A.warn, marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <I.Alert size={12}/>Dizin sunucuda bulunamadı. Yolu kontrol edin.
+                                </div>
                             )}
                         </div>
 
-                        {/* Bot Status Metni */}
                         <div>
-                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>
                                 Discord Status Metni
-                                <span className="ml-2 text-gray-400 font-normal">— Bot bu metni "oynuyor" olarak gösterir</span>
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={statusTextInput}
+                            </Cap>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <input type="text" value={statusTextInput}
                                     onChange={e => setStatusTextInput(e.target.value)}
                                     placeholder="HooDoo FTB Evolution"
-                                    className="input-field flex-1 text-sm"
-                                    maxLength={128}
-                                />
-                                <button
-                                    onClick={() => botSettingsMutation.mutate({ status_text: statusTextInput.trim() || null })}
-                                    disabled={botSettingsMutation.isPending}
-                                    className="btn-primary text-xs flex items-center gap-1.5"
-                                >
-                                    <HiOutlineCheck className="w-3.5 h-3.5" />
-                                    {botSettingsMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+                                    style={{ ...inputStyle, flex: 1, fontFamily: A.sans }}
+                                    maxLength={128}/>
+                                <button onClick={() => botSettingsMutation.mutate({ status_text: statusTextInput.trim() || null })}
+                                    disabled={botSettingsMutation.isPending} style={btnPrimary}>
+                                    <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                    {botSettingsMutation.isPending ? 'KAYDET...' : 'KAYDET'}
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-400 mt-1">
-                                Boş bırakırsan oyuncu sayısı otomatik gösterilir: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">5/20 oyuncu</code>
+                            <p style={{ fontSize: 11, color: A.faint, margin: '6px 0 0' }}>
+                                Boş bırakırsan oyuncu sayısı otomatik gösterilir.
                             </p>
                         </div>
                     </div>
@@ -470,342 +490,319 @@ export default function DiscordPage() {
             </div>
 
             {/* ── Sekmeler ── */}
-            <div className="flex gap-2 fade-in flex-wrap">
-                {[
-                    { key: 'whitelist', label: 'Whitelist', icon: HiOutlineUserGroup },
-                    { key: 'timed-roles', label: 'Süreli Roller', icon: HiOutlineClock },
-                    { key: 'rcon-queue', label: 'RCON Kuyruğu', icon: HiOutlineQueueList },
-                    { key: 'status-messages', label: 'Durum Mesajları', icon: HiOutlineSpeakerWave },
-                    { key: 'night-guard', label: 'Gece Koruması', icon: HiOutlineShieldExclamation },
-                    { key: 'graph', label: 'Oyuncu Grafiği', icon: HiOutlineChatBubbleLeftRight },
-                    { key: 'webhook', label: 'Webhook', icon: HiOutlineBell },
-                ].map(tab => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.key ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-                    >
-                        <tab.icon className="w-4 h-4" />
-                        {tab.label}
-                    </button>
-                ))}
+            <div style={{
+                display: 'flex', gap: 4, flexWrap: 'wrap',
+                borderBottom: `1px solid ${A.border}`,
+            }}>
+                {TABS.map(tab => {
+                    const Icon = tab.icon;
+                    const active = activeTab === tab.key;
+                    return (
+                        <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '8px 14px',
+                                background: 'transparent',
+                                border: 'none',
+                                borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                                color: active ? A.text : A.dim,
+                                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                fontFamily: A.sans,
+                                marginBottom: -1,
+                            }}>
+                            <Icon size={13} style={{ color: active ? 'var(--accent)' : A.faint }}/>
+                            {tab.label}
+                        </button>
+                    );
+                })}
             </div>
 
-            {/* ══ Whitelist Sekmesi ══════════════════════════════════════════════════ */}
+            {/* ══ Whitelist ══ */}
             {activeTab === 'whitelist' && (
                 <>
-                    {/* Ekle formu */}
-                    <div className="glass-card p-4 fade-in">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                            <HiOutlinePlus className="w-4 h-4" /> Yeni Kayıt Ekle
-                        </p>
-                        <div className="flex gap-2 flex-wrap">
-                            <input
-                                type="text"
-                                value={newUserId}
-                                onChange={e => setNewUserId(e.target.value)}
-                                placeholder="Discord Kullanıcı ID (örn: 123456789012345678)"
-                                className="input-field flex-1 min-w-48 font-mono text-sm"
-                            />
-                            <input
-                                type="text"
-                                value={newMcNick}
-                                onChange={e => setNewMcNick(e.target.value)}
+                    <div style={{ ...card, padding: 14 }}>
+                        <Cap style={{ display: 'block', marginBottom: 10 }}>+ Yeni Kayıt Ekle</Cap>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)}
+                                placeholder="Discord ID (123456789012345678)"
+                                style={{ ...inputStyle, flex: 1, minWidth: 200 }}/>
+                            <input type="text" value={newMcNick} onChange={e => setNewMcNick(e.target.value)}
                                 placeholder="Minecraft Nick"
-                                className="input-field w-48 font-mono text-sm"
-                                onKeyDown={e => { if (e.key === 'Enter' && newUserId && newMcNick) addWlMutation.mutate({ userId: newUserId, mcNick: newMcNick }); }}
-                            />
-                            <button
-                                onClick={() => addWlMutation.mutate({ userId: newUserId, mcNick: newMcNick })}
+                                style={{ ...inputStyle, width: 200 }}
+                                onKeyDown={e => { if (e.key === 'Enter' && newUserId && newMcNick) addWlMutation.mutate({ userId: newUserId, mcNick: newMcNick }); }}/>
+                            <button onClick={() => addWlMutation.mutate({ userId: newUserId, mcNick: newMcNick })}
                                 disabled={addWlMutation.isPending || !newUserId.trim() || !newMcNick.trim()}
-                                className="btn-primary text-xs flex items-center gap-1.5"
-                            >
-                                <HiOutlinePlus className="w-3.5 h-3.5" />
-                                {addWlMutation.isPending ? 'Ekleniyor...' : 'Ekle'}
+                                style={btnPrimary}>
+                                <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                                {addWlMutation.isPending ? 'EKLE...' : 'EKLE'}
                             </button>
                         </div>
                     </div>
 
-                    {/* Arama */}
-                    <div className="relative fade-in">
-                        <HiOutlineMagnifyingGlass className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            value={wlSearch}
-                            onChange={e => setWlSearch(e.target.value)}
+                    <div style={{ position: 'relative' }}>
+                        <I.Search size={13} style={{
+                            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: A.faint,
+                        }}/>
+                        <input type="text" value={wlSearch} onChange={e => setWlSearch(e.target.value)}
                             placeholder="Nick veya Discord ID ile ara..."
-                            className="input-field pl-11 text-sm"
-                        />
+                            style={{ ...inputStyle, paddingLeft: 32, fontFamily: A.sans }}/>
                     </div>
 
-                    {/* Liste */}
-                    <div className="glass-card overflow-hidden fade-in">
-                        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                {wlData?.total ?? 0} kayıtlı oyuncu
-                            </span>
+                    <div style={card}>
+                        <div style={{
+                            padding: '10px 16px', borderBottom: `1px solid ${A.border}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        }}>
+                            <Cap>{wlData?.total ?? 0} kayıtlı oyuncu</Cap>
                         </div>
                         {wlLoading ? (
-                            <div className="p-8 text-center text-gray-400">
-                                <div className="w-6 h-6 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-                                Yükleniyor...
-                            </div>
+                            <div style={{ padding: 32, textAlign: 'center', color: A.faint, fontSize: 12 }}>Yükleniyor...</div>
                         ) : filteredEntries.length === 0 ? (
-                            <div className="p-10 text-center text-gray-400">
-                                <HiOutlineUserGroup className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                <p>{wlSearch ? 'Eşleşen kayıt bulunamadı.' : 'Henüz kayıtlı oyuncu yok.'}</p>
+                            <div style={{ padding: 40, textAlign: 'center', color: A.faint }}>
+                                <I.Users size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
+                                <p style={{ margin: 0, fontSize: 12 }}>
+                                    {wlSearch ? 'Eşleşen kayıt bulunamadı.' : 'Henüz kayıtlı oyuncu yok.'}
+                                </p>
                             </div>
                         ) : (
                             filteredEntries.map((e, i) => (
-                                <div key={e.userId} className={`flex items-center gap-3 px-5 py-3 group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${i !== filteredEntries.length - 1 ? 'border-b border-gray-50 dark:border-gray-700' : ''}`}>
-                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                                            {e.mcNick[0].toUpperCase()}
-                                        </span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{e.mcNick}</p>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className="text-xs text-gray-400 font-mono truncate">{e.userId}</span>
-                                            <button
-                                                onClick={() => { navigator.clipboard.writeText(e.userId); toast.success('Kopyalandı'); }}
-                                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                title="ID Kopyala"
-                                            >
-                                                <HiOutlineClipboard className="w-3.5 h-3.5 text-gray-400 hover:text-gray-700" />
+                                <Row key={e.userId} last={i === filteredEntries.length - 1}>
+                                    <div style={{
+                                        width: 32, height: 32, borderRadius: 4,
+                                        background: 'rgba(167,139,250,0.10)',
+                                        border: '1px solid rgba(167,139,250,0.20)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: 'var(--accent)', fontSize: 12, fontWeight: 700,
+                                        fontFamily: A.mono, flexShrink: 0,
+                                    }}>{e.mcNick[0].toUpperCase()}</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>{e.mcNick}</div>
+                                        <div style={{ fontSize: 10.5, color: A.faint, fontFamily: A.mono, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            {e.userId}
+                                            <button onClick={() => { navigator.clipboard.writeText(e.userId); toast.success('Kopyalandı'); }}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: A.faint, display: 'inline-flex' }}
+                                                title="ID Kopyala">
+                                                <I.ArrowUpRight size={10}/>
                                             </button>
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => { if (confirm(`${e.mcNick} whitelist'ten çıkarılacak. Emin misiniz?`)) delWlMutation.mutate(e.userId); }}
-                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                        title="Sil"
-                                    >
-                                        <HiOutlineTrash className="w-4 h-4" />
+                                    <button onClick={() => { if (confirm(`${e.mcNick} çıkarılacak. Emin misin?`)) delWlMutation.mutate(e.userId); }}
+                                        style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
+                                        <I.Trash size={11}/>
                                     </button>
-                                </div>
+                                </Row>
                             ))
                         )}
                     </div>
                 </>
             )}
 
-            {/* ══ Süreli Roller Sekmesi ═════════════════════════════════════════════ */}
+            {/* ══ Süreli Roller ══ */}
             {activeTab === 'timed-roles' && (
-                <TimedRolesTab
-                    rolesLoading={rolesLoading}
-                    timedRoles={timedRoles}
-                    activeRoles={activeRoles}
-                    expiredRoles={expiredRoles}
-                    now={now}
-                    addRoleMutation={addRoleMutation}
-                    delRoleMutation={delRoleMutation}
-                />
+                <TimedRolesTab rolesLoading={rolesLoading} timedRoles={timedRoles}
+                    activeRoles={activeRoles} expiredRoles={expiredRoles} now={now}
+                    addRoleMutation={addRoleMutation} delRoleMutation={delRoleMutation}/>
             )}
 
-            {/* ══ RCON Kuyruğu ══════════════════════════════════════════════════════ */}
+            {/* ══ RCON Kuyruğu ══ */}
             {activeTab === 'rcon-queue' && (
-                <RconQueueTab
-                    queueData={queueData}
-                    queueLoading={queueLoading}
+                <RconQueueTab queueData={queueData} queueLoading={queueLoading}
                     clearQueueMutation={clearQueueMutation}
-                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-rcon-queue'] })}
-                />
+                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-rcon-queue'] })}/>
             )}
 
-            {/* ══ Durum Mesajları ═══════════════════════════════════════════════════ */}
+            {/* ══ Durum Mesajları ══ */}
             {activeTab === 'status-messages' && (
-                <StatusMessagesTab
-                    statusMsgData={statusMsgData}
-                    statusMsgLoading={statusMsgLoading}
-                    addStatusMsgMutation={addStatusMsgMutation}
-                    delStatusMsgMutation={delStatusMsgMutation}
-                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] })}
-                />
+                <StatusMessagesTab statusMsgData={statusMsgData} statusMsgLoading={statusMsgLoading}
+                    addStatusMsgMutation={addStatusMsgMutation} delStatusMsgMutation={delStatusMsgMutation}
+                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] })}/>
             )}
 
-            {/* ══ Gece Koruması ═════════════════════════════════════════════════════ */}
-            {activeTab === 'night-guard' && <NightGuardTab />}
+            {/* ══ Gece Koruması ══ */}
+            {activeTab === 'night-guard' && <NightGuardTab/>}
 
-            {/* ══ Oyuncu Grafiği ════════════════════════════════════════════════════ */}
+            {/* ══ Grafik ══ */}
             {activeTab === 'graph' && (
-                <div className="glass-card p-5 fade-in">
-                    <div className="flex items-center justify-between mb-5">
-                        <p className="font-semibold text-gray-900 dark:text-white">Son 24 Saatlik Oyuncu Grafiği</p>
-                        <button
-                            onClick={() => queryClient.invalidateQueries({ queryKey: ['discord-history'] })}
-                            className="btn-secondary text-xs"
-                        >
-                            <HiOutlineArrowPath className="w-3.5 h-3.5" />
+                <div style={{ ...card, padding: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                        <Cap>SON 24 SAAT OYUNCU GRAFİĞİ</Cap>
+                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['discord-history'] })}
+                            style={btnGhost}>
+                            <I.Restart size={11}/>
                         </button>
                     </div>
-                    <PlayerGraph history={historyData?.history || []} />
+                    <PlayerGraph history={historyData?.history || []}/>
                 </div>
             )}
 
-            {activeTab === 'webhook' && <WebhookTab />}
-
+            {/* ══ Webhook ══ */}
+            {activeTab === 'webhook' && <WebhookTab/>}
         </div>
     );
 }
 
-// ── Süreli Roller (CRUD) ──────────────────────────────────────────────────────
+// ── Süreli Roller ────────────────────────────────────────────────────────────
+
 function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, now, addRoleMutation, delRoleMutation }) {
     const [form, setForm] = useState({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' });
     const [showForm, setShowForm] = useState(false);
 
     const handleAdd = () => {
         addRoleMutation.mutate(form, {
-            onSuccess: () => { setForm({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' }); setShowForm(false); }
+            onSuccess: () => { setForm({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' }); setShowForm(false); },
         });
     };
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4 flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {activeRoles.length} aktif · {expiredRoles.length} süresi dolmuş
-                </span>
-                <button onClick={() => setShowForm(v => !v)} className="btn-secondary text-xs flex items-center gap-1.5">
-                    <HiOutlinePlus className="w-3.5 h-3.5" /> Yeni Ekle
+        <>
+            <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Cap>{activeRoles.length} aktif · {expiredRoles.length} süresi dolmuş</Cap>
+                <button onClick={() => setShowForm(v => !v)} style={btnGhost}>
+                    <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİ EKLE
                 </button>
             </div>
 
             {showForm && (
-                <div className="glass-card p-4 space-y-3 fade-in">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Yeni Süreli Rol</p>
-                    <div className="grid grid-cols-2 gap-2">
+                <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <Cap>YENİ SÜRELİ ROL</Cap>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         <div>
-                            <label className="block text-xs text-gray-500 mb-1">Discord Kullanıcı ID</label>
-                            <input type="text" value={form.user_id} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))} className="input-field font-mono text-sm" placeholder="123456789..." />
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Kullanıcı ID</div>
+                            <input value={form.user_id} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))}
+                                style={inputStyle} placeholder="123456789..."/>
                         </div>
                         <div>
-                            <label className="block text-xs text-gray-500 mb-1">Sunucu (Guild) ID</label>
-                            <input type="text" value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))} className="input-field font-mono text-sm" placeholder="987654321..." />
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Sunucu (Guild) ID</div>
+                            <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}
+                                style={inputStyle} placeholder="987654321..."/>
                         </div>
                         <div>
-                            <label className="block text-xs text-gray-500 mb-1">Rol ID</label>
-                            <input type="text" value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))} className="input-field font-mono text-sm" placeholder="111222333..." />
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Rol ID</div>
+                            <input value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}
+                                style={inputStyle} placeholder="111222333..."/>
                         </div>
-                        <div className="flex gap-2">
-                            <div className="flex-1">
-                                <label className="block text-xs text-gray-500 mb-1">Gün</label>
-                                <input type="number" value={form.durationDays} onChange={e => setForm(f => ({ ...f, durationDays: e.target.value }))} className="input-field text-sm" placeholder="0" min="0" />
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Gün</div>
+                                <input type="number" value={form.durationDays}
+                                    onChange={e => setForm(f => ({ ...f, durationDays: e.target.value }))}
+                                    style={inputStyle} placeholder="0" min="0"/>
                             </div>
-                            <div className="flex-1">
-                                <label className="block text-xs text-gray-500 mb-1">Saat</label>
-                                <input type="number" value={form.durationHours} onChange={e => setForm(f => ({ ...f, durationHours: e.target.value }))} className="input-field text-sm" placeholder="0" min="0" max="23" />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Saat</div>
+                                <input type="number" value={form.durationHours}
+                                    onChange={e => setForm(f => ({ ...f, durationHours: e.target.value }))}
+                                    style={inputStyle} placeholder="0" min="0" max="23"/>
                             </div>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowForm(false)} className="btn-secondary text-sm">İptal</button>
-                        <button onClick={handleAdd} disabled={addRoleMutation.isPending || !form.user_id || !form.guild_id || !form.role_id} className="btn-primary text-sm">
-                            {addRoleMutation.isPending ? 'Ekleniyor...' : 'Ekle'}
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => setShowForm(false)} style={btnGhost}>İPTAL</button>
+                        <button onClick={handleAdd}
+                            disabled={addRoleMutation.isPending || !form.user_id || !form.guild_id || !form.role_id}
+                            style={btnPrimary}>
+                            {addRoleMutation.isPending ? 'EKLE...' : 'EKLE'}
                         </button>
                     </div>
                 </div>
             )}
 
-            <div className="glass-card overflow-hidden">
+            <div style={card}>
                 {rolesLoading ? (
-                    <div className="p-8 text-center text-gray-400">
-                        <div className="w-6 h-6 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-                        Yükleniyor...
-                    </div>
+                    <div style={{ padding: 32, textAlign: 'center', color: A.faint, fontSize: 12 }}>Yükleniyor...</div>
                 ) : timedRoles.length === 0 ? (
-                    <div className="p-10 text-center text-gray-400">
-                        <HiOutlineClock className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Süreli rol kaydı yok.</p>
+                    <div style={{ padding: 40, textAlign: 'center', color: A.faint }}>
+                        <I.Clock size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
+                        <p style={{ margin: 0, fontSize: 12 }}>Süreli rol kaydı yok.</p>
                     </div>
                 ) : (
                     timedRoles.map((r, i) => {
                         const expired = r.expiry_timestamp <= now;
                         return (
-                            <div key={i} className={`flex items-center gap-3 px-5 py-3 group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${i !== timedRoles.length - 1 ? 'border-b border-gray-50 dark:border-gray-700' : ''} ${expired ? 'opacity-50' : ''}`}>
-                                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${expired ? 'bg-gray-300' : 'bg-green-400'}`} />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-mono text-gray-700 dark:text-gray-300 truncate">
-                                        <span className="text-gray-400">Kullanıcı:</span> {r.user_id}
-                                        &nbsp;·&nbsp;
-                                        <span className="text-gray-400">Rol:</span> {r.role_id}
-                                    </p>
-                                    <p className="text-xs text-gray-400 mt-0.5">
+                            <Row key={i} last={i === timedRoles.length - 1}
+                                style={{ opacity: expired ? 0.55 : 1 }}>
+                                <Dot color={expired ? A.faint : A.ok} size={6}/>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 11.5, color: A.text, fontFamily: A.mono }}>
+                                        <span style={{ color: A.faint }}>Kullanıcı:</span> {r.user_id}
+                                        <span style={{ color: A.faint }}> · Rol:</span> {r.role_id}
+                                    </div>
+                                    <div style={{ fontSize: 10.5, color: A.faint, marginTop: 2 }}>
                                         {expired ? '⏹ Süresi doldu' : `⏳ ${timeAgo(r.expiry_timestamp)} kaldı`}
                                         {' · '}{formatExpiry(r.expiry_timestamp)}
-                                    </p>
+                                    </div>
                                 </div>
-                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${expired ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
-                                    {expired ? 'Doldu' : 'Aktif'}
-                                </span>
-                                <button
-                                    onClick={() => delRoleMutation.mutate(i)}
-                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                    title="Sil"
-                                >
-                                    <HiOutlineTrash className="w-4 h-4" />
+                                <Pill color={expired ? A.faint : A.ok}
+                                    bg={expired ? 'rgba(255,255,255,0.04)' : 'rgba(74,222,128,0.10)'}>
+                                    {expired ? 'DOLDU' : 'AKTİF'}
+                                </Pill>
+                                <button onClick={() => delRoleMutation.mutate(i)}
+                                    style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
+                                    <I.Trash size={11}/>
                                 </button>
-                            </div>
+                            </Row>
                         );
                     })
                 )}
             </div>
-        </div>
+        </>
     );
 }
 
 // ── RCON Kuyruğu ─────────────────────────────────────────────────────────────
+
 function RconQueueTab({ queueData, queueLoading, clearQueueMutation, onRefresh }) {
     const queue = queueData?.queue || [];
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4 flex items-center justify-between">
+        <>
+            <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <HiOutlineQueueList className="w-4 h-4 text-gray-500" /> RCON Komut Kuyruğu
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">Sunucu çevrimdışıyken birikmiş, henüz çalıştırılamamış komutlar.</p>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: A.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <I.Stack size={13} style={{ color: A.faint }}/>RCON Komut Kuyruğu
+                    </div>
+                    <div style={{ fontSize: 11, color: A.faint, marginTop: 2 }}>
+                        Sunucu çevrimdışıyken birikmiş, henüz çalıştırılamamış komutlar.
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={onRefresh} className="btn-secondary text-xs"><HiOutlineArrowPath className="w-3.5 h-3.5" /></button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={onRefresh} style={btnGhost}><I.Restart size={11}/></button>
                     {queue.length > 0 && (
-                        <button onClick={() => clearQueueMutation.mutate()} disabled={clearQueueMutation.isPending} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 hover:border-red-500 rounded-lg transition-all">
-                            <HiOutlineTrash className="w-3.5 h-3.5" />
-                            {clearQueueMutation.isPending ? 'Temizleniyor...' : 'Kuyruğu Temizle'}
+                        <button onClick={() => clearQueueMutation.mutate()} disabled={clearQueueMutation.isPending}
+                            style={{ ...btnGhost, color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
+                            <I.Trash size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                            {clearQueueMutation.isPending ? 'TEMİZLE...' : 'TEMİZLE'}
                         </button>
                     )}
                 </div>
             </div>
 
-            <div className="glass-card overflow-hidden">
+            <div style={card}>
                 {queueLoading ? (
-                    <div className="p-8 text-center text-gray-400">
-                        <div className="w-6 h-6 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-                        Yükleniyor...
-                    </div>
+                    <div style={{ padding: 32, textAlign: 'center', color: A.faint, fontSize: 12 }}>Yükleniyor...</div>
                 ) : queue.length === 0 ? (
-                    <div className="p-10 text-center text-gray-400">
-                        <HiOutlineCheckCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Kuyruk boş — tüm komutlar iletildi.</p>
+                    <div style={{ padding: 40, textAlign: 'center', color: A.faint }}>
+                        <I.Check size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
+                        <p style={{ margin: 0, fontSize: 12 }}>Kuyruk boş — tüm komutlar iletildi.</p>
                     </div>
-                ) : (
-                    queue.map((item, i) => (
-                        <div key={i} className={`px-5 py-3.5 ${i !== queue.length - 1 ? 'border-b border-gray-50 dark:border-gray-700' : ''}`}>
-                            <p className="text-sm font-mono text-gray-800 dark:text-gray-200">{item.command}</p>
-                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                                {item.server && <span>Sunucu: {item.server}</span>}
-                                {item.attempts !== undefined && <span>Deneme: {item.attempts}</span>}
-                                {item.timestamp && <span>{new Date(item.timestamp).toLocaleString('tr-TR')}</span>}
-                            </div>
+                ) : queue.map((item, i) => (
+                    <div key={i} style={{
+                        padding: '12px 16px', borderBottom: i !== queue.length - 1 ? `1px solid ${A.border}` : 'none',
+                    }}>
+                        <div style={{ fontSize: 12, fontFamily: A.mono, color: A.text }}>{item.command}</div>
+                        <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 10.5, color: A.faint, fontFamily: A.mono }}>
+                            {item.server && <span>Sunucu: {item.server}</span>}
+                            {item.attempts !== undefined && <span>Deneme: {item.attempts}</span>}
+                            {item.timestamp && <span>{new Date(item.timestamp).toLocaleString('tr-TR')}</span>}
                         </div>
-                    ))
-                )}
+                    </div>
+                ))}
             </div>
-        </div>
+        </>
     );
 }
 
-// ── Durum Mesajları ───────────────────────────────────────────────────────────
+// ── Durum Mesajları ──────────────────────────────────────────────────────────
+
 function StatusMessagesTab({ statusMsgData, statusMsgLoading, addStatusMsgMutation, delStatusMsgMutation, onRefresh }) {
     const messages = statusMsgData?.messages || {};
     const serverNames = Object.keys(messages);
@@ -815,89 +812,77 @@ function StatusMessagesTab({ statusMsgData, statusMsgLoading, addStatusMsgMutati
     const effectiveServer = serverName.trim() || (serverNames[0] || '');
 
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-4">
-                <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <HiOutlineSpeakerWave className="w-4 h-4 text-gray-500" /> Dönen Durum Mesajları
-                    </p>
-                    <button onClick={onRefresh} className="btn-secondary text-xs"><HiOutlineArrowPath className="w-3.5 h-3.5" /></button>
+        <>
+            <div style={{ ...card, padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: A.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <I.Chat size={13} style={{ color: A.faint }}/>Dönen Durum Mesajları
+                    </div>
+                    <button onClick={onRefresh} style={btnGhost}><I.Restart size={11}/></button>
                 </div>
-                <p className="text-xs text-gray-500 mb-4">Bot her 15 saniyede bu mesajlar arasında geçiş yapar. Aktif oyuncu sayısı da dahil edilir.</p>
-                <div className="flex gap-2 flex-wrap">
-                    <input
-                        type="text"
-                        value={serverName}
-                        onChange={e => setServerName(e.target.value)}
-                        placeholder={serverNames[0] || 'Sunucu adı (config.py\'deki)'}
-                        className="input-field w-40 text-sm font-mono"
-                    />
-                    <input
-                        type="text"
-                        value={newMsg}
-                        onChange={e => setNewMsg(e.target.value)}
+                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                    Bot her 15 saniyede bu mesajlar arasında geçiş yapar. Aktif oyuncu sayısı da dahil edilir.
+                </p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <input type="text" value={serverName} onChange={e => setServerName(e.target.value)}
+                        placeholder={serverNames[0] || "Sunucu adı (config.py'deki)"}
+                        style={{ ...inputStyle, width: 160 }}/>
+                    <input type="text" value={newMsg} onChange={e => setNewMsg(e.target.value)}
                         placeholder="Yeni durum mesajı..."
-                        className="input-field flex-1 min-w-40 text-sm"
-                        onKeyDown={e => { if (e.key === 'Enter' && effectiveServer && newMsg) addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') }); }}
-                    />
-                    <button
-                        onClick={() => addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') })}
+                        style={{ ...inputStyle, flex: 1, minWidth: 200, fontFamily: A.sans }}
+                        onKeyDown={e => { if (e.key === 'Enter' && effectiveServer && newMsg) addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') }); }}/>
+                    <button onClick={() => addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') })}
                         disabled={addStatusMsgMutation.isPending || !effectiveServer || !newMsg.trim()}
-                        className="btn-primary text-xs flex items-center gap-1.5"
-                    >
-                        <HiOutlinePlus className="w-3.5 h-3.5" />
-                        {addStatusMsgMutation.isPending ? 'Ekleniyor...' : 'Ekle'}
+                        style={btnPrimary}>
+                        <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                        {addStatusMsgMutation.isPending ? 'EKLE...' : 'EKLE'}
                     </button>
                 </div>
             </div>
 
-            <div className="glass-card overflow-hidden">
+            <div style={card}>
                 {statusMsgLoading ? (
-                    <div className="p-8 text-center text-gray-400">
-                        <div className="w-6 h-6 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-                        Yükleniyor...
-                    </div>
+                    <div style={{ padding: 32, textAlign: 'center', color: A.faint, fontSize: 12 }}>Yükleniyor...</div>
                 ) : serverNames.length === 0 ? (
-                    <div className="p-10 text-center text-gray-400">
-                        <HiOutlineSpeakerWave className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Durum mesajı yok. Yukarıdan ekleyebilirsiniz.</p>
+                    <div style={{ padding: 40, textAlign: 'center', color: A.faint }}>
+                        <I.Chat size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
+                        <p style={{ margin: 0, fontSize: 12 }}>Durum mesajı yok. Yukarıdan ekleyebilirsiniz.</p>
                     </div>
-                ) : (
-                    serverNames.map(srv => (
-                        <div key={srv}>
-                            <div className="px-5 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
-                                <span className="text-xs font-semibold text-gray-500 font-mono">{srv}</span>
-                            </div>
-                            {(messages[srv] || []).map((msg, idx) => (
-                                <div key={idx} className={`flex items-center gap-3 px-5 py-3 group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${idx !== messages[srv].length - 1 ? 'border-b border-gray-50 dark:border-gray-700' : ''}`}>
-                                    <span className="text-xs font-mono text-gray-400 w-5">{idx + 1}.</span>
-                                    <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">{msg}</span>
-                                    <button
-                                        onClick={() => delStatusMsgMutation.mutate({ serverName: srv, index: idx })}
-                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                    >
-                                        <HiOutlineTrash className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ))}
+                ) : serverNames.map(srv => (
+                    <div key={srv}>
+                        <div style={{
+                            padding: '8px 16px', background: A.bgDeeper, borderBottom: `1px solid ${A.border}`,
+                        }}>
+                            <Cap style={{ fontFamily: A.mono }}>{srv}</Cap>
                         </div>
-                    ))
-                )}
+                        {(messages[srv] || []).map((msg, idx) => (
+                            <Row key={idx} last={idx === messages[srv].length - 1}>
+                                <span style={{ fontSize: 10.5, color: A.faint, fontFamily: A.mono, width: 20 }}>{idx + 1}.</span>
+                                <span style={{ flex: 1, fontSize: 12, color: A.text }}>{msg}</span>
+                                <button onClick={() => delStatusMsgMutation.mutate({ serverName: srv, index: idx })}
+                                    style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
+                                    <I.Trash size={11}/>
+                                </button>
+                            </Row>
+                        ))}
+                    </div>
+                ))}
             </div>
-        </div>
+        </>
     );
 }
 
-// ── Gece Koruması (bilgi paneli) ──────────────────────────────────────────────
+// ── Gece Koruması ────────────────────────────────────────────────────────────
+
 function NightGuardTab() {
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-5">
-                <div className="flex items-start gap-3">
-                    <HiOutlineShieldExclamation className="w-6 h-6 text-indigo-500 flex-shrink-0 mt-0.5" />
+        <>
+            <div style={{ ...card, padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <I.Alert size={20} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }}/>
                     <div>
-                        <h2 className="font-semibold text-gray-900 dark:text-white">Gece Koruması (Night Guard)</h2>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>Gece Koruması (Night Guard)</div>
+                        <p style={{ fontSize: 12, color: A.dim, margin: '4px 0 0', lineHeight: 1.6 }}>
                             Belirlenen saatler arasında admin veya korumalı rollere mention atan kullanıcıları
                             otomatik timeout'a alır. İhlal sayısına göre süre artar.
                         </p>
@@ -905,49 +890,56 @@ function NightGuardTab() {
                 </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-                <div className="glass-card p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Aktif Saatler</p>
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
-                            <HiOutlineClock className="w-5 h-5 text-indigo-600" />
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+                <div style={{ ...card, padding: 14 }}>
+                    <Cap style={{ display: 'block', marginBottom: 10 }}>AKTİF SAATLER</Cap>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                            width: 36, height: 36, borderRadius: 4,
+                            background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.20)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)',
+                        }}>
+                            <I.Clock size={16}/>
                         </div>
                         <div>
-                            <p className="text-lg font-bold text-gray-900 dark:text-white">00:00 – 08:00</p>
-                            <p className="text-xs text-gray-400">İstanbul Saati (UTC+3)</p>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: A.text, fontFamily: A.mono }}>00:00 – 08:00</div>
+                            <div style={{ fontSize: 10.5, color: A.faint, marginTop: 2 }}>İstanbul Saati (UTC+3)</div>
                         </div>
                     </div>
                 </div>
 
-                <div className="glass-card p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Timeout Kademesi</p>
-                    <div className="space-y-1.5">
+                <div style={{ ...card, padding: 14 }}>
+                    <Cap style={{ display: 'block', marginBottom: 10 }}>TIMEOUT KADEMESİ</Cap>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {[
-                            { n: '1. ihlal', dur: '1 dakika' },
-                            { n: '2. ihlal', dur: '5 dakika' },
-                            { n: '3. ihlal', dur: '15 dakika' },
+                            { n: '1. ihlal',  dur: '1 dakika'  },
+                            { n: '2. ihlal',  dur: '5 dakika'  },
+                            { n: '3. ihlal',  dur: '15 dakika' },
                             { n: '4.+ ihlal', dur: '30 dakika' },
                         ].map(({ n, dur }) => (
-                            <div key={n} className="flex justify-between text-sm">
-                                <span className="text-gray-500">{n}</span>
-                                <span className="font-semibold text-gray-800 dark:text-gray-200">{dur}</span>
+                            <div key={n} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                <span style={{ color: A.faint }}>{n}</span>
+                                <span style={{ color: A.text, fontWeight: 500, fontFamily: A.mono }}>{dur}</span>
                             </div>
                         ))}
                     </div>
                 </div>
             </div>
 
-            <div className="glass-card p-4 flex items-start gap-3">
-                <HiOutlineInformationCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-gray-500">
-                    <p>İhlal sayacı her gün otomatik sıfırlanır. Koruma konfigürasyonu bot'un <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded text-xs">config.py</code> dosyasından yönetilir.</p>
+            <div style={{ ...card, padding: 12, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <I.Alert size={14} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
+                <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6 }}>
+                    İhlal sayacı her gün otomatik sıfırlanır. Koruma konfigürasyonu bot'un
+                    {' '}<code style={{ background: A.bgDeeper, padding: '2px 5px', borderRadius: 2, color: A.text, fontFamily: A.mono }}>config.py</code>
+                    {' '}dosyasından yönetilir.
                 </div>
             </div>
-        </div>
+        </>
     );
 }
 
-// ── Webhook Bildirimleri ──────────────────────────────────────────────────────
+// ── Webhook ──────────────────────────────────────────────────────────────────
+
 const ALL_EVENTS = [
     { key: 'server_start',  label: 'Sunucu Başladı',  emoji: '🟢' },
     { key: 'server_stop',   label: 'Sunucu Durdu',    emoji: '🔴' },
@@ -959,22 +951,30 @@ const ALL_EVENTS = [
 function WebhookTab() {
     const qc = useQueryClient();
 
-    const { data: cfg } = useQuery({
+    const { data: cfg, isLoading } = useQuery({
         queryKey: ['webhook-config'],
         queryFn: () => api.get('/discord/webhook-config').then(r => r.data),
     });
 
     const [url, setUrl] = useState('');
     const [events, setEvents] = useState(ALL_EVENTS.map(e => e.key));
+    const [dirty, setDirty] = useState(false);
 
-    // Sync local state when config loads
-    useState(() => {
-        if (cfg) { setUrl(cfg.url || ''); setEvents(cfg.events || ALL_EVENTS.map(e => e.key)); }
+    // ✅ cfg yüklendiğinde local state'i senkronla (useEffect, useState değil!)
+    useEffect(() => {
+        if (!cfg) return;
+        setUrl(cfg.url || '');
+        setEvents(cfg.events && cfg.events.length > 0 ? cfg.events : ALL_EVENTS.map(e => e.key));
+        setDirty(false);
     }, [cfg]);
 
     const saveMutation = useMutation({
         mutationFn: () => api.put('/discord/webhook-config', { url, events }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhook-config'] }); toast.success('Webhook kaydedildi'); },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['webhook-config'] });
+            toast.success('Webhook kaydedildi');
+            setDirty(false);
+        },
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
@@ -985,72 +985,101 @@ function WebhookTab() {
     });
 
     const toggleEvent = (key) => {
+        setDirty(true);
         setEvents(prev => prev.includes(key) ? prev.filter(e => e !== key) : [...prev, key]);
     };
 
+    const isValidUrl = url.startsWith('https://discord.com/api/webhooks/') ||
+                       url.startsWith('https://discordapp.com/api/webhooks/');
+
     return (
-        <div className="space-y-4 fade-in">
-            <div className="glass-card p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                    <HiOutlineBell className="w-5 h-5 text-indigo-500" />
-                    <h2 className="font-semibold text-gray-900 dark:text-white">Discord Webhook Bildirimleri</h2>
+        <div style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <I.Send size={15} style={{ color: 'var(--accent)' }}/>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>Discord Webhook Bildirimleri</div>
+                    {cfg?.url && (
+                        <Pill color={A.ok} bg="rgba(74,222,128,0.10)" style={{ marginLeft: 'auto' }}>
+                            <Dot color={A.ok} size={5}/>BAĞLI
+                        </Pill>
+                    )}
                 </div>
-                <p className="text-sm text-gray-500">Seçtiğiniz olaylar gerçekleştiğinde bir Discord kanalına otomatik mesaj gönderir.</p>
+                <p style={{ fontSize: 11.5, color: A.dim, margin: 0 }}>
+                    Seçtiğiniz olaylar gerçekleştiğinde bir Discord kanalına otomatik mesaj gönderir.
+                </p>
+            </div>
 
-                <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Webhook URL</label>
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <HiOutlineLink className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="url"
-                                value={cfg ? (url || cfg.url || '') : ''}
-                                onChange={e => setUrl(e.target.value)}
-                                placeholder="https://discord.com/api/webhooks/..."
-                                className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                        </div>
-                        <button
-                            onClick={() => testMutation.mutate()}
-                            disabled={testMutation.isPending || !url}
-                            className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
-                        >
-                            {testMutation.isPending ? '...' : 'Test'}
-                        </button>
+            {/* URL */}
+            <div>
+                <Cap style={{ display: 'block', marginBottom: 6 }}>WEBHOOK URL</Cap>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                        type="url"
+                        value={url}
+                        onChange={e => { setUrl(e.target.value); setDirty(true); }}
+                        placeholder="https://discord.com/api/webhooks/..."
+                        style={{ ...inputStyle, flex: 1 }}
+                        disabled={isLoading}
+                    />
+                    <button onClick={() => testMutation.mutate()}
+                        disabled={testMutation.isPending || !cfg?.url || dirty}
+                        title={dirty ? 'Önce kaydet' : !cfg?.url ? 'URL kaydedilmemiş' : 'Test mesajı gönder'}
+                        style={{ ...btnGhost, opacity: (!cfg?.url || dirty) ? 0.5 : 1 }}>
+                        <I.Play size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                        {testMutation.isPending ? 'TEST...' : 'TEST'}
+                    </button>
+                </div>
+                {url && !isValidUrl && (
+                    <div style={{ fontSize: 11, color: A.warn, marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <I.Alert size={12}/>URL bir Discord webhook URL'si değil gibi görünüyor.
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">Discord kanalı → Entegrasyonlar → Webhook oluştur → URL kopyala</p>
-                </div>
+                )}
+                <p style={{ fontSize: 11, color: A.faint, margin: '6px 0 0' }}>
+                    Discord kanalı → Entegrasyonlar → Webhook oluştur → URL kopyala
+                </p>
+            </div>
 
-                <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Bildirim Olayları</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {ALL_EVENTS.map(evt => {
-                            const enabled = events.includes(evt.key);
-                            return (
-                                <button
-                                    key={evt.key}
-                                    onClick={() => toggleEvent(evt.key)}
-                                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left ${
-                                        enabled
-                                            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
-                                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500'
-                                    }`}
-                                >
-                                    <span className="text-base">{evt.emoji}</span>
-                                    <span className="flex-1">{evt.label}</span>
-                                    {enabled && <HiOutlineCheck className="w-4 h-4 flex-shrink-0" />}
-                                </button>
-                            );
-                        })}
-                    </div>
+            {/* Olay seçimi */}
+            <div>
+                <Cap style={{ display: 'block', marginBottom: 8 }}>BİLDİRİM OLAYLARI</Cap>
+                <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 6,
+                }}>
+                    {ALL_EVENTS.map(evt => {
+                        const enabled = events.includes(evt.key);
+                        return (
+                            <button key={evt.key} onClick={() => toggleEvent(evt.key)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    padding: '10px 12px', borderRadius: 4,
+                                    background: enabled ? 'rgba(167,139,250,0.08)' : A.bg,
+                                    border: `1px solid ${enabled ? 'rgba(167,139,250,0.35)' : A.border}`,
+                                    color: enabled ? A.text : A.faint,
+                                    fontSize: 12, cursor: 'pointer', textAlign: 'left',
+                                    fontFamily: A.sans, fontWeight: 500,
+                                    transition: 'all 120ms',
+                                }}>
+                                <span style={{ fontSize: 14 }}>{evt.emoji}</span>
+                                <span style={{ flex: 1 }}>{evt.label}</span>
+                                {enabled && <I.Check size={12} style={{ color: 'var(--accent)' }}/>}
+                            </button>
+                        );
+                    })}
                 </div>
+            </div>
 
-                <button
-                    onClick={() => saveMutation.mutate()}
-                    disabled={saveMutation.isPending}
-                    className="w-full py-2.5 rounded-xl text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 disabled:opacity-40"
-                >
-                    {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+            {/* Kaydet */}
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', borderTop: `1px solid ${A.border}`, paddingTop: 14 }}>
+                {dirty && (
+                    <span style={{ fontSize: 11, color: A.warn, marginRight: 'auto' }}>
+                        ● Kaydedilmemiş değişiklikler var
+                    </span>
+                )}
+                <button onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending || !dirty}
+                    style={{ ...btnPrimary, opacity: !dirty ? 0.5 : 1 }}>
+                    <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
+                    {saveMutation.isPending ? 'KAYDET...' : 'KAYDET'}
                 </button>
             </div>
         </div>

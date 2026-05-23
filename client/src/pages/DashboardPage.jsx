@@ -7,8 +7,7 @@ import { A, btnGhost, btnPrimary } from '@/hodo/tokens';
 import { Dot, Pill, Card } from '@/hodo/primitives';
 import { I } from '@/hodo/icons';
 import { WidgetGrid } from '@/components/Dashboard/WidgetGrid';
-import { useWidgetLayout } from '@/components/Dashboard/useWidgetLayout';
-import { WIDGET_LABELS } from '@/components/Dashboard/widgetMap';
+import { DEFAULT_LAYOUT } from '@/components/Dashboard/defaultLayout';
 
 // ─── Live series (CPU/RAM 60 örnek halka tampon) ─────────────────────────
 function useLiveSeries() {
@@ -28,20 +27,14 @@ function useLiveSeries() {
         if (!def) return;
         const cpu = def.processStats?.cpuPercent || 0;
         const ramMB = def.processStats?.memoryMB || 0;
-        const maxRamGB = parseRamGBLocal(def.max_ram) || 8;
+        // Backend'in hesapladığı etkin maxRamGB
+        const maxRamGB = def.maxRamGB || 4;
         const ram = Math.min(100, (ramMB / (maxRamGB * 1024)) * 100);
         setSeries(prev => [...prev.slice(1), { cpu, ram }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [serversData]);
 
     return { servers, series };
-}
-
-function parseRamGBLocal(str) {
-    if (!str) return 0;
-    const m = String(str).match(/^(\d+)([GgMm])$/);
-    if (!m) return 0;
-    return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
 }
 
 // ─── Sunucu sekmesi ──────────────────────────────────────────────────────
@@ -115,14 +108,8 @@ export default function DashboardPage() {
     const qc = useQueryClient();
     const { servers, series } = useLiveSeries();
     const [selectedServerId, setSelectedServerId] = useState(null);
-    const {
-        layout, setLayout,
-        editMode, toggleEditMode,
-        loading,
-        save, cancel, reset,
-        deleteWidget, addWidget,
-        hiddenWidgets,
-    } = useWidgetLayout();
+    // Widget düzenleme modu kaldırıldı — widget'lar sabit düzendedir.
+    const layout = DEFAULT_LAYOUT;
 
     const { data: installedData } = useQuery({
         queryKey: ['modpacks-installed'],
@@ -173,68 +160,16 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderLeft: `1px solid ${A.border}`, flexShrink: 0 }}>
                     <ServerControls server={selectedServer} onStatusChange={onStatusChange}/>
-                    <button onClick={toggleEditMode} style={{
-                        ...btnGhost, fontSize: 10,
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        flexShrink: 0,
-                        borderColor: editMode ? 'var(--accent)' : A.borderHi,
-                        color: editMode ? 'var(--accent)' : A.text,
-                        background: editMode ? 'rgba(167,139,250,0.08)' : A.panel,
-                    }}>
-                        <I.Cog size={11}/>{editMode ? 'DÜZENLEME' : 'DÜZENLE'}
-                    </button>
                 </div>
             </div>
 
-            {/* ── Edit modu araç çubuğu ── */}
-            {editMode && (
-                <div style={{
-                    background: 'rgba(167,139,250,0.06)',
-                    border: '1px solid rgba(167,139,250,0.2)',
-                    borderRadius: 4, padding: '10px 16px',
-                    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-                }}>
-                    <span style={{ fontSize: 12, color: A.dim, flex: 1, minWidth: 120 }}>
-                        Widget'ları sürükle-bırak ile taşı, köşeden boyutlandır
-                    </span>
-                    {hiddenWidgets.length > 0 && hiddenWidgets.map(w => (
-                        <button key={w.i} onClick={() => addWidget(w.i)}
-                            style={{ ...btnGhost, fontSize: 10 }}>
-                            + {WIDGET_LABELS[w.i] || w.i}
-                        </button>
-                    ))}
-                    <button
-                        onClick={async () => {
-                            try { await reset(); toast.success('Yerleşim sıfırlandı'); }
-                            catch { toast.error('Sıfırlama başarısız'); }
-                        }}
-                        style={{ ...btnGhost, fontSize: 10 }}>
-                        Sıfırla
-                    </button>
-                    <button onClick={cancel} style={{ ...btnGhost, fontSize: 10 }}>İptal</button>
-                    <button
-                        onClick={async () => {
-                            try { await save(); toast.success('Yerleşim kaydedildi'); }
-                            catch { toast.error('Kaydetme başarısız'); }
-                        }}
-                        style={{ ...btnPrimary, fontSize: 10 }}>
-                        Kaydet
-                    </button>
-                </div>
-            )}
-
-            {/* ── Widget grid ── */}
-            {!loading && (
-                <WidgetGrid
-                    server={selectedServer}
-                    series={series}
-                    installedModpacks={installedModpacks}
-                    layout={layout}
-                    editMode={editMode}
-                    onLayoutChange={setLayout}
-                    onDeleteWidget={deleteWidget}
-                />
-            )}
+            {/* ── Widget grid (sabit düzen) ── */}
+            <WidgetGrid
+                server={selectedServer}
+                series={series}
+                installedModpacks={installedModpacks}
+                layout={layout}
+            />
         </div>
     );
 }

@@ -11,20 +11,6 @@ import { OnlinePlayersWidget } from './widgets/OnlinePlayersWidget';
 import { ActiveProfileWidget } from './widgets/ActiveProfileWidget';
 import { QuickActionsWidget } from './widgets/QuickActionsWidget';
 
-export const WIDGET_LABELS = {
-    'cpu-kpi':        'CPU',
-    'ram-kpi':        'RAM',
-    'players-kpi':    'Oyuncular',
-    'status-kpi':     'Durum',
-    'uptime-kpi':     'Uptime',
-    'profile-kpi':    'Profil',
-    'resource-chart': 'Kaynak Grafiği',
-    'server-info':    'Sunucu Bilgisi',
-    'online-players': 'Online Oyuncular',
-    'active-profile': 'Aktif Profil',
-    'quick-actions':  'Hızlı İşlemler',
-};
-
 export const WIDGET_MAP = {
     'cpu-kpi':        CpuKpi,
     'ram-kpi':        RamKpi,

@@ -85,12 +85,11 @@ function RecommendationPanel({ rec }) {
 
 // ── Sunucu Ekle/Düzenle Modalı ───────────────────────────────────────────────
 function ServerModal({ initial, onClose, onSaved }) {
+    // NOT: RAM artık modpack veya jvm_args üzerinden ayarlanır; sunucu başına alan yok.
     const [form, setForm] = useState({
         name:     initial?.name     || '',
         path:     initial?.path     || '',
         port:     initial?.port     || 25565,
-        min_ram:  initial?.min_ram  || '2G',
-        max_ram:  initial?.max_ram  || '4G',
         jvm_args: initial?.jvm_args || '',
     });
     const [saving, setSaving] = useState(false);
@@ -314,8 +313,12 @@ export default function ServersPage() {
                                 <p className="font-mono truncate" title={server.path}>{server.path}</p>
                                 <p>
                                     Port: <span className="font-medium text-gray-700 dark:text-gray-300">{server.port}</span>
-                                    &nbsp;·&nbsp;
-                                    RAM: <span className="font-medium text-gray-700 dark:text-gray-300">{server.min_ram} – {server.max_ram}</span>
+                                    {server.maxRamGB && (
+                                        <>
+                                            &nbsp;·&nbsp;
+                                            RAM: <span className="font-medium text-gray-700 dark:text-gray-300">{server.maxRamGB} GB</span>
+                                        </>
+                                    )}
                                 </p>
                                 <p className="text-gray-400">Screen: knozy-mc{server.id}</p>
                             </div>

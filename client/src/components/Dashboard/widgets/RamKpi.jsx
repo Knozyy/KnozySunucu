@@ -1,10 +1,10 @@
 // client/src/components/Dashboard/widgets/RamKpi.jsx
 import { KPI } from '@/hodo/primitives';
-import { parseRamGB } from '@/utils/formatters';
 
 export function RamKpi({ server, series }) {
     const ramMB = server?.processStats?.memoryMB || 0;
-    const maxRamGB = parseRamGB(server?.max_ram) || 8;
+    // Backend artık etkin -Xmx değerini GB cinsinden döndürüyor (modpack veya jvm_args'tan)
+    const maxRamGB = server?.maxRamGB || 4;
     const ramGB = ramMB / 1024;
     const ramPct = maxRamGB > 0 ? Math.min(100, (ramGB / maxRamGB) * 100) : 0;
     const ramVals = (series || []).map(s => s.ram);

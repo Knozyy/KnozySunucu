@@ -396,7 +396,49 @@ class MinecraftService extends EventEmitter {
             playerCount: this.players.length,
             pid: this._javaPid || (this.process ? this.process.pid : null),
             processStats: this.processStats,
+            maxRamGB: this.getEffectiveMaxRamGB(),
         };
+    }
+
+    /**
+     * Sunucuda etkin -Xmx değerini GB cinsinden döner.
+     * Öncelik: server.jvm_args (-Xmx) → modpack.jvm_args → modpack.max_ram → env → 4
+     */
+    getEffectiveMaxRamGB() {
+        const parseXmx = (str) => {
+            if (!str) return 0;
+            const m = String(str).match(/-Xmx(\d+)([GgMm])/);
+            if (!m) return 0;
+            return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+        };
+        const parseRam = (str) => {
+            if (!str) return 0;
+            const m = String(str).match(/^(\d+)([GgMm])$/);
+            if (!m) return 0;
+            return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+        };
+        try {
+            // 1) Sunucunun kendi jvm_args'ı varsa -Xmx'i oradan çıkar
+            const xFromServer = parseXmx(this._serverConfig?.jvm_args);
+            if (xFromServer) return xFromServer;
+            // 2) Aktif modpack
+            const db = getDb();
+            const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+            if (srv?.active_modpack_id) {
+                const pack = db.prepare('SELECT jvm_args, max_ram FROM installed_modpacks WHERE id = ?')
+                    .get(srv.active_modpack_id);
+                const xFromPack = parseXmx(pack?.jvm_args) || parseRam(pack?.max_ram);
+                if (xFromPack) return xFromPack;
+            }
+            // 3) Genel fallback
+            const globalPack = db.prepare('SELECT jvm_args, max_ram FROM installed_modpacks WHERE is_active = 1 LIMIT 1').get();
+            const xGlobal = parseXmx(globalPack?.jvm_args) || parseRam(globalPack?.max_ram);
+            if (xGlobal) return xGlobal;
+        } catch { /* ignore */ }
+        // 4) Env
+        const envMax = parseRam(process.env.MINECRAFT_MAX_RAM);
+        if (envMax) return envMax;
+        return 4;
     }
 
     // ── start() ──────────────────────────────────────────────────────────────
@@ -423,10 +465,17 @@ class MinecraftService extends EventEmitter {
                     : `bash "${scriptInfo.scriptPath}"`;
             } else {
                 const db = getDb();
-                const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
-                // Önce instance config, sonra modpack, sonra env
-                const maxRam  = this._serverConfig?.max_ram  || (pack && pack.max_ram)  || process.env.MINECRAFT_MAX_RAM || '4G';
-                const minRam  = this._serverConfig?.min_ram  || (pack && pack.min_ram)  || process.env.MINECRAFT_MIN_RAM || '2G';
+                // RAM/JVM tamamen modpack veya env'den okunur (sunucuya özel RAM kaldırıldı)
+                let pack = null;
+                try {
+                    const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+                    if (srv?.active_modpack_id) {
+                        pack = db.prepare('SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
+                    }
+                    if (!pack) pack = db.prepare("SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+                } catch { /* ignore */ }
+                const maxRam  = (pack && pack.max_ram)  || process.env.MINECRAFT_MAX_RAM || '4G';
+                const minRam  = (pack && pack.min_ram)  || process.env.MINECRAFT_MIN_RAM || '2G';
                 const jvmArgs = this._serverConfig?.jvm_args || (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
                 const jvmStr = jvmArgs || `-Xmx${maxRam} -Xms${minRam}`;
                 // CPU flag dışarıdan enjekte edilebilir (ServerManager tarafından)
@@ -480,10 +529,17 @@ class MinecraftService extends EventEmitter {
                 this.addLog(`[System] Script ile başlatılıyor: ${scriptInfo.script}`);
             } else {
                 const db = getDb();
-                const pack = db.prepare("SELECT min_ram, max_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+                let pack = null;
+                try {
+                    const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+                    if (srv?.active_modpack_id) {
+                        pack = db.prepare('SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
+                    }
+                    if (!pack) pack = db.prepare("SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+                } catch { /* ignore */ }
                 const maxRam = (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G';
                 const minRam = (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G';
-                const jvmArgs = (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
+                const jvmArgs = this._serverConfig?.jvm_args || (pack && pack.jvm_args) || process.env.JVM_ARGS || '';
                 cmd = 'java'; args = [];
                 if (jvmArgs) { args.push(...jvmArgs.split(' ').filter(a => a)); }
                 else { args.push(`-Xmx${maxRam}`, `-Xms${minRam}`); }
