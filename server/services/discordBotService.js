@@ -1,9 +1,12 @@
 const { execSync } = require('child_process');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
 
 const SCREEN_NAME = 'knozy-discord';
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 gün
+const DISCORD_API = 'https://discord.com/api/v10';
 
 class DiscordBotService {
     getBotDir() {
@@ -249,6 +252,143 @@ class DiscordBotService {
             dirExists: botDir ? fs.existsSync(botDir) : false,
             lastLog: this.getRecentLog(5),
         };
+    }
+
+    // ── Discord token bulma (bot dizininden) ──────────────────────────────────
+
+    /**
+     * Bot dizinindeki tipik konfig dosyalarından Discord bot token'ını çıkar.
+     * Sıra: env (DISCORD_TOKEN/DISCORD_BOT_TOKEN) → {botDir}/.env →
+     *       {botDir}/config.json → {botDir}/config.py
+     */
+    getDiscordToken() {
+        if (process.env.DISCORD_TOKEN)     return process.env.DISCORD_TOKEN.trim();
+        if (process.env.DISCORD_BOT_TOKEN) return process.env.DISCORD_BOT_TOKEN.trim();
+
+        const dir = this.getBotDir();
+        if (!dir) return null;
+
+        // .env
+        try {
+            const envPath = path.join(dir, '.env');
+            if (fs.existsSync(envPath)) {
+                const content = fs.readFileSync(envPath, 'utf-8');
+                const m = content.match(/^(?:DISCORD_TOKEN|DISCORD_BOT_TOKEN|BOT_TOKEN|TOKEN)\s*=\s*["']?([^"'\r\n]+)["']?/m);
+                if (m) return m[1].trim();
+            }
+        } catch { /* ignore */ }
+
+        // config.json
+        try {
+            const jsonPath = path.join(dir, 'config.json');
+            if (fs.existsSync(jsonPath)) {
+                const cfg = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+                const t = cfg.token || cfg.bot_token || cfg.discord_token || cfg.DISCORD_TOKEN;
+                if (t) return String(t).trim();
+            }
+        } catch { /* ignore */ }
+
+        // config.py (Python bot)
+        try {
+            const pyPath = path.join(dir, 'config.py');
+            if (fs.existsSync(pyPath)) {
+                const content = fs.readFileSync(pyPath, 'utf-8');
+                const m = content.match(/^(?:DISCORD_TOKEN|BOT_TOKEN|TOKEN)\s*=\s*["']([^"']+)["']/m);
+                if (m) return m[1].trim();
+            }
+        } catch { /* ignore */ }
+
+        return null;
+    }
+
+    // ── Kullanıcı cache ───────────────────────────────────────────────────────
+
+    /**
+     * Cache'den kullanıcı bilgilerini oku. Eksik veya stale olanları Discord API'den çek.
+     * @param {string[]} userIds
+     * @returns {Promise<Object<string,{username, global_name, avatar}>>}
+     */
+    async resolveDiscordUsers(userIds) {
+        if (!userIds || userIds.length === 0) return {};
+        const db = getDb();
+        const now = Date.now();
+        const result = {};
+        const stale = [];
+
+        const placeholders = userIds.map(() => '?').join(',');
+        const cached = db.prepare(
+            `SELECT user_id, username, global_name, avatar, fetched_at FROM discord_user_cache WHERE user_id IN (${placeholders})`
+        ).all(...userIds);
+
+        const cachedMap = new Map(cached.map(r => [r.user_id, r]));
+
+        for (const id of userIds) {
+            const row = cachedMap.get(id);
+            if (row && (now - row.fetched_at) < CACHE_TTL_MS) {
+                result[id] = { username: row.username, global_name: row.global_name, avatar: row.avatar };
+            } else {
+                stale.push(id);
+                // Eski veri varsa yine de dön
+                if (row) result[id] = { username: row.username, global_name: row.global_name, avatar: row.avatar };
+            }
+        }
+
+        if (stale.length === 0) return result;
+
+        const token = this.getDiscordToken();
+        if (!token) return result; // Token yoksa cache neyi varsa onu döner
+
+        // Paralel fetch (concurrency=5, Discord rate limit dostluğu için)
+        const upsert = db.prepare(`
+            INSERT INTO discord_user_cache (user_id, username, global_name, avatar, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              username = excluded.username,
+              global_name = excluded.global_name,
+              avatar = excluded.avatar,
+              fetched_at = excluded.fetched_at
+        `);
+
+        const fetchOne = (id) => new Promise((resolve) => {
+            const opts = {
+                hostname: 'discord.com',
+                path: `/api/v10/users/${id}`,
+                method: 'GET',
+                headers: { 'Authorization': `Bot ${token}`, 'User-Agent': 'KnozyPanel (1.0)' },
+            };
+            const req = https.request(opts, (res) => {
+                let data = '';
+                res.on('data', c => { data += c; });
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        try {
+                            const u = JSON.parse(data);
+                            const username = u.username || null;
+                            const global_name = u.global_name || u.username || null;
+                            const avatar = u.avatar || null;
+                            upsert.run(id, username, global_name, avatar, Date.now());
+                            result[id] = { username, global_name, avatar };
+                        } catch { /* ignore */ }
+                    } else if (res.statusCode === 404) {
+                        // Kullanıcı silinmiş; "Silinmiş Kullanıcı" diye cache'le ki tekrar denemeyelim
+                        upsert.run(id, null, '(Silinmiş Kullanıcı)', null, Date.now());
+                        result[id] = { username: null, global_name: '(Silinmiş Kullanıcı)', avatar: null };
+                    }
+                    // 429/5xx → cache yazma, sonraki sefer dener
+                    resolve();
+                });
+            });
+            req.on('error', () => resolve());
+            req.setTimeout(5000, () => { req.destroy(); resolve(); });
+            req.end();
+        });
+
+        const concurrency = 5;
+        for (let i = 0; i < stale.length; i += concurrency) {
+            await Promise.all(stale.slice(i, i + concurrency).map(fetchOne));
+        }
+
+        return result;
     }
 
     // ── Status summary ────────────────────────────────────────────────────────

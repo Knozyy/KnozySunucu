@@ -148,6 +148,14 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS discord_user_cache (
+      user_id      TEXT PRIMARY KEY,
+      username     TEXT,
+      global_name  TEXT,
+      avatar       TEXT,
+      fetched_at   INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS servers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

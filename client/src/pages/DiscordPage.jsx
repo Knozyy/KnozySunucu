@@ -342,7 +342,12 @@ export default function DiscordPage() {
         const entries = wlData?.entries || [];
         if (!wlSearch.trim()) return entries;
         const q = wlSearch.toLowerCase();
-        return entries.filter(e => e.mcNick.toLowerCase().includes(q) || e.userId.includes(q));
+        return entries.filter(e =>
+            e.mcNick.toLowerCase().includes(q) ||
+            e.userId.includes(q) ||
+            (e.discordName || '').toLowerCase().includes(q) ||
+            (e.username || '').toLowerCase().includes(q)
+        );
     }, [wlData, wlSearch]);
 
     const now = Math.floor(Date.now() / 1000);
@@ -544,7 +549,7 @@ export default function DiscordPage() {
                             position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: A.faint,
                         }}/>
                         <input type="text" value={wlSearch} onChange={e => setWlSearch(e.target.value)}
-                            placeholder="Nick veya Discord ID ile ara..."
+                            placeholder="Minecraft nick, Discord ismi veya ID ile ara..."
                             style={{ ...inputStyle, paddingLeft: 32, fontFamily: A.sans }}/>
                     </div>
 
@@ -565,33 +570,51 @@ export default function DiscordPage() {
                                 </p>
                             </div>
                         ) : (
-                            filteredEntries.map((e, i) => (
-                                <Row key={e.userId} last={i === filteredEntries.length - 1}>
-                                    <div style={{
-                                        width: 32, height: 32, borderRadius: 4,
-                                        background: 'rgba(167,139,250,0.10)',
-                                        border: '1px solid rgba(167,139,250,0.20)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        color: 'var(--accent)', fontSize: 12, fontWeight: 700,
-                                        fontFamily: A.mono, flexShrink: 0,
-                                    }}>{e.mcNick[0].toUpperCase()}</div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>{e.mcNick}</div>
-                                        <div style={{ fontSize: 10.5, color: A.faint, fontFamily: A.mono, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {e.userId}
-                                            <button onClick={() => { navigator.clipboard.writeText(e.userId); toast.success('Kopyalandı'); }}
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: A.faint, display: 'inline-flex' }}
-                                                title="ID Kopyala">
-                                                <I.ArrowUpRight size={10}/>
-                                            </button>
+                            filteredEntries.map((e, i) => {
+                                // Discord ismi yoksa (bot token bulunamadıysa) fallback olarak ID göster
+                                const discordLine = e.discordName || e.username || `Discord ID: ${e.userId}`;
+                                const discordKnown = !!(e.discordName || e.username);
+                                return (
+                                    <Row key={e.userId} last={i === filteredEntries.length - 1}>
+                                        <div style={{
+                                            width: 32, height: 32, borderRadius: 4,
+                                            background: 'rgba(167,139,250,0.10)',
+                                            border: '1px solid rgba(167,139,250,0.20)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'var(--accent)', fontSize: 12, fontWeight: 700,
+                                            fontFamily: A.mono, flexShrink: 0,
+                                        }}>{e.mcNick[0].toUpperCase()}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            {/* 1. satır: Minecraft ismi */}
+                                            <div style={{
+                                                fontSize: 13, fontWeight: 600, color: A.text,
+                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                            }}>{e.mcNick}</div>
+                                            {/* 2. satır: Discord ismi (ID değil) */}
+                                            <div style={{
+                                                fontSize: 11, color: discordKnown ? A.dim : A.faint,
+                                                fontFamily: discordKnown ? A.sans : A.mono,
+                                                marginTop: 2, display: 'flex', alignItems: 'center', gap: 6,
+                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                            }} title={`Discord ID: ${e.userId}`}>
+                                                {discordKnown && <I.Chat size={10} style={{ color: '#5865f2', flexShrink: 0 }}/>}
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {discordLine}
+                                                </span>
+                                                <button onClick={() => { navigator.clipboard.writeText(e.userId); toast.success('ID kopyalandı'); }}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: A.faint, display: 'inline-flex', flexShrink: 0 }}
+                                                    title={`Discord ID: ${e.userId} (kopyalamak için tıkla)`}>
+                                                    <I.ArrowUpRight size={10}/>
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <button onClick={() => { if (confirm(`${e.mcNick} çıkarılacak. Emin misin?`)) delWlMutation.mutate(e.userId); }}
-                                        style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
-                                        <I.Trash size={11}/>
-                                    </button>
-                                </Row>
-                            ))
+                                        <button onClick={() => { if (confirm(`${e.mcNick} çıkarılacak. Emin misin?`)) delWlMutation.mutate(e.userId); }}
+                                            style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
+                                            <I.Trash size={11}/>
+                                        </button>
+                                    </Row>
+                                );
+                            })
                         )}
                     </div>
                 </>

@@ -60,10 +60,24 @@ router.get('/logs', authMiddleware, (req, res) => {
 // ── Whitelist ─────────────────────────────────────────────────────────────────
 
 // GET /api/discord/whitelist
-router.get('/whitelist', authMiddleware, (req, res) => {
+router.get('/whitelist', authMiddleware, async (req, res) => {
     try {
         const data = discordBotService.getWhitelist();
-        const entries = Object.entries(data).map(([userId, mcNick]) => ({ userId, mcNick }));
+        const userIds = Object.keys(data);
+        let users = {};
+        try {
+            users = await discordBotService.resolveDiscordUsers(userIds);
+        } catch { /* token yoksa veya hata olursa boş döner */ }
+        const entries = userIds.map(userId => {
+            const info = users[userId];
+            return {
+                userId,
+                mcNick:      data[userId],
+                discordName: info?.global_name || info?.username || null,
+                username:    info?.username || null,
+                avatar:      info?.avatar || null,
+            };
+        });
         res.json({ entries, total: entries.length });
     } catch (e) {
         res.status(500).json({ error: e.message });
