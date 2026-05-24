@@ -43,6 +43,23 @@ class ServerRegistry {
             };
             process.once('SIGTERM', gracefulShutdown);
             process.once('SIGINT',  gracefulShutdown);
+
+            // Player History Recorder (her 30 saniyede bir)
+            setInterval(() => {
+                try {
+                    const discordBotService = require('./discordBotService');
+                    // Çalışan tüm sunucuların oyuncu sayılarını topla
+                    let totalPlayers = 0;
+                    const statuses = this.getAllStatus();
+                    for (const s of statuses) {
+                        if (s.status === 'running') {
+                            totalPlayers += (s.playerCount || 0);
+                        }
+                    }
+                    discordBotService.addPlayerHistoryRecord(totalPlayers);
+                } catch { /* ignore */ }
+            }, 30000);
+
         } catch (err) {
             console.error('[ServerRegistry] init hatası:', err.message);
         }

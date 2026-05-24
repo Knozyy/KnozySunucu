@@ -274,6 +274,12 @@ export default function DiscordPage() {
         enabled: activeTab === 'graph',
     });
 
+    const { data: mcStatus } = useQuery({
+        queryKey: ['minecraft-status'],
+        queryFn: () => api.get('/minecraft/status?serverId=1').then(r => r.data).catch(() => null),
+        refetchInterval: 10000,
+    });
+
     // ── Mutations ─────────────────────────────────────────────────────────────
 
     const startMutation = useMutation({
@@ -494,6 +500,43 @@ export default function DiscordPage() {
                 )}
             </div>
 
+            {/* ── Aktif Oyuncular (Minecraft) ── */}
+            <div style={{ ...card, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
+                    <div style={{
+                        width: 32, height: 32, borderRadius: '50%', background: 'rgba(22, 163, 74, 0.1)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16A34A'
+                    }}>
+                        <I.Users size={16}/>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>Aktif Minecraft Oyuncuları</div>
+                        <div style={{ fontSize: 11, color: A.faint }}>
+                            {mcStatus?.status === 'running' ? `${mcStatus?.players?.length || 0} / ${mcStatus?.maxPlayers || 20} Oyuncu` : 'Sunucu Kapalı'}
+                        </div>
+                    </div>
+                </div>
+                
+                <div style={{ flex: 1, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {mcStatus?.status === 'running' ? (
+                        mcStatus?.players?.length > 0 ? (
+                            mcStatus.players.map(p => (
+                                <div key={p} style={{
+                                    padding: '4px 10px', background: A.bg, border: `1px solid ${A.border}`,
+                                    borderRadius: 99, fontSize: 11, fontWeight: 500, fontFamily: A.mono
+                                }}>
+                                    {p}
+                                </div>
+                            ))
+                        ) : (
+                            <div style={{ fontSize: 11, color: A.faint }}>Şu an sunucuda kimse yok.</div>
+                        )
+                    ) : (
+                        <div style={{ fontSize: 11, color: A.faint }}>Sunucu kapalı olduğu için oyuncu listesi yok.</div>
+                    )}
+                </div>
+            </div>
+
             {/* ── Sekmeler ── */}
             <div style={{
                 display: 'flex', gap: 4, flexWrap: 'wrap',
@@ -669,8 +712,28 @@ export default function DiscordPage() {
 function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, now, addRoleMutation, delRoleMutation }) {
     const [form, setForm] = useState({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' });
     const [showForm, setShowForm] = useState(false);
+    
+    // Geçmişte kullanılan sunucu/rol ID'leri
+    const [recentGuilds, setRecentGuilds] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('knozy_recent_guilds')) || []; } catch { return []; }
+    });
+    const [recentRoles, setRecentRoles] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('knozy_recent_roles')) || []; } catch { return []; }
+    });
 
     const handleAdd = () => {
+        // Storage'a kaydet (en son eklenen en üstte, maks 5 guild, 10 rol)
+        if (form.guild_id) {
+            const newGuilds = [...new Set([form.guild_id, ...recentGuilds])].slice(0, 5);
+            setRecentGuilds(newGuilds);
+            localStorage.setItem('knozy_recent_guilds', JSON.stringify(newGuilds));
+        }
+        if (form.role_id) {
+            const newRoles = [...new Set([form.role_id, ...recentRoles])].slice(0, 10);
+            setRecentRoles(newRoles);
+            localStorage.setItem('knozy_recent_roles', JSON.stringify(newRoles));
+        }
+
         addRoleMutation.mutate(form, {
             onSuccess: () => { setForm({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' }); setShowForm(false); },
         });
@@ -697,12 +760,18 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                         <div>
                             <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Sunucu (Guild) ID</div>
                             <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}
-                                style={inputStyle} placeholder="987654321..."/>
+                                style={inputStyle} placeholder="987654321..." list="recent-guilds-list" autoComplete="off"/>
+                            <datalist id="recent-guilds-list">
+                                {recentGuilds.map(id => <option key={id} value={id}/>)}
+                            </datalist>
                         </div>
                         <div>
                             <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Rol ID</div>
                             <input value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}
-                                style={inputStyle} placeholder="111222333..."/>
+                                style={inputStyle} placeholder="111222333..." list="recent-roles-list" autoComplete="off"/>
+                            <datalist id="recent-roles-list">
+                                {recentRoles.map(id => <option key={id} value={id}/>)}
+                            </datalist>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                             <div style={{ flex: 1 }}>

@@ -207,6 +207,20 @@ class DiscordBotService {
     getPlayerHistory() {
         return this._readJson('player_history.json', []);
     }
+    
+    addPlayerHistoryRecord(count) {
+        // Eğer bot dizini seçilmediyse veya hata varsa çökmemesi için try/catch
+        try {
+            if (!this.getBotDir()) return;
+            const data = this.getPlayerHistory();
+            data.push({ timestamp: Date.now(), players: count });
+            // Maksimum 2880 kayıt (24 saat @ 30 saniye)
+            if (data.length > 2880) data.splice(0, data.length - 2880);
+            this._writeJson('player_history.json', data);
+        } catch (e) {
+            // Sessizce yoksay
+        }
+    }
 
     // ── Bot Settings (Node.js bot için) ──────────────────────────────────────
 
