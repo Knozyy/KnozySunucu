@@ -14,7 +14,21 @@ class DiscordBotService {
         try {
             const db = getDb();
             const row = db.prepare("SELECT value FROM app_settings WHERE key = 'discord_bot_dir'").get();
-            return row?.value || null;
+            if (row && row.value) return row.value;
+            
+            // Auto detect
+            const possiblePaths = [
+                '/root/Knozy/KnozyBot',
+                path.resolve(__dirname, '../../../KnozyBot'),
+                path.resolve(__dirname, '../../../Knozy/KnozyBot')
+            ];
+            for (const p of possiblePaths) {
+                if (fs.existsSync(p)) {
+                    this.setBotDir(p);
+                    return p;
+                }
+            }
+            return null;
         } catch { return null; }
     }
 

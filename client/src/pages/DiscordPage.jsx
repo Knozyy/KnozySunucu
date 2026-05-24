@@ -299,7 +299,10 @@ export default function DiscordPage() {
     });
     const botSettingsMutation = useMutation({
         mutationFn: (settings) => api.put('/discord/bot-settings', settings),
-        onSuccess: () => toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.'),
+        onSuccess: () => {
+            toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.');
+            queryClient.invalidateQueries({ queryKey: ['bot-settings'] });
+        },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
     const addWlMutation = useMutation({
