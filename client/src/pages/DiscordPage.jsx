@@ -368,9 +368,9 @@ export default function DiscordPage() {
         { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
         { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
         { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
-        { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
         { key: 'graph',           label: 'Oyuncu Grafiği',   icon: I.ArrowUpRight },
         { key: 'webhook',         label: 'Webhook',          icon: I.Send },
+        { key: 'settings',        label: 'Ayarlar (Bot Yetki & Kanallar)', icon: I.Cog },
     ];
 
     return (
@@ -667,7 +667,8 @@ export default function DiscordPage() {
             {activeTab === 'timed-roles' && (
                 <TimedRolesTab rolesLoading={rolesLoading} timedRoles={timedRoles}
                     activeRoles={activeRoles} expiredRoles={expiredRoles} now={now}
-                    addRoleMutation={addRoleMutation} delRoleMutation={delRoleMutation}/>
+                    addRoleMutation={addRoleMutation} delRoleMutation={delRoleMutation}
+                    botSettings={botSettings} botSettingsMutation={botSettingsMutation} />
             )}
 
             {/* ══ RCON Kuyruğu ══ */}
@@ -703,37 +704,149 @@ export default function DiscordPage() {
 
             {/* ══ Webhook ══ */}
             {activeTab === 'webhook' && <WebhookTab/>}
+
+            {/* ══ Ayarlar ══ */}
+            {activeTab === 'settings' && <SettingsTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
+        </div>
+    );
+}
+
+// ── Ayarlar Sekmesi ──────────────────────────────────────────────────────────
+
+function SettingsTab({ botSettings, botSettingsMutation }) {
+    const [form, setForm] = useState({
+        adminRoleIds: [],
+        whitelistRoleIds: [],
+        whitelistAddRoleIds: [],
+        dashboard_channel_id: '',
+        whitelist_channel_id: ''
+    });
+
+    useEffect(() => {
+        if (botSettings) {
+            setForm({
+                adminRoleIds: botSettings.adminRoleIds || [],
+                whitelistRoleIds: botSettings.whitelistRoleIds || [],
+                whitelistAddRoleIds: botSettings.whitelistAddRoleIds || [],
+                dashboard_channel_id: botSettings.dashboard_channel_id || '',
+                whitelist_channel_id: botSettings.whitelist_channel_id || ''
+            });
+        }
+    }, [botSettings]);
+
+    const handleChange = (key, value) => setForm(f => ({ ...f, [key]: value }));
+    const handleArrayChange = (key, value) => {
+        const arr = value.split(',').map(s => s.trim()).filter(Boolean);
+        setForm(f => ({ ...f, [key]: arr }));
+    };
+
+    const handleSave = () => {
+        botSettingsMutation.mutate(form);
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ ...card, padding: 20 }}>
+                <Cap style={{ display: 'block', marginBottom: 16 }}>Bot Yetki & Rol Ayarları</Cap>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Admin Rolleri (ID'leri virgülle ayırın)</div>
+                        <input type="text" value={form.adminRoleIds.join(', ')} 
+                            onChange={e => handleArrayChange('adminRoleIds', e.target.value)} 
+                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu rollere sahip kişiler botun tüm admin özelliklerine erişebilir.</div>
+                    </div>
+                    
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Görüntüleme Rolleri</div>
+                        <input type="text" value={form.whitelistRoleIds.join(', ')} 
+                            onChange={e => handleArrayChange('whitelistRoleIds', e.target.value)} 
+                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olanlar sadece whitelist listesini görüntüleyebilir.</div>
+                    </div>
+                    
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Ekleme Rolleri</div>
+                        <input type="text" value={form.whitelistAddRoleIds.join(', ')} 
+                            onChange={e => handleArrayChange('whitelistAddRoleIds', e.target.value)} 
+                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olanlar whitelist'e yeni kullanıcı ekleyebilir.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ ...card, padding: 20 }}>
+                <Cap style={{ display: 'block', marginBottom: 16 }}>Kanal Ayarları</Cap>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Dashboard Kanalı ID</div>
+                        <input type="text" value={form.dashboard_channel_id} 
+                            onChange={e => handleChange('dashboard_channel_id', e.target.value)} 
+                            placeholder="Örn: 981273918237" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!dashboard_kur #kanal" komutunun yerine geçer. Bot, online oyuncu istatistiklerini bu kanalda sürekli günceller.</div>
+                    </div>
+                    
+                            placeholder="Örn: 123456789" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!whitelist kanal #kanal" komutunun yerine geçer. Whitelist kayıt işlemleri bu kanalda bildirilir.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ ...card, padding: 20 }}>
+                <Cap style={{ display: 'block', marginBottom: 16 }}>Admin İşlemleri (Panel'den Tetikle)</Cap>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button style={{ ...btnGhost, color: A.ok, borderColor: 'rgba(22, 163, 74, 0.3)' }} onClick={() => {
+                        api.post('/discord/rcon-queue', { command: 'whitelist list' });
+                        toast.success('Minecraft sunucusundan whitelist listesi istendi. Bot eşitlemeyi yapacak.');
+                    }}>
+                        <I.Refresh size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (Tetikle)
+                    </button>
+                </div>
+                <div style={{ fontSize: 11, color: A.faint, marginTop: 8 }}>Eski "!whitelist sync-mc" vb. komutları buradan hızlıca tetikleyebilirsiniz.</div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                <button style={{ ...btnPrimary, padding: '10px 24px' }} onClick={handleSave} disabled={botSettingsMutation.isPending}>
+                    {botSettingsMutation.isPending ? 'KAYDEDİLİYOR...' : 'AYARLARI KAYDET'}
+                </button>
+            </div>
         </div>
     );
 }
 
 // ── Süreli Roller ────────────────────────────────────────────────────────────
 
-function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, now, addRoleMutation, delRoleMutation }) {
+function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, now, addRoleMutation, delRoleMutation, botSettings, botSettingsMutation }) {
     const [form, setForm] = useState({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' });
     const [showForm, setShowForm] = useState(false);
     
-    // Geçmişte kullanılan sunucu/rol ID'leri
-    const [recentGuilds, setRecentGuilds] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('knozy_recent_guilds')) || []; } catch { return []; }
-    });
-    const [recentRoles, setRecentRoles] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('knozy_recent_roles')) || []; } catch { return []; }
-    });
+    // Preset Yönetimi Modalları
+    const [showPresets, setShowPresets] = useState(false);
+    const [presetType, setPresetType] = useState('guild'); // 'guild' veya 'role'
+    const [presetForm, setPresetForm] = useState({ name: '', id: '' });
+
+    const savedGuilds = botSettings?.savedGuilds || [];
+    const savedRoles = botSettings?.savedRoles || [];
+
+    const handleAddPreset = () => {
+        if (!presetForm.name || !presetForm.id) return;
+        const key = presetType === 'guild' ? 'savedGuilds' : 'savedRoles';
+        const currentList = botSettings?.[key] || [];
+        botSettingsMutation.mutate({
+            [key]: [...currentList, { ...presetForm }]
+        });
+        setPresetForm({ name: '', id: '' });
+    };
+
+    const handleDeletePreset = (type, index) => {
+        const key = type === 'guild' ? 'savedGuilds' : 'savedRoles';
+        const currentList = [...(botSettings?.[key] || [])];
+        currentList.splice(index, 1);
+        botSettingsMutation.mutate({ [key]: currentList });
+    };
 
     const handleAdd = () => {
-        // Storage'a kaydet (en son eklenen en üstte, maks 5 guild, 10 rol)
-        if (form.guild_id) {
-            const newGuilds = [...new Set([form.guild_id, ...recentGuilds])].slice(0, 5);
-            setRecentGuilds(newGuilds);
-            localStorage.setItem('knozy_recent_guilds', JSON.stringify(newGuilds));
-        }
-        if (form.role_id) {
-            const newRoles = [...new Set([form.role_id, ...recentRoles])].slice(0, 10);
-            setRecentRoles(newRoles);
-            localStorage.setItem('knozy_recent_roles', JSON.stringify(newRoles));
-        }
-
         addRoleMutation.mutate(form, {
             onSuccess: () => { setForm({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' }); setShowForm(false); },
         });
@@ -743,10 +856,56 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
         <>
             <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Cap>{activeRoles.length} aktif · {expiredRoles.length} süresi dolmuş</Cap>
-                <button onClick={() => setShowForm(v => !v)} style={btnGhost}>
-                    <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİ EKLE
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setShowPresets(v => !v)} style={btnGhost}>
+                        <I.Cog size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>KAYITLI PROFİLLER
+                    </button>
+                    <button onClick={() => setShowForm(v => !v)} style={btnGhost}>
+                        <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİ EKLE
+                    </button>
+                </div>
             </div>
+
+            {showPresets && (
+                <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <Cap>KAYITLI SUNUCU & ROL YÖNETİMİ</Cap>
+                    
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <select style={{ ...inputStyle, width: 120 }} value={presetType} onChange={e => setPresetType(e.target.value)}>
+                            <option value="guild">Sunucu Ekle</option>
+                            <option value="role">Rol Ekle</option>
+                        </select>
+                        <input value={presetForm.name} onChange={e => setPresetForm(f => ({...f, name: e.target.value}))}
+                            style={{ ...inputStyle, flex: 1 }} placeholder="İsim (Örn: Ana Sunucu)"/>
+                        <input value={presetForm.id} onChange={e => setPresetForm(f => ({...f, id: e.target.value}))}
+                            style={{ ...inputStyle, flex: 1 }} placeholder="ID (Örn: 123456789)"/>
+                        <button onClick={handleAddPreset} disabled={!presetForm.name || !presetForm.id || botSettingsMutation.isPending} style={btnPrimary}>
+                            EKLE
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 20, marginTop: 10 }}>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: A.text, marginBottom: 8 }}>Kayıtlı Sunucular</div>
+                            {savedGuilds.length === 0 ? <div style={{ fontSize: 11, color: A.faint }}>Kayıt yok.</div> : savedGuilds.map((g, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '4px 8px', background: A.bg, marginBottom: 4, borderRadius: 2 }}>
+                                    <span><b>{g.name}</b> ({g.id})</span>
+                                    <button onClick={() => handleDeletePreset('guild', i)} style={{ background: 'none', border: 'none', color: A.err, cursor: 'pointer' }}><I.Trash size={10}/></button>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: A.text, marginBottom: 8 }}>Kayıtlı Roller</div>
+                            {savedRoles.length === 0 ? <div style={{ fontSize: 11, color: A.faint }}>Kayıt yok.</div> : savedRoles.map((r, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '4px 8px', background: A.bg, marginBottom: 4, borderRadius: 2 }}>
+                                    <span><b>{r.name}</b> ({r.id})</span>
+                                    <button onClick={() => handleDeletePreset('role', i)} style={{ background: 'none', border: 'none', color: A.err, cursor: 'pointer' }}><I.Trash size={10}/></button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showForm && (
                 <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -758,20 +917,26 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                                 style={inputStyle} placeholder="123456789..."/>
                         </div>
                         <div>
-                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Sunucu (Guild) ID</div>
-                            <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}
-                                style={inputStyle} placeholder="987654321..." list="recent-guilds-list" autoComplete="off"/>
-                            <datalist id="recent-guilds-list">
-                                {recentGuilds.map(id => <option key={id} value={id}/>)}
-                            </datalist>
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Sunucu (Guild) Seçin veya Yazın</div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <select style={{ ...inputStyle, flex: 1 }} value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}>
+                                    <option value="">-- Özel ID Girin --</option>
+                                    {savedGuilds.map((g, i) => <option key={i} value={g.id}>{g.name} ({g.id})</option>)}
+                                </select>
+                                <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}
+                                    style={{ ...inputStyle, flex: 1 }} placeholder="ID yazın"/>
+                            </div>
                         </div>
                         <div>
-                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Rol ID</div>
-                            <input value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}
-                                style={inputStyle} placeholder="111222333..." list="recent-roles-list" autoComplete="off"/>
-                            <datalist id="recent-roles-list">
-                                {recentRoles.map(id => <option key={id} value={id}/>)}
-                            </datalist>
+                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Rol Seçin veya Yazın</div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                <select style={{ ...inputStyle, flex: 1 }} value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}>
+                                    <option value="">-- Özel ID Girin --</option>
+                                    {savedRoles.map((r, i) => <option key={i} value={r.id}>{r.name} ({r.id})</option>)}
+                                </select>
+                                <input value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}
+                                    style={{ ...inputStyle, flex: 1 }} placeholder="ID yazın"/>
+                            </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                             <div style={{ flex: 1 }}>
@@ -784,11 +949,6 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                                 <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Saat</div>
                                 <input type="number" value={form.durationHours}
                                     onChange={e => setForm(f => ({ ...f, durationHours: e.target.value }))}
-                                    style={inputStyle} placeholder="0" min="0" max="23"/>
-                            </div>
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button onClick={() => setShowForm(false)} style={btnGhost}>İPTAL</button>
                         <button onClick={handleAdd}
                             disabled={addRoleMutation.isPending || !form.user_id || !form.guild_id || !form.role_id}
