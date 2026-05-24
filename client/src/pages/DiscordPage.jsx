@@ -371,7 +371,6 @@ export default function DiscordPage() {
         { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
         { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
         { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
-        { key: 'graph',           label: 'Oyuncu Grafiği',   icon: I.ArrowUpRight },
         { key: 'webhook',         label: 'Webhook',          icon: I.Send },
         { key: 'settings',        label: 'Ayarlar (Bot Yetki & Kanallar)', icon: I.Cog },
     ];
@@ -690,20 +689,6 @@ export default function DiscordPage() {
 
             {/* ══ Gece Koruması ══ */}
             {activeTab === 'night-guard' && <NightGuardTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
-
-            {/* ══ Grafik ══ */}
-            {activeTab === 'graph' && (
-                <div style={{ ...card, padding: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                        <Cap>SON 24 SAAT OYUNCU GRAFİĞİ</Cap>
-                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['discord-history'] })}
-                            style={btnGhost}>
-                            <I.Restart size={11}/>
-                        </button>
-                    </div>
-                    <PlayerGraph history={historyData?.history || []}/>
-                </div>
-            )}
 
             {/* ══ Webhook ══ */}
             {activeTab === 'webhook' && <WebhookTab/>}
