@@ -15,8 +15,8 @@ router.get('/', authMiddleware, requireRole('admin'), (req, res) => {
                    pc.name AS category_name, pc.color AS category_color
             FROM users u
             LEFT JOIN permission_categories pc ON u.category_id = pc.id
-            WHERE LOWER(u.username) != ?
-        `).all('hitler');
+            ORDER BY u.id ASC
+        `).all();
         res.json({ users });
     } catch (error) {
         console.error('[Users] Listeleme hatası:', error.message);
