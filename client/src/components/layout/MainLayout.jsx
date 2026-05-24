@@ -254,10 +254,13 @@ export default function MainLayout() {
 
                 {/* User footer */}
                 {!collapsed && user && (
-                    <div style={{ borderTop: `1px solid ${A.border}`, padding: '10px 14px' }}>
+                    <div style={{
+                        borderTop: `1px solid ${A.border}`, padding: '10px 14px',
+                        display: 'flex', flexDirection: 'column', gap: 8,
+                    }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div style={{
-                                width: 24, height: 24, borderRadius: 1, background: 'var(--accent)',
+                                width: 26, height: 26, borderRadius: 2, background: 'var(--accent)',
                                 display: 'grid', placeItems: 'center', color: A.bg,
                                 fontFamily: A.mono, fontWeight: 700, fontSize: 11,
                                 flex: 'none',
@@ -269,8 +272,34 @@ export default function MainLayout() {
                                     fontFamily: A.mono, letterSpacing: '0.06em',
                                 }}>{(user.role || 'user').toUpperCase()}</div>
                             </div>
-                            <I.Logout size={14} style={{ color: A.faint, cursor: 'pointer' }} onClick={logout}/>
                         </div>
+                        <button onClick={logout} style={{
+                            background: A.bgDeeper, border: `1px solid ${A.border}`,
+                            color: A.dim, fontFamily: A.mono, fontSize: 10,
+                            padding: '8px 10px', borderRadius: 2, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            letterSpacing: '0.06em', textTransform: 'uppercase',
+                            transition: 'all 120ms',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.color = A.err; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = A.dim;  e.currentTarget.style.borderColor = A.border; }}>
+                            <I.Logout size={12}/> Çıkış Yap
+                        </button>
+                    </div>
+                )}
+                {/* Collapsed mod: küçük buton */}
+                {collapsed && user && (
+                    <div style={{ borderTop: `1px solid ${A.border}`, padding: '10px 0', display: 'flex', justifyContent: 'center' }}>
+                        <button onClick={logout} title="Çıkış Yap"
+                            style={{
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                color: A.faint, padding: 6, borderRadius: 2,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.color = A.err; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = A.faint; }}>
+                            <I.Logout size={16}/>
+                        </button>
                     </div>
                 )}
             </aside>

@@ -52,6 +52,9 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('knozy_user');
         setToken(null);
         setUser(null);
+        // Sayfanın temiz halde başlaması için zorla yönlendir
+        // (sadece state değişikliğine bel bağlamak bazen takılı kalıyordu)
+        try { window.location.href = '/login'; } catch { /* SSR vs */ }
     };
 
     const checkAdmin = async () => {

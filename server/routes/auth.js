@@ -113,6 +113,33 @@ router.post('/login', (req, res) => {
     }
 });
 
+// POST /api/auth/change-password — kendi şifresini değiştir
+router.post('/change-password', authMiddleware, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Mevcut ve yeni şifre gerekli' });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
+        }
+        const db = getDb();
+        const row = db.prepare('SELECT id, password FROM users WHERE id = ?').get(req.user.id);
+        if (!row) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+        const match = await bcrypt.compare(currentPassword, row.password);
+        if (!match) return res.status(401).json({ error: 'Mevcut şifre yanlış' });
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, row.id);
+
+        res.json({ message: 'Şifre güncellendi' });
+    } catch (e) {
+        console.error('[Auth] change-password:', e.message);
+        res.status(500).json({ error: 'Şifre değiştirilemedi' });
+    }
+});
+
 // GET /api/auth/me
 router.get('/me', authMiddleware, (req, res) => {
     try {

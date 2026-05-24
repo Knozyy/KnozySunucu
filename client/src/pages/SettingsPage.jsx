@@ -6,6 +6,7 @@ import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
 import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
 import { I } from '@/hodo/icons';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
+import { useAuth } from '@/context/AuthContext';
 
 // ── Tüm izin verilebilir sayfalar ────────────────────────────────────────
 const ALL_PAGES = [
@@ -96,8 +97,9 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('server');
 
     const tabs = [
-        { id: 'server',     label: 'Sunucu',               icon: I.CPU },
-        { id: 'tasks',      label: 'Görev Yöneticisi',     icon: I.CPU },
+        { id: 'account',    label: 'Hesap',                 icon: I.Users },
+        { id: 'server',     label: 'Sunucu',                icon: I.CPU },
+        { id: 'tasks',      label: 'Görev Yöneticisi',      icon: I.CPU },
         { id: 'users',      label: 'Kullanıcılar',          icon: I.Users },
         { id: 'categories', label: 'İzin Kategorileri',     icon: I.Stack },
         { id: 'tokens',     label: 'API Tokenları',          icon: I.Signal },
@@ -134,6 +136,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Sekme içerikleri */}
+            {activeTab === 'account'    && <AccountPanel/>}
             {activeTab === 'server'     && <ServerSettingsPanel/>}
             {activeTab === 'tasks'      && <TaskManagerPanel/>}
             {activeTab === 'users'      && <PanelUsersPanel/>}
@@ -143,6 +146,110 @@ export default function SettingsPage() {
             {activeTab === 'alerts'     && <AlertsPanel/>}
             {activeTab === 'audit'      && <AuditLogPanel/>}
             {activeTab === 'push'       && <PushNotificationTab/>}
+        </div>
+    );
+}
+
+// ============================================================
+// HESAP (Profil + Şifre değiştir + Çıkış)
+// ============================================================
+function AccountPanel() {
+    const { user, logout } = useAuth();
+    const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+
+    const pwMutation = useMutation({
+        mutationFn: () => api.post('/auth/change-password', { currentPassword: pw.current, newPassword: pw.next }),
+        onSuccess: () => {
+            toast.success('Şifre güncellendi');
+            setPw({ current: '', next: '', confirm: '' });
+        },
+        onError: (e) => toast.error(e.response?.data?.error || 'Şifre değiştirilemedi'),
+    });
+
+    const handlePwSave = () => {
+        if (!pw.current || !pw.next) return toast.error('Mevcut ve yeni şifre gerekli');
+        if (pw.next.length < 6) return toast.error('Yeni şifre en az 6 karakter olmalı');
+        if (pw.next !== pw.confirm) return toast.error('Yeni şifreler eşleşmiyor');
+        pwMutation.mutate();
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Profil bilgisi */}
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                padding: 18, display: 'flex', alignItems: 'center', gap: 14,
+            }}>
+                <div style={{
+                    width: 48, height: 48, borderRadius: 4,
+                    background: 'var(--accent)', display: 'grid', placeItems: 'center',
+                    color: A.bg, fontFamily: A.mono, fontWeight: 700, fontSize: 20,
+                    flexShrink: 0,
+                }}>{(user?.username || '?').slice(0, 1).toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: A.text }}>
+                        {user?.username || '—'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                        <Pill
+                            color={user?.role === 'admin' ? A.warn : A.dim}
+                            bg={user?.role === 'admin' ? 'rgba(251,191,36,0.10)' : 'rgba(255,255,255,0.04)'}
+                        >
+                            {user?.role === 'admin' ? 'YÖNETİCİ' : 'MİSAFİR'}
+                        </Pill>
+                        <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>
+                            ID: {user?.id ?? '—'}
+                        </span>
+                    </div>
+                </div>
+                <button onClick={logout} style={{
+                    ...btnGhost, color: A.err, borderColor: 'rgba(248,113,113,0.3)',
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                }}>
+                    <I.Logout size={12}/> ÇIKIŞ YAP
+                </button>
+            </div>
+
+            {/* Şifre değiştir */}
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                padding: 18, display: 'flex', flexDirection: 'column', gap: 12,
+                maxWidth: 480,
+            }}>
+                <Cap>ŞİFRE DEĞİŞTİR</Cap>
+                <div>
+                    <div style={{ fontSize: 11, color: A.faint, marginBottom: 4 }}>Mevcut Şifre</div>
+                    <Input type="password" value={pw.current}
+                        onChange={e => setPw({ ...pw, current: e.target.value })}
+                        placeholder="••••••••" mono/>
+                </div>
+                <div>
+                    <div style={{ fontSize: 11, color: A.faint, marginBottom: 4 }}>Yeni Şifre</div>
+                    <Input type="password" value={pw.next}
+                        onChange={e => setPw({ ...pw, next: e.target.value })}
+                        placeholder="En az 6 karakter" mono/>
+                </div>
+                <div>
+                    <div style={{ fontSize: 11, color: A.faint, marginBottom: 4 }}>Yeni Şifre (Tekrar)</div>
+                    <Input type="password" value={pw.confirm}
+                        onChange={e => setPw({ ...pw, confirm: e.target.value })}
+                        placeholder="••••••••" mono/>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={handlePwSave}
+                        disabled={pwMutation.isPending || !pw.current || !pw.next || !pw.confirm}
+                        style={{
+                            ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6,
+                            opacity: (!pw.current || !pw.next || !pw.confirm) ? 0.5 : 1,
+                        }}>
+                        {pwMutation.isPending ? <Spinner size={11}/> : <I.Check size={11}/>}
+                        {pwMutation.isPending ? 'KAYDEDİLİYOR...' : 'ŞİFREYİ DEĞİŞTİR'}
+                    </button>
+                </div>
+                <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                    Şifre değiştirdikten sonra tekrar giriş yapman gerekebilir.
+                </p>
+            </div>
         </div>
     );
 }
@@ -620,7 +727,7 @@ function PanelUsersPanel() {
             {modal && (
                 <HodoModal onClose={() => setModal(false)} maxWidth={460}>
                     <HodoModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
-                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0, overflowY: 'auto' }}>
                         <div>
                             <Cap style={{ display: 'block', marginBottom: 6 }}>Kullanıcı Adı</Cap>
                             <Input value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} placeholder="kullanici_adi" mono/>
