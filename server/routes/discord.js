@@ -324,6 +324,16 @@ router.get('/bot-status', authMiddleware, (req, res) => {
     }
 });
 
+// POST /api/discord/sync-settings
+router.post('/sync-settings', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        discordBotService.forceSyncBot();
+        res.json({ message: 'Bot ayarları senkronize edildi' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // POST /api/discord/bot-command (start/stop/restart)
 router.post('/bot-command', authMiddleware, requireRole('admin'), (req, res) => {
     try {

@@ -272,8 +272,23 @@ class DiscordBotService {
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
                 `).run(dbKey, dbValue);
             }
+            
+            // Force bot to sync immediately if running
+            this.forceSyncBot();
         } catch (e) {
             throw new Error(`Bot ayarları kaydedilemedi: ${e.message}`);
+        }
+    }
+
+    forceSyncBot() {
+        try {
+            if (this.isBotRunning()) {
+                execSync(`pm2 sendSignal SIGUSR1 KnozyBot 2>/dev/null`);
+                return true;
+            }
+            return false;
+        } catch (e) {
+            return false;
         }
     }
 

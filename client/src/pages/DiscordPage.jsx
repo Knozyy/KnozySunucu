@@ -788,6 +788,14 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         night_guard_log_channel_id: ''
     });
 
+    const syncMutation = useMutation({
+        mutationFn: async () => {
+            await api.post('/api/discord/sync-settings');
+        },
+        onSuccess: () => toast.success('Ayarlar bota zorla (force) senkronize edildi!'),
+        onError: (err) => toast.error(err.response?.data?.error || 'Senkronizasyon hatası')
+    });
+
     const getArray = (val) => Array.isArray(val) ? val : (typeof val === 'string' && val ? val.split(',') : []);
 
     useEffect(() => {
@@ -885,7 +893,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 <Cap style={{ display: 'block', marginBottom: 16 }}>Admin İşlemleri (Panel'den Tetikle)</Cap>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <button style={{ ...btnGhost, color: A.ok, borderColor: 'rgba(22, 163, 74, 0.3)' }} onClick={() => {
-                        api.post('/discord/rcon-queue', { command: 'whitelist list' });
+                        api.post('/api/discord/rcon-queue', { command: 'whitelist list' });
                         toast.success('Minecraft sunucusundan whitelist listesi istendi. Bot eşitlemeyi yapacak.');
                     }}>
                         <I.Restart size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (Tetikle)
@@ -894,7 +902,10 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 <div style={{ fontSize: 11, color: A.faint, marginTop: 8 }}>Eski "!whitelist sync-mc" vb. komutları buradan hızlıca tetikleyebilirsiniz.</div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 10 }}>
+                <button style={{ ...btnGhost, padding: '10px 24px', border: '1px solid var(--border)' }} onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+                    {syncMutation.isPending ? 'SENKRONİZE EDİLİYOR...' : 'BOTA SENKRONİZE ET'}
+                </button>
                 <button style={{ ...btnPrimary, padding: '10px 24px' }} onClick={handleSave} disabled={botSettingsMutation.isPending}>
                     {botSettingsMutation.isPending ? 'KAYDEDİLİYOR...' : 'AYARLARI KAYDET'}
                 </button>
