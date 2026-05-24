@@ -761,6 +761,80 @@ function MultiRoleInput({ value, onChange, savedRoles, placeholder }) {
     );
 }
 
+// ── Tek-tıkla whitelist senkronizasyon butonu ────────────────────────────────
+function SyncWhitelistButton() {
+    const syncMutation = useMutation({
+        mutationFn: () => api.post('/discord/sync-whitelist-to-mc').then(r => r.data),
+        onSuccess: (data) => {
+            toast.success(data.message || 'Whitelist senkronize edildi');
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Senkronizasyon başarısız'),
+    });
+
+    const handleSync = () => {
+        if (confirm('Paneldeki whitelist Minecraft sunucusunun whitelist.json dosyasına yazılacak. Devam edilsin mi?')) {
+            syncMutation.mutate();
+        }
+    };
+
+    const data = syncMutation.data;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={handleSync} disabled={syncMutation.isPending}
+                style={{
+                    ...btnPrimary, padding: '10px 18px', alignSelf: 'flex-start',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    opacity: syncMutation.isPending ? 0.6 : 1,
+                }}>
+                <I.Upload size={12}/>
+                {syncMutation.isPending ? 'AKTARILIYOR...' : 'WHİTELİST\'İ MINECRAFT\'A AKTAR'}
+            </button>
+
+            {/* Son senkronizasyon özeti */}
+            {data && (
+                <div style={{
+                    background: A.bgDeeper, border: `1px solid ${A.border}`,
+                    borderRadius: 4, padding: '10px 12px',
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 8, fontSize: 11, fontFamily: A.mono,
+                }}>
+                    <div>
+                        <span style={{ color: A.faint }}>EKLENDİ</span><br/>
+                        <span style={{ color: A.ok, fontSize: 14, fontWeight: 600 }}>{data.added?.length ?? 0}</span>
+                    </div>
+                    <div>
+                        <span style={{ color: A.faint }}>GÜNCELLENDİ</span><br/>
+                        <span style={{ color: 'var(--accent)', fontSize: 14, fontWeight: 600 }}>{data.updated?.length ?? 0}</span>
+                    </div>
+                    <div>
+                        <span style={{ color: A.faint }}>DEĞİŞMEDİ</span><br/>
+                        <span style={{ color: A.dim, fontSize: 14, fontWeight: 600 }}>{data.unchanged?.length ?? 0}</span>
+                    </div>
+                    {data.failed?.length > 0 && (
+                        <div>
+                            <span style={{ color: A.faint }}>BAŞARISIZ</span><br/>
+                            <span style={{ color: A.err, fontSize: 14, fontWeight: 600 }} title={data.failed.join(', ')}>
+                                {data.failed.length}
+                            </span>
+                        </div>
+                    )}
+                    <div style={{ gridColumn: '1 / -1', color: A.faint, paddingTop: 6, borderTop: `1px solid ${A.border}` }}>
+                        {data.reloaded
+                            ? '✓ Sunucuya whitelist reload komutu gönderildi'
+                            : '⚠ Sunucu kapalı — dosyaya yazıldı, başlatınca etkin olur'}
+                    </div>
+                    {data.failed?.length > 0 && (
+                        <div style={{ gridColumn: '1 / -1', color: A.err, fontSize: 10 }}>
+                            Çözülemeyen nick'ler (Mojang API): {data.failed.join(', ')}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function SettingsTab({ botSettings, botSettingsMutation }) {
     const [form, setForm] = useState({
         adminRoleIds: [],
@@ -875,26 +949,14 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
             </div>
 
             <div style={{ ...card, padding: 20 }}>
-                <Cap style={{ display: 'block', marginBottom: 16 }}>Admin İşlemleri (Panel'den Tetikle)</Cap>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button style={{ ...btnGhost, color: A.ok, borderColor: 'rgba(22, 163, 74, 0.3)' }} onClick={() => {
-                        api.post('/api/discord/rcon-queue', { command: 'whitelist list' });
-                        toast.success('Minecraft sunucusundan whitelist listesi istendi. Bot eşitlemeyi yapacak.');
-                    }}>
-                        <I.Restart size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (MC'den Panel'e)
-                    </button>
-                    <button style={{ ...btnGhost, color: A.primary, borderColor: 'rgba(99, 102, 241, 0.3)' }} onClick={async () => {
-                        try {
-                            const res = await api.post('/api/discord/sync-whitelist-to-mc');
-                            toast.success(res.data.message || 'Senkronizasyon başladı.');
-                        } catch (err) {
-                            toast.error(err.response?.data?.error || 'Senkronizasyon başarısız.');
-                        }
-                    }}>
-                        <I.Upload size={14} style={{ marginRight: 6 }}/> Panel'deki Whitelist'i MC'ye Aktar
-                    </button>
+                <Cap style={{ display: 'block', marginBottom: 16 }}>Whitelist Aktarımı</Cap>
+                <SyncWhitelistButton/>
+                <div style={{ fontSize: 11, color: A.faint, marginTop: 10, lineHeight: 1.6 }}>
+                    Paneldeki tüm kayıtlı oyuncuları Minecraft sunucusunun{' '}
+                    <code style={{ background: A.bgDeeper, padding: '1px 5px', borderRadius: 2, color: A.text, fontFamily: A.mono }}>whitelist.json</code>{' '}
+                    dosyasına <strong>doğrudan yazar</strong>. Sunucu kapalı olsa bile çalışır.
+                    Sunucu açıksa otomatik olarak <code style={{ background: A.bgDeeper, padding: '1px 5px', borderRadius: 2, color: A.text, fontFamily: A.mono }}>whitelist reload</code> komutu gönderilir.
                 </div>
-                <div style={{ fontSize: 11, color: A.faint, marginTop: 8 }}>Eski "!whitelist sync-mc" vb. komutları buradan hızlıca tetikleyebilirsiniz.</div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 10 }}>

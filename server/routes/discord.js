@@ -215,30 +215,149 @@ router.delete('/rcon-queue', authMiddleware, requireRole('admin'), (req, res) =>
     }
 });
 
-// POST /api/discord/sync-whitelist-to-mc — Paneldeki herkesi MC'ye aktar
-router.post('/sync-whitelist-to-mc', authMiddleware, requireRole('admin'), (req, res) => {
+// POST /api/discord/sync-whitelist-to-mc — Paneldeki herkesi MC sunucusunun
+// whitelist.json dosyasına DOĞRUDAN yazar. Sunucu açık olmasa bile çalışır.
+// Sunucu açıksa ayrıca `whitelist reload` komutu gönderir.
+router.post('/sync-whitelist-to-mc', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
-        const whitelist = discordBotService.getWhitelist() || {};
-        const mcNicks = Object.values(whitelist).map(x => typeof x === 'object' ? x.nickname : x).filter(Boolean);
-        
+        const fs = require('fs');
+        const path = require('path');
+        const https = require('https');
         const serverRegistry = require('../services/serverRegistry');
-        const mcService = serverRegistry.getDefault();
-        
-        if (!mcService || mcService.status !== 'running') {
-            return res.status(400).json({ error: 'Minecraft sunucusu açık değil (ya da bulunamadı). Senkronizasyon yapılamaz.' });
+
+        const whitelist = discordBotService.getWhitelist() || {};
+        const mcNicks = Object.values(whitelist)
+            .map(x => typeof x === 'object' ? (x.nickname || x.name || x.mcNick) : x)
+            .filter(Boolean)
+            .map(s => String(s).trim())
+            .filter(s => /^[a-zA-Z0-9_]{2,16}$/.test(s));
+
+        if (mcNicks.length === 0) {
+            return res.status(400).json({ error: 'Panelde geçerli Minecraft nick\'i bulunamadı.' });
         }
 
-        let count = 0;
-        mcNicks.forEach(nick => {
-            if (nick) {
-                mcService.sendCommand(`whitelist add ${nick}`);
-                count++;
-            }
+        // Sunucu instance — hedef serverId verilebilir, yoksa default
+        const sid = req.body?.serverId ? parseInt(req.body.serverId) : null;
+        const inst = sid ? serverRegistry.get(sid) : serverRegistry.getDefault();
+        if (!inst) {
+            return res.status(400).json({ error: 'Minecraft sunucusu bulunamadı.' });
+        }
+        const serverPath = inst.getServerPath();
+        if (!serverPath || !fs.existsSync(serverPath)) {
+            return res.status(400).json({ error: `Sunucu yolu bulunamadı: ${serverPath}` });
+        }
+
+        const wlPath = path.join(serverPath, 'whitelist.json');
+
+        // Mevcut whitelist.json'ı oku (varsa)
+        let existing = [];
+        if (fs.existsSync(wlPath)) {
+            try { existing = JSON.parse(fs.readFileSync(wlPath, 'utf-8')) || []; }
+            catch { existing = []; }
+            if (!Array.isArray(existing)) existing = [];
+        }
+        // İsme göre lookup (case-insensitive)
+        const existingByName = new Map(
+            existing.map(e => [String(e.name || '').toLowerCase(), e])
+        );
+
+        // Mojang UUID lookup (paralel, concurrency=4)
+        const fetchUuid = (name) => new Promise((resolve) => {
+            const opts = {
+                hostname: 'api.mojang.com',
+                path: `/users/profiles/minecraft/${encodeURIComponent(name)}`,
+                method: 'GET',
+                headers: { 'User-Agent': 'KnozyPanel (1.0)' },
+            };
+            const r = https.request(opts, (resp) => {
+                let data = '';
+                resp.on('data', c => { data += c; });
+                resp.on('end', () => {
+                    if (resp.statusCode === 200) {
+                        try {
+                            const j = JSON.parse(data);
+                            if (j.id && j.name) {
+                                // UUID'yi xxxx-xxxx formatına dönüştür
+                                const u = j.id;
+                                const formatted = `${u.slice(0,8)}-${u.slice(8,12)}-${u.slice(12,16)}-${u.slice(16,20)}-${u.slice(20)}`;
+                                resolve({ uuid: formatted, name: j.name });
+                                return;
+                            }
+                        } catch { /* parse error */ }
+                    }
+                    resolve(null);
+                });
+            });
+            r.on('error', () => resolve(null));
+            r.setTimeout(5000, () => { r.destroy(); resolve(null); });
+            r.end();
         });
 
-        res.json({ message: `${count} oyuncu MC sunucusuna eklendi.` });
+        const result = {
+            added: [],         // yeni eklenen nick'ler
+            updated: [],       // case/uuid güncellenen
+            unchanged: [],     // zaten doğru
+            failed: [],        // Mojang'dan çözülemeyen
+        };
+
+        const concurrency = 4;
+        for (let i = 0; i < mcNicks.length; i += concurrency) {
+            const batch = mcNicks.slice(i, i + concurrency);
+            await Promise.all(batch.map(async (nick) => {
+                const lower = nick.toLowerCase();
+                const cur = existingByName.get(lower);
+
+                // Eğer dosyada zaten varsa ve UUID'si geçerli görünüyorsa atla
+                if (cur && cur.uuid && /^[0-9a-f-]{36}$/i.test(cur.uuid)) {
+                    result.unchanged.push(nick);
+                    return;
+                }
+
+                const m = await fetchUuid(nick);
+                if (!m) { result.failed.push(nick); return; }
+
+                if (cur) {
+                    cur.uuid = m.uuid;
+                    cur.name = m.name; // canonical isim
+                    result.updated.push(m.name);
+                } else {
+                    existing.push({ uuid: m.uuid, name: m.name });
+                    existingByName.set(m.name.toLowerCase(), { uuid: m.uuid, name: m.name });
+                    result.added.push(m.name);
+                }
+            }));
+        }
+
+        // Dosyaya yaz (atomic: önce .tmp'ye, sonra rename)
+        const tmpPath = wlPath + '.tmp';
+        fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, wlPath);
+
+        // Sunucu çalışıyorsa whitelist'i reload et
+        let reloaded = false;
+        try {
+            if (inst.status === 'running') {
+                inst.sendCommand('whitelist reload');
+                reloaded = true;
+            }
+        } catch { /* ignore */ }
+
+        const summary = [
+            `${result.added.length} eklendi`,
+            `${result.updated.length} güncellendi`,
+            `${result.unchanged.length} değişmedi`,
+            result.failed.length > 0 ? `${result.failed.length} başarısız` : null,
+            reloaded ? 'sunucuya bildirildi (reload)' : 'sunucu kapalı (dosyaya yazıldı)',
+        ].filter(Boolean).join(' · ');
+
+        return res.json({
+            message: `Whitelist senkronize edildi: ${summary}`,
+            ...result,
+            path: wlPath,
+            reloaded,
+        });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        return res.status(500).json({ error: e.message });
     }
 });
 
