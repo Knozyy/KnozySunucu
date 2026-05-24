@@ -1315,41 +1315,129 @@ function StatusMessagesTab({ statusMsgData, statusMsgLoading, addStatusMsgMutati
 
 // ── Gece Koruması ────────────────────────────────────────────────────────────
 
+// Çoklu ID girdisi (chip listesi)
+function MultiIdInput({ value, onChange, placeholder, idKind = 'kullanıcı' }) {
+    const [text, setText] = useState('');
+
+    const add = (raw) => {
+        const id = String(raw || '').trim().replace(/[^0-9]/g, '');
+        if (!id || id.length < 5) return;
+        if (value.includes(id)) return;
+        onChange([...value, id]);
+        setText('');
+    };
+
+    const remove = (id) => onChange(value.filter(v => v !== id));
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: 6,
+                minHeight: value.length > 0 ? 28 : 0,
+            }}>
+                {value.length === 0 && (
+                    <span style={{ fontSize: 11, color: A.faint, fontStyle: 'italic' }}>
+                        Henüz {idKind} eklenmemiş.
+                    </span>
+                )}
+                {value.map(id => (
+                    <div key={id} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '3px 8px', background: 'rgba(167,139,250,0.10)',
+                        border: '1px solid rgba(167,139,250,0.25)', borderRadius: 99,
+                        fontSize: 11, fontFamily: A.mono, color: 'var(--accent)',
+                    }}>
+                        {id}
+                        <button onClick={() => remove(id)} style={{
+                            background: 'none', border: 'none', color: 'inherit',
+                            cursor: 'pointer', padding: 0, fontSize: 11, opacity: 0.7,
+                        }}>✕</button>
+                    </div>
+                ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+                <input type="text" value={text} onChange={e => setText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(text); } }}
+                    placeholder={placeholder} style={{ ...inputStyle, flex: 1 }}/>
+                <button onClick={() => add(text)} disabled={!text.trim()} style={btnGhost}>
+                    + EKLE
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// Sayıyı 0-23 aralığına sığdırıp 2 haneli string'e çevir
+const toHourStr = (n) => String(Math.max(0, Math.min(23, parseInt(n, 10) || 0))).padStart(2, '0');
+
 function NightGuardTab({ botSettings, botSettingsMutation }) {
     const [enabled, setEnabled] = useState(false);
     const [startHour, setStartHour] = useState(0);
     const [endHour, setEndHour] = useState(8);
-    const [adminId, setAdminId] = useState('');
-    const [protectedRoleId, setProtectedRoleId] = useState('');
+    const [protectedUserIds, setProtectedUserIds] = useState([]); // rahatsız edilemeyecek kişiler
+    const [protectedRoleIds, setProtectedRoleIds] = useState([]); // korunan roller
+    const [timeouts, setTimeouts] = useState({ first: 1, second: 5, third: 15, repeat: 30 });
     const [dirty, setDirty] = useState(false);
 
     useEffect(() => {
         if (!botSettings?.nightGuard) return;
         const ng = botSettings.nightGuard;
         setEnabled(!!ng.enabled);
-        setStartHour(ng.startHour !== undefined ? ng.startHour : 0);
-        setEndHour(ng.endHour !== undefined ? ng.endHour : 8);
-        setAdminId(ng.adminId || '');
-        setProtectedRoleId(ng.protectedRoleId || '');
+        setStartHour(ng.startHour ?? 0);
+        setEndHour(ng.endHour ?? 8);
+
+        // Backward compat: tek alandı, artık liste
+        const pu = ng.protectedUserIds || (ng.adminId ? [ng.adminId] : []);
+        setProtectedUserIds(Array.isArray(pu) ? pu.filter(Boolean) : []);
+
+        const pr = ng.protectedRoleIds || (ng.protectedRoleId ? [ng.protectedRoleId] : []);
+        setProtectedRoleIds(Array.isArray(pr) ? pr.filter(Boolean) : []);
+
+        setTimeouts({
+            first:  ng.timeouts?.first  ?? 1,
+            second: ng.timeouts?.second ?? 5,
+            third:  ng.timeouts?.third  ?? 15,
+            repeat: ng.timeouts?.repeat ?? 30,
+        });
         setDirty(false);
     }, [botSettings]);
+
+    const markDirty = (fn) => (...args) => { fn(...args); setDirty(true); };
 
     const handleSave = () => {
         botSettingsMutation.mutate({
             nightGuard: {
                 enabled,
                 startHour: parseInt(startHour, 10) || 0,
-                endHour: parseInt(endHour, 10) || 0,
-                adminId: adminId.trim(),
-                protectedRoleId: protectedRoleId.trim(),
+                endHour:   parseInt(endHour, 10)   || 0,
+                protectedUserIds,
+                protectedRoleIds,
+                timeouts: {
+                    first:  parseInt(timeouts.first,  10) || 1,
+                    second: parseInt(timeouts.second, 10) || 5,
+                    third:  parseInt(timeouts.third,  10) || 15,
+                    repeat: parseInt(timeouts.repeat, 10) || 30,
+                },
+                // Geriye dönük uyumluluk için eski alanları da yaz
+                adminId: protectedUserIds[0] || '',
+                protectedRoleId: protectedRoleIds[0] || '',
             }
         }, {
             onSuccess: () => setDirty(false)
         });
     };
 
+    // Saat aralığı görsel açıklama
+    const startStr = toHourStr(startHour);
+    const endStr   = toHourStr(endHour);
+    const wrapsMidnight = parseInt(endHour, 10) <= parseInt(startHour, 10);
+    const rangeLabel = wrapsMidnight
+        ? `${startStr}:00 → ertesi gün ${endStr}:00`
+        : `${startStr}:00 – ${endStr}:00`;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* ── Başlık + Toggle ── */}
             <div style={{ ...card, padding: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -1357,11 +1445,17 @@ function NightGuardTab({ botSettings, botSettingsMutation }) {
                         <div>
                             <div style={{ fontSize: 14, fontWeight: 600, color: A.text }}>Gece Koruması (Night Guard)</div>
                             <p style={{ fontSize: 12, color: A.dim, margin: '4px 0 0', lineHeight: 1.6 }}>
-                                Belirlenen saatler arasında admin veya korumalı rollere mention atan kullanıcıları otomatik timeout'a alır. İhlal sayısına göre süre artar.
+                                Belirlenen saat aralığında, korumalı kişi veya rollere <strong>mention</strong> atan kullanıcıları otomatik timeout'a alır.
+                                İhlal sayısına göre süre kademeli olarak artar.
                             </p>
+                            {enabled && (
+                                <div style={{ marginTop: 8, fontSize: 11, color: A.ok, fontFamily: A.mono }}>
+                                    ● AKTİF — Her gün {rangeLabel} (İstanbul saati / UTC+3)
+                                </div>
+                            )}
                         </div>
                     </div>
-                    <button onClick={() => { setEnabled(!enabled); setDirty(true); }}
+                    <button onClick={markDirty(() => setEnabled(!enabled))}
                         style={{
                             background: enabled ? 'var(--accent)' : A.bgDeeper,
                             border: `1px solid ${enabled ? 'var(--accent)' : A.border}`,
@@ -1376,62 +1470,115 @@ function NightGuardTab({ botSettings, botSettingsMutation }) {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-                <div style={{ ...card, padding: 14 }}>
-                    <Cap style={{ display: 'block', marginBottom: 10 }}>AYARLAR</Cap>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Başlangıç Saati (0-23)</div>
-                                <input type="number" min="0" max="23" value={startHour} onChange={e => { setStartHour(e.target.value); setDirty(true); }} style={inputStyle} />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Bitiş Saati (0-23)</div>
-                                <input type="number" min="0" max="23" value={endHour} onChange={e => { setEndHour(e.target.value); setDirty(true); }} style={inputStyle} />
-                            </div>
+            {/* ── Saat aralığı ── */}
+            <div style={{ ...card, padding: 16 }}>
+                <Cap style={{ display: 'block', marginBottom: 12 }}>Aktif Saat Aralığı</Cap>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+                    <div>
+                        <div style={{ fontSize: 11, color: A.faint, marginBottom: 6 }}>Başlangıç</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input type="number" min="0" max="23" value={startHour}
+                                onChange={markDirty(e => setStartHour(e.target.value))}
+                                style={{ ...inputStyle, width: 72, textAlign: 'center', fontSize: 18, padding: '8px 6px' }}/>
+                            <span style={{ fontFamily: A.mono, color: A.faint }}>:00</span>
                         </div>
-
-                        <div>
-                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Botun Admini (Kullanıcı ID)</div>
-                            <input type="text" value={adminId} onChange={e => { setAdminId(e.target.value); setDirty(true); }} placeholder="Discord ID..." style={inputStyle} />
+                    </div>
+                    <span style={{ fontSize: 18, color: A.faintest, marginBottom: 8 }}>→</span>
+                    <div>
+                        <div style={{ fontSize: 11, color: A.faint, marginBottom: 6 }}>Bitiş</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input type="number" min="0" max="23" value={endHour}
+                                onChange={markDirty(e => setEndHour(e.target.value))}
+                                style={{ ...inputStyle, width: 72, textAlign: 'center', fontSize: 18, padding: '8px 6px' }}/>
+                            <span style={{ fontFamily: A.mono, color: A.faint }}>:00</span>
                         </div>
-
-                        <div>
-                            <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Korunan Rol ID</div>
-                            <input type="text" value={protectedRoleId} onChange={e => { setProtectedRoleId(e.target.value); setDirty(true); }} placeholder="Rol ID..." style={inputStyle} />
-                        </div>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                            <button onClick={handleSave} disabled={botSettingsMutation.isPending || !dirty} style={btnPrimary}>
-                                <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
-                                {botSettingsMutation.isPending ? 'KAYDEDİLİYOR...' : 'KAYDET'}
-                            </button>
-                        </div>
+                    </div>
+                    <div style={{
+                        marginBottom: 4, fontSize: 12, fontFamily: A.mono, color: A.dim,
+                        background: A.bgDeeper, padding: '8px 12px', borderRadius: 3,
+                        border: `1px solid ${A.border}`,
+                    }}>
+                        {rangeLabel}
                     </div>
                 </div>
+                <p style={{ fontSize: 11, color: A.faint, margin: '10px 0 0' }}>
+                    Bitiş başlangıçtan küçük veya eşitse aralık gece yarısını kapsar (örn. 23:00 → 07:00).
+                </p>
+            </div>
 
-                <div style={{ ...card, padding: 14 }}>
-                    <Cap style={{ display: 'block', marginBottom: 10 }}>TIMEOUT KADEMESİ</Cap>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {[
-                            { n: '1. ihlal',  dur: '1 dakika'  },
-                            { n: '2. ihlal',  dur: '5 dakika'  },
-                            { n: '3. ihlal',  dur: '15 dakika' },
-                            { n: '4.+ ihlal', dur: '30 dakika' },
-                        ].map(({ n, dur }) => (
-                            <div key={n} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                                <span style={{ color: A.faint }}>{n}</span>
-                                <span style={{ color: A.text, fontWeight: 500, fontFamily: A.mono }}>{dur}</span>
+            {/* ── Korunan kişiler ── */}
+            <div style={{ ...card, padding: 16 }}>
+                <Cap style={{ display: 'block', marginBottom: 4 }}>Rahatsız Edilemeyecek Kişiler</Cap>
+                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                    Bu kullanıcılara <strong>mention atan</strong> kişiler gece korumasında timeout'a alınır.
+                </p>
+                <MultiIdInput
+                    value={protectedUserIds}
+                    onChange={markDirty(setProtectedUserIds)}
+                    placeholder="Discord kullanıcı ID gir ve Enter'a bas..."
+                    idKind="kullanıcı"
+                />
+            </div>
+
+            {/* ── Korunan roller ── */}
+            <div style={{ ...card, padding: 16 }}>
+                <Cap style={{ display: 'block', marginBottom: 4 }}>Korunan Roller</Cap>
+                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                    Bu rollere <strong>mention atan</strong> kişiler de timeout'a alınır (örn. @admin, @yetkili).
+                </p>
+                <MultiIdInput
+                    value={protectedRoleIds}
+                    onChange={markDirty(setProtectedRoleIds)}
+                    placeholder="Discord rol ID gir ve Enter'a bas..."
+                    idKind="rol"
+                />
+            </div>
+
+            {/* ── Timeout süreleri ── */}
+            <div style={{ ...card, padding: 16 }}>
+                <Cap style={{ display: 'block', marginBottom: 12 }}>Timeout Kademesi (Dakika)</Cap>
+                <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+                    {[
+                        { key: 'first',  label: '1. ihlal'  },
+                        { key: 'second', label: '2. ihlal'  },
+                        { key: 'third',  label: '3. ihlal'  },
+                        { key: 'repeat', label: '4.+ ihlal' },
+                    ].map(({ key, label }) => (
+                        <div key={key}>
+                            <div style={{ fontSize: 11, color: A.faint, marginBottom: 4 }}>{label}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <input type="number" min="1" max="1440" value={timeouts[key]}
+                                    onChange={markDirty(e => setTimeouts({ ...timeouts, [key]: e.target.value }))}
+                                    style={{ ...inputStyle, width: 70, fontSize: 14, padding: '6px 8px' }}/>
+                                <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>dk</span>
                             </div>
-                        ))}
-                    </div>
-                    <div style={{ marginTop: 24, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                        <I.Alert size={14} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
-                        <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6 }}>
-                            İhlal sayacı her gün otomatik sıfırlanır. Ayarlar bot yeniden başlatılana kadar geçerli olmaz.
                         </div>
+                    ))}
+                </div>
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <I.Alert size={12} style={{ color: A.warn, flexShrink: 0, marginTop: 2 }}/>
+                    <div style={{ fontSize: 11, color: A.dim, lineHeight: 1.6 }}>
+                        İhlal sayacı her gün otomatik sıfırlanır. Ayarlar bot yeniden başlatılana kadar geçerli olmaz.
                     </div>
                 </div>
+            </div>
+
+            {/* ── Kaydet ── */}
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12,
+                position: 'sticky', bottom: 0, padding: 12,
+                background: A.bg, borderTop: `1px solid ${A.border}`,
+            }}>
+                {dirty && (
+                    <span style={{ fontSize: 11, color: A.warn, marginRight: 'auto' }}>
+                        ● Kaydedilmemiş değişiklikler var
+                    </span>
+                )}
+                <button onClick={handleSave} disabled={botSettingsMutation.isPending || !dirty}
+                    style={{ ...btnPrimary, padding: '10px 18px', opacity: !dirty ? 0.5 : 1 }}>
+                    <I.Check size={12} style={{ marginRight: 6, verticalAlign: -1 }}/>
+                    {botSettingsMutation.isPending ? 'KAYDEDİLİYOR...' : 'AYARLARI KAYDET'}
+                </button>
             </div>
         </div>
     );

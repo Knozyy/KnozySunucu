@@ -97,7 +97,7 @@ export default function LoginPage() {
                         <div style={{ position: 'absolute', inset: 12, background: 'var(--accent)' }}/>
                     </div>
                     <div>
-                        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '0.02em' }}>HODO</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '0.02em' }}>HooDoo</div>
                         <div style={{ fontSize: 10, color: A.faint, fontFamily: A.mono, letterSpacing: '0.12em' }}>
                             SERVER CONTROL PANEL
                         </div>

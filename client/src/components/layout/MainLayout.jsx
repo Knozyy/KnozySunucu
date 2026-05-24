@@ -225,7 +225,7 @@ export default function MainLayout() {
                     </div>
                     {!collapsed && (
                         <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', color: A.text }}>HODO</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', color: A.text }}>HooDoo</div>
                             <div style={{ fontSize: 9, color: A.faint, fontFamily: A.mono, letterSpacing: '0.08em' }}>SERVER PANEL</div>
                         </div>
                     )}
