@@ -321,6 +321,78 @@ function ServerSettingsPanel() {
                         {arLoading ? 'Yükleniyor...' : enabled ? 'AKTİF — Çöküş sonrası otomatik başlatma açık' : 'PASİF — Sunucu çökerse manuel başlatma gerekir'}
                     </span>
                 </div>
+
+                {/* Sunucu sayaçları + son çöküm log'u */}
+                {arData?.instances && arData.instances.length > 0 && (
+                    <div style={{
+                        marginTop: 8, paddingTop: 10, borderTop: `1px solid ${A.border}`,
+                        display: 'flex', flexDirection: 'column', gap: 6,
+                    }}>
+                        <Cap>SUNUCU ÇÖKÜM SAYAÇLARI (5 DAKİKA PENCERESİ)</Cap>
+                        {arData.instances.map(s => {
+                            const blocked = s.crashCount >= 10;
+                            return (
+                                <div key={s.id} style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    gap: 8, fontSize: 11, fontFamily: A.mono,
+                                    padding: '6px 8px', borderRadius: 2,
+                                    background: blocked ? 'rgba(248,113,113,0.06)' : A.bgDeeper,
+                                    border: `1px solid ${blocked ? 'rgba(248,113,113,0.2)' : A.border}`,
+                                }}>
+                                    <span style={{ color: A.text }}>{s.name}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ color: blocked ? A.err : (s.crashCount > 0 ? A.warn : A.dim) }}>
+                                            {s.crashCount} çöküm
+                                        </span>
+                                        {s.crashCount > 0 && (
+                                            <button onClick={() => {
+                                                api.post(`/servers/${s.id}/reset-crash-counter`)
+                                                    .then(() => { toast.success('Sayaç sıfırlandı'); qc.invalidateQueries({ queryKey: ['auto-restart-setting'] }); })
+                                                    .catch(e => toast.error(e.response?.data?.error || 'Hata'));
+                                            }} style={{
+                                                background: 'transparent', border: `1px solid ${A.border}`,
+                                                color: A.faint, fontFamily: A.mono, fontSize: 9,
+                                                padding: '2px 6px', borderRadius: 2, cursor: 'pointer',
+                                            }}>SIFIRLA</button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {arData.instances.some(s => s.crashCount >= 10) && (
+                            <p style={{ fontSize: 10, color: A.warn, margin: '4px 0 0', lineHeight: 1.5 }}>
+                                ⚠ Bir sunucu 5dk'da 10+ çöküme ulaştı, restart döngüsü durduruldu.
+                                Sebebi düzelt ve sayacı sıfırla veya manuel başlat.
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                {/* Son 24 saatteki çöküm geçmişi */}
+                {arData?.recentCrashes && arData.recentCrashes.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                        <summary style={{
+                            cursor: 'pointer', fontSize: 11, color: A.faint, fontFamily: A.mono,
+                            letterSpacing: '0.06em', textTransform: 'uppercase',
+                        }}>
+                            Son 24 saatteki çöküm kayıtları ({arData.recentCrashes.length})
+                        </summary>
+                        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {arData.recentCrashes.map(c => (
+                                <div key={c.id} style={{
+                                    display: 'flex', justifyContent: 'space-between', gap: 8,
+                                    fontSize: 10.5, fontFamily: A.mono, color: A.dim,
+                                    padding: '4px 8px', borderRadius: 2, background: A.bgDeeper,
+                                }}>
+                                    <span>{new Date(c.occurred_at + 'Z').toLocaleString('tr-TR')}</span>
+                                    <span style={{ color: c.auto_restarted ? A.ok : A.err }}>
+                                        {c.auto_restarted ? `↻ restart` : '⏹ blocked'} · exit={c.exit_code} · #{c.crash_count}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
+                )}
             </div>
 
             <Cap style={{ marginTop: 8 }}>Sistem Güncellemeleri</Cap>

@@ -193,12 +193,40 @@ router.get('/status-all', authMiddleware, (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/servers/auto-restart
+// GET /api/servers/auto-restart — global ayar + tüm sunucuların çöküm durumu
 router.get('/auto-restart', authMiddleware, (req, res) => {
     try {
         const db = getDb();
         const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'auto_restart_enabled'").get();
-        res.json({ enabled: !setting || setting.value === '1' });
+        const enabled = !setting || setting.value === '1';
+
+        // Her sunucunun anlık çöküm sayacı
+        const serverRegistry = require('../services/serverRegistry');
+        const instances = [];
+        try {
+            for (const [id, inst] of serverRegistry._instances.entries()) {
+                instances.push({
+                    id,
+                    name: inst._serverConfig?.name || `Sunucu #${id}`,
+                    status: inst.status,
+                    crashCount: inst._crashCount || 0,
+                    crashWindowStart: inst._crashWindowStart || 0,
+                });
+            }
+        } catch { /* ignore */ }
+
+        // Son 24 saatteki çöküm kayıtları
+        let recentCrashes = [];
+        try {
+            recentCrashes = db.prepare(`
+                SELECT id, exit_code, auto_restarted, crash_count, occurred_at
+                FROM crash_events
+                WHERE occurred_at > datetime('now', '-24 hours')
+                ORDER BY id DESC LIMIT 20
+            `).all();
+        } catch { /* ignore */ }
+
+        res.json({ enabled, instances, recentCrashes });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -211,6 +239,17 @@ router.post('/auto-restart', authMiddleware, requireRole('admin'), (req, res) =>
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`)
             .run(enabled);
         res.json({ enabled: enabled === '1' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/servers/:id/reset-crash-counter — çöküm döngüsü kilitlendiyse manuel sıfırla
+router.post('/:id/reset-crash-counter', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const serverRegistry = require('../services/serverRegistry');
+        const inst = serverRegistry.get(parseInt(req.params.id));
+        if (!inst) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        inst.resetCrashCounter();
+        res.json({ message: 'Çöküm sayacı sıfırlandı', crashCount: 0 });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

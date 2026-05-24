@@ -305,12 +305,14 @@ class MinecraftService extends EventEmitter {
     /** Çöküm tespiti ve oto-başlatma — her iki platformdan çağrılır */
     _handleCrash(exitCode) {
         const now = Date.now();
-        if (now - this._crashWindowStart > 300000) {
+        // 5 dakikalık çöküm penceresi
+        if (!this._crashWindowStart || now - this._crashWindowStart > 300000) {
             this._crashCount = 0;
             this._crashWindowStart = now;
         }
         this._crashCount = (this._crashCount || 0) + 1;
 
+        // Auto-restart ayarını oku
         let autoRestartEnabled = true;
         try {
             const db = getDb();
@@ -318,20 +320,28 @@ class MinecraftService extends EventEmitter {
             autoRestartEnabled = !setting || setting.value === '1';
             db.prepare('INSERT INTO crash_events (exit_code, auto_restarted, crash_count) VALUES (?, ?, ?)')
                 .run(exitCode ?? -1, autoRestartEnabled ? 1 : 0, this._crashCount);
-        } catch { /* ignore */ }
+        } catch (err) {
+            this.addLog(`[AutoRestart] DB hatası: ${err.message}`);
+        }
+
+        this.addLog(`[AutoRestart] Çöküm #${this._crashCount} (5dk içinde) · ayar=${autoRestartEnabled ? 'AÇIK' : 'KAPALI'} · exit=${exitCode}`);
 
         // Panel kapanıyorsa otomatik yeniden başlatma yapma
-        if (this._shuttingDown) return;
+        if (this._shuttingDown) {
+            this.addLog('[AutoRestart] Panel kapanıyor — yeniden başlatma atlandı.');
+            return;
+        }
 
-        const MAX_CRASHES = 5;
+        // Yapılandırılabilir maksimum çöküm sayısı (varsayılan 10, eskiden 5 idi)
+        const MAX_CRASHES = parseInt(process.env.MAX_CRASHES_5MIN || '10', 10);
         if (this._crashCount >= MAX_CRASHES) {
-            this.addLog(`[System] 🔴 Son 5 dakikada ${this._crashCount} çöküm! Otomatik başlatma durduruldu.`);
-            this.emit('log', `[System] 🔴 Çok fazla çöküm (${this._crashCount}x). Otomatik başlatma durduruldu.`);
+            const msg = `[AutoRestart] 🔴 5 dakikada ${this._crashCount} çöküm (limit: ${MAX_CRASHES}). Restart döngüsü durduruldu. Manuel başlatınca sayaç sıfırlanır.`;
+            this.addLog(msg);
+            this.emit('log', msg);
             this.emit('crash', { code: exitCode, timestamp: now, autoRestarted: false, crashCount: this._crashCount, reason: 'max_crashes' });
             return;
         }
 
-        this.addLog(`[System] ⚠️ Sunucu çöktü (exit code: ${exitCode}, çöküm #${this._crashCount})`);
         this.emit('crash', { code: exitCode, timestamp: now, autoRestarted: autoRestartEnabled, crashCount: this._crashCount });
 
         try {
@@ -339,18 +349,52 @@ class MinecraftService extends EventEmitter {
             notificationService.send('server_crash', `Sunucu çöktü (exit code: ${exitCode}). ${autoRestartEnabled ? 'Otomatik yeniden başlatma yapılıyor...' : 'Otomatik başlatma kapalı.'}`);
         } catch { /* ignore */ }
 
-        if (autoRestartEnabled) {
-            this.addLog('[System] 🔄 10 saniye sonra otomatik yeniden başlatılıyor...');
-            this.emit('log', '[System] 🔄 Otomatik yeniden başlatma 10sn içinde...');
-            setTimeout(() => {
-                if (this.status === 'stopped') {
-                    try { this.start(); }
-                    catch (err) { this.addLog(`[System] Otomatik başlatma başarısız: ${err.message}`); }
-                }
-            }, 10000);
-        } else {
-            this.emit('log', '[System] ⚠️ Otomatik başlatma kapalı, manuel başlatma gerekiyor.');
+        if (!autoRestartEnabled) {
+            const msg = '[AutoRestart] ⚠️ Otomatik başlatma KAPALI — manuel başlatma gerekiyor (Settings > Sunucu).';
+            this.addLog(msg); this.emit('log', msg);
+            return;
         }
+
+        this._scheduleAutoRestart(1);
+    }
+
+    /**
+     * Otomatik restart'ı tetikler. Başarısız olursa tekrar dener (max 3 deneme).
+     */
+    _scheduleAutoRestart(attempt) {
+        const MAX_ATTEMPTS = 3;
+        const delaySec = attempt === 1 ? 10 : (attempt === 2 ? 20 : 45);
+
+        this.addLog(`[AutoRestart] 🔄 ${delaySec}sn içinde başlatılacak (deneme ${attempt}/${MAX_ATTEMPTS})`);
+        this.emit('log', `[AutoRestart] 🔄 ${delaySec}sn içinde başlatma denemesi ${attempt}/${MAX_ATTEMPTS}…`);
+
+        setTimeout(() => {
+            if (this._shuttingDown) return;
+            if (this.status !== 'stopped') {
+                this.addLog(`[AutoRestart] Sunucu durumu '${this.status}' — restart iptal edildi.`);
+                return;
+            }
+            try {
+                this.addLog('[AutoRestart] ▶ start() çağrılıyor...');
+                this.start({ fromAutoRestart: true });
+                this.addLog('[AutoRestart] ✅ start() başarılı, sunucu başlatılıyor.');
+            } catch (err) {
+                this.addLog(`[AutoRestart] ❌ start() başarısız: ${err.message}`);
+                this.emit('log', `[AutoRestart] ❌ start() başarısız (deneme ${attempt}): ${err.message}`);
+                if (attempt < MAX_ATTEMPTS) {
+                    this._scheduleAutoRestart(attempt + 1);
+                } else {
+                    const msg = `[AutoRestart] 🔴 ${MAX_ATTEMPTS} deneme başarısız — manuel müdahale gerekiyor.`;
+                    this.addLog(msg); this.emit('log', msg);
+                }
+            }
+        }, delaySec * 1000);
+    }
+
+    /** Sayaçları sıfırla — manuel start veya admin reset için */
+    resetCrashCounter() {
+        this._crashCount = 0;
+        this._crashWindowStart = 0;
     }
 
     // ── Temel metodlar ───────────────────────────────────────────────────────
@@ -547,9 +591,15 @@ class MinecraftService extends EventEmitter {
 
     // ── start() ──────────────────────────────────────────────────────────────
 
-    start() {
+    start(opts = {}) {
         if (this.status === 'running' || this.status === 'starting') {
             throw new Error('Sunucu zaten çalışıyor');
+        }
+
+        // Manuel başlatma → çöküm sayacını sıfırla, aksi halde kullanıcı
+        // hata düzelttikten sonra bile auto-restart blocklu kalıyordu
+        if (!opts.fromAutoRestart) {
+            this.resetCrashCounter();
         }
 
         const serverPath = this.getServerPath();
