@@ -53,7 +53,8 @@ class ServerRegistry {
                     const statuses = this.getAllStatus();
                     for (const s of statuses) {
                         if (s.status === 'running') {
-                            totalPlayers += (s.playerCount || 0);
+                            const pCount = Number(s.playerCount);
+                            totalPlayers += (isNaN(pCount) ? 0 : pCount);
                         }
                     }
                     discordBotService.addPlayerHistoryRecord(totalPlayers);

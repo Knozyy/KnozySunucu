@@ -178,7 +178,16 @@ router.post('/timed-roles', authMiddleware, requireRole('admin'), (req, res) => 
 // DELETE /api/discord/timed-roles/:index — süreli rolü sil
 router.delete('/timed-roles/:index', authMiddleware, requireRole('admin'), (req, res) => {
     try {
+        const roles = discordBotService.getTimedRoles();
+        const role = roles[parseInt(req.params.index)];
         const removed = discordBotService.removeTimedRoleAt(parseInt(req.params.index));
+        
+        // Discord API üzerinden rolü anında sil
+        if (role && role.guild_id && role.user_id && role.role_id) {
+            discordBotService._discordApiDelete(`/guilds/${role.guild_id}/members/${role.user_id}/roles/${role.role_id}`)
+                .catch(() => {}); // Hata olursa sessizce geç
+        }
+        
         res.json({ message: 'Süreli rol silindi', removed });
     } catch (e) {
         res.status(400).json({ error: e.message });

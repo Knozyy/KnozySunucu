@@ -442,6 +442,28 @@ class DiscordBotService {
                 });
             });
             req.on('error', () => resolve(null));
+            req.end();
+        });
+    }
+
+    _discordApiDelete(path) {
+        const token = this.getDiscordToken();
+        if (!token) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const opts = {
+                hostname: 'discord.com',
+                path: `/api/v10${path}`,
+                method: 'DELETE',
+                headers: { 'Authorization': `Bot ${token}`, 'User-Agent': 'KnozyPanel (1.0)' },
+            };
+            const req = https.request(opts, (res) => {
+                let data = '';
+                res.on('data', c => { data += c; });
+                res.on('end', () => {
+                    resolve({ statusCode: res.statusCode, data });
+                });
+            });
+            req.on('error', () => resolve(null));
             req.setTimeout(5000, () => { req.destroy(); resolve(null); });
             req.end();
         });
