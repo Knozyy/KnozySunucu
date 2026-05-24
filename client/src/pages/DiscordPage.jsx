@@ -786,7 +786,10 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                             placeholder="Örn: 981273918237" style={inputStyle}/>
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!dashboard_kur #kanal" komutunun yerine geçer. Bot, online oyuncu istatistiklerini bu kanalda sürekli günceller.</div>
                     </div>
-                    
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Log Kanalı ID</div>
+                        <input type="text" value={form.whitelist_channel_id} 
+                            onChange={e => handleChange('whitelist_channel_id', e.target.value)} 
                             placeholder="Örn: 123456789" style={inputStyle}/>
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!whitelist kanal #kanal" komutunun yerine geçer. Whitelist kayıt işlemleri bu kanalda bildirilir.</div>
                     </div>
@@ -949,6 +952,11 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                                 <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Saat</div>
                                 <input type="number" value={form.durationHours}
                                     onChange={e => setForm(f => ({ ...f, durationHours: e.target.value }))}
+                                    style={inputStyle} placeholder="0" min="0" max="23"/>
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button onClick={() => setShowForm(false)} style={btnGhost}>İPTAL</button>
                         <button onClick={handleAdd}
                             disabled={addRoleMutation.isPending || !form.user_id || !form.guild_id || !form.role_id}
