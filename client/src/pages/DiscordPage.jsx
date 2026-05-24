@@ -722,12 +722,14 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         whitelist_channel_id: ''
     });
 
+    const getArray = (val) => Array.isArray(val) ? val : (typeof val === 'string' && val ? val.split(',') : []);
+
     useEffect(() => {
         if (botSettings) {
             setForm({
-                adminRoleIds: botSettings.adminRoleIds || [],
-                whitelistRoleIds: botSettings.whitelistRoleIds || [],
-                whitelistAddRoleIds: botSettings.whitelistAddRoleIds || [],
+                adminRoleIds: getArray(botSettings.adminRoleIds),
+                whitelistRoleIds: getArray(botSettings.whitelistRoleIds),
+                whitelistAddRoleIds: getArray(botSettings.whitelistAddRoleIds),
                 dashboard_channel_id: botSettings.dashboard_channel_id || '',
                 whitelist_channel_id: botSettings.whitelist_channel_id || ''
             });

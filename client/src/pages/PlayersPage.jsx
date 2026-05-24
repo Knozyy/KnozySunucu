@@ -108,7 +108,7 @@ export default function PlayersPage() {
         refetchInterval: 5000,
     });
 
-    const { data: sessionsRaw = [], isLoading: sessionsLoading } = useQuery({
+    const { data: sessionsRaw, isLoading: sessionsLoading } = useQuery({
         queryKey: ['player-sessions', search],
         queryFn: () => api(`/players/sessions?limit=500${search ? `&username=${encodeURIComponent(search)}` : ''}`),
         refetchInterval: 15000,
@@ -117,26 +117,29 @@ export default function PlayersPage() {
     // Her oyuncunun sadece en son oturumunu göster
     const sessions = (() => {
         const seen = new Map();
-        for (const s of sessionsRaw) {
+        const raw = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+        for (const s of raw) {
             if (!seen.has(s.username)) seen.set(s.username, s);
         }
         return Array.from(seen.values());
     })();
 
-    const { data: stats = [], isLoading: statsLoading } = useQuery({
+    const { data: statsRaw, isLoading: statsLoading } = useQuery({
         queryKey: ['player-stats'],
         queryFn: () => api('/players/stats'),
         refetchInterval: 30000,
     });
+    const stats = Array.isArray(statsRaw) ? statsRaw : [];
 
     const onlinePlayers = online?.players ?? [];
     const mcStatus = online?.status ?? 'stopped';
 
-    const { data: banlog = [], isLoading: banloading } = useQuery({
+    const { data: banlogRaw, isLoading: banloading } = useQuery({
         queryKey: ['banlog'],
         queryFn: () => api('/players/banlog'),
         refetchInterval: 30000,
     });
+    const banlog = Array.isArray(banlogRaw) ? banlogRaw : [];
 
     const tabs = [
         { id: 'sessions', label: 'Oturum Geçmişi', icon: <I.Calendar size={12}/> },
@@ -191,20 +194,23 @@ export default function PlayersPage() {
                     </p>
                 ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {onlinePlayers.map(name => (
-                            <div key={name} onClick={() => setProfileUser(name)} style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                background: 'rgba(74,222,128,0.06)',
-                                border: '1px solid rgba(74,222,128,0.15)',
-                                borderRadius: 4, padding: '6px 10px',
-                                cursor: 'pointer',
-                            }}>
-                                <PlayerHead username={name} size={24}/>
-                                <span style={{ fontSize: 12, fontWeight: 500, color: A.ok, fontFamily: A.mono }}>
-                                    {name}
-                                </span>
-                            </div>
-                        ))}
+                        {onlinePlayers.map(p => {
+                            const pName = typeof p === 'string' ? p : p.name;
+                            return (
+                                <div key={pName} onClick={() => setProfileUser(pName)} style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    background: 'rgba(74,222,128,0.06)',
+                                    border: '1px solid rgba(74,222,128,0.15)',
+                                    borderRadius: 4, padding: '6px 10px',
+                                    cursor: 'pointer',
+                                }}>
+                                    <PlayerHead username={pName} size={24}/>
+                                    <span style={{ fontSize: 12, fontWeight: 500, color: A.ok, fontFamily: A.mono }}>
+                                        {pName}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
