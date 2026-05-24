@@ -371,6 +371,7 @@ export default function DiscordPage() {
         { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
         { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
         { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
+        { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
         { key: 'webhook',         label: 'Webhook',          icon: I.Send },
         { key: 'settings',        label: 'Ayarlar (Bot Yetki & Kanallar)', icon: I.Cog },
     ];
