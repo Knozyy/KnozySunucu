@@ -215,6 +215,33 @@ router.delete('/rcon-queue', authMiddleware, requireRole('admin'), (req, res) =>
     }
 });
 
+// POST /api/discord/sync-whitelist-to-mc — Paneldeki herkesi MC'ye aktar
+router.post('/sync-whitelist-to-mc', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const whitelist = discordBotService.getWhitelist() || {};
+        const mcNicks = Object.values(whitelist).map(x => typeof x === 'object' ? x.nickname : x).filter(Boolean);
+        
+        const serverRegistry = require('../services/serverRegistry');
+        const mcService = serverRegistry.getDefault();
+        
+        if (!mcService || mcService.status !== 'running') {
+            return res.status(400).json({ error: 'Minecraft sunucusu açık değil (ya da bulunamadı). Senkronizasyon yapılamaz.' });
+        }
+
+        let count = 0;
+        mcNicks.forEach(nick => {
+            if (nick) {
+                mcService.sendCommand(`whitelist add ${nick}`);
+                count++;
+            }
+        });
+
+        res.json({ message: `${count} oyuncu MC sunucusuna eklendi.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Status messages ───────────────────────────────────────────────────────────
 
 // GET /api/discord/status-messages

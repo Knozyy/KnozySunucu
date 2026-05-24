@@ -896,7 +896,17 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                         api.post('/api/discord/rcon-queue', { command: 'whitelist list' });
                         toast.success('Minecraft sunucusundan whitelist listesi istendi. Bot eşitlemeyi yapacak.');
                     }}>
-                        <I.Restart size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (Tetikle)
+                        <I.Restart size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (MC'den Panel'e)
+                    </button>
+                    <button style={{ ...btnGhost, color: A.primary, borderColor: 'rgba(99, 102, 241, 0.3)' }} onClick={async () => {
+                        try {
+                            const res = await api.post('/api/discord/sync-whitelist-to-mc');
+                            toast.success(res.data.message || 'Senkronizasyon başladı.');
+                        } catch (err) {
+                            toast.error(err.response?.data?.error || 'Senkronizasyon başarısız.');
+                        }
+                    }}>
+                        <I.Upload size={14} style={{ marginRight: 6 }}/> Panel'deki Whitelist'i MC'ye Aktar
                     </button>
                 </div>
                 <div style={{ fontSize: 11, color: A.faint, marginTop: 8 }}>Eski "!whitelist sync-mc" vb. komutları buradan hızlıca tetikleyebilirsiniz.</div>
