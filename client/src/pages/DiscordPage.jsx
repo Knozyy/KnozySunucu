@@ -716,6 +716,66 @@ export default function DiscordPage() {
 
 // ── Ayarlar Sekmesi ──────────────────────────────────────────────────────────
 
+function MultiRoleInput({ value, onChange, savedRoles, placeholder }) {
+    const [inputValue, setInputValue] = useState('');
+    const [preset, setPreset] = useState('');
+
+    const handleAdd = (idToAdd) => {
+        const id = idToAdd.trim();
+        if (!id) return;
+        if (!value.includes(id)) {
+            onChange([...value, id]);
+        }
+        setInputValue('');
+        setPreset('');
+    };
+
+    const handleRemove = (id) => {
+        onChange(value.filter(v => v !== id));
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: value.length > 0 ? 28 : 0 }}>
+                {value.length === 0 && <span style={{ fontSize: 12, color: 'var(--faint)' }}>Henüz eklenmemiş.</span>}
+                {value.map(id => {
+                    const saved = savedRoles.find(r => String(r.id) === String(id));
+                    const label = saved ? `${saved.name} (${id})` : id;
+                    return (
+                        <div key={id} style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '4px 10px', background: 'rgba(167, 139, 250, 0.10)',
+                            border: '1px solid rgba(167, 139, 250, 0.25)', borderRadius: 99,
+                            fontSize: 12, fontWeight: 500, color: 'var(--accent)'
+                        }}>
+                            {label}
+                            <button onClick={() => handleRemove(id)} style={{
+                                background: 'none', border: 'none', color: 'inherit',
+                                cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', opacity: 0.6
+                            }}>✕</button>
+                        </div>
+                    );
+                })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input type="text" value={inputValue} onChange={e => setInputValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAdd(inputValue); }}
+                    placeholder={placeholder || "Rol ID girin ve Enter'a basın..."}
+                    style={{ ...inputStyle, flex: 1, minWidth: 200 }}/>
+                {savedRoles && savedRoles.length > 0 && (
+                    <select value={preset} onChange={e => handleAdd(e.target.value)} style={{ ...inputStyle, width: 220 }}>
+                        <option value="">Kayıtlı Rol Seç & Ekle...</option>
+                        {savedRoles.map(r => (
+                            <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
+                        ))}
+                    </select>
+                )}
+                <button onClick={() => handleAdd(inputValue)} style={btnPrimary} disabled={!inputValue.trim()}>EKLE</button>
+            </div>
+        </div>
+    );
+}
+
 function SettingsTab({ botSettings, botSettingsMutation }) {
     const [form, setForm] = useState({
         adminRoleIds: [],
@@ -762,34 +822,26 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Admin Rolleri (ID'leri virgülle ayırın)</div>
-                        <input type="text" value={form.adminRoleIds.join(', ')} 
-                            onChange={e => handleArrayChange('adminRoleIds', e.target.value)} 
-                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Admin Rolleri</div>
+                        <MultiRoleInput value={form.adminRoleIds} onChange={v => handleChange('adminRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu rollere sahip kişiler botun tüm admin özelliklerine erişebilir.</div>
                     </div>
                     
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Görüntüleme Rolleri</div>
-                        <input type="text" value={form.whitelistRoleIds.join(', ')} 
-                            onChange={e => handleArrayChange('whitelistRoleIds', e.target.value)} 
-                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <MultiRoleInput value={form.whitelistRoleIds} onChange={v => handleChange('whitelistRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer sadece whitelist listesini görüntüleyebilir.</div>
                     </div>
                     
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Ekleme Rolleri</div>
-                        <input type="text" value={form.whitelistAddRoleIds.join(', ')} 
-                            onChange={e => handleArrayChange('whitelistAddRoleIds', e.target.value)} 
-                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <MultiRoleInput value={form.whitelistAddRoleIds} onChange={v => handleChange('whitelistAddRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer whitelist'e yeni kullanıcı ekleyebilir.</div>
                     </div>
 
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Kayıtlı Oyuncu Rolleri (Whitelist Alabilecek Roller)</div>
-                        <input type="text" value={form.whitelist_required_role_ids.join(', ')} 
-                            onChange={e => handleArrayChange('whitelist_required_role_ids', e.target.value)} 
-                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <MultiRoleInput value={form.whitelist_required_role_ids} onChange={v => handleChange('whitelist_required_role_ids', v)} savedRoles={botSettings?.savedRoles || []} />
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Sadece bu role sahip oyuncular whitelist'te kalabilir. Gece Koruması (Night Guard) sırasında bu rollerden hiçbirine sahip olmayanların whitelist'i silinir.</div>
                     </div>
                 </div>
