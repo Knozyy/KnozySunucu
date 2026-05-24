@@ -90,6 +90,11 @@ class MinecraftService extends EventEmitter {
             this._startLogTail(true /* tail mevcut dosyanın sonundan */);
             this._startStatsTracking();
             this._startStatusWatch();
+            
+            // Reconnect olduğunda oyuncu listesini senkronize et
+            setTimeout(() => {
+                try { this.sendCommand('list'); } catch {}
+            }, 2000);
         } catch (err) {
             this.addLog(`[System] Reconnect hatası: ${err.message}`);
         }
@@ -198,12 +203,35 @@ class MinecraftService extends EventEmitter {
                 }
             } catch { /* ignore */ }
         }
+
+        // List komutu çıktısı ile tam senkronizasyon
+        // Örn: "There are 1 of a max of 20 players online: MsTwheel"
+        const listMatch = line.match(/players online:\s*(.*)/i);
+        if (listMatch) {
+            const playersStr = listMatch[1].trim();
+            if (playersStr) {
+                // Oyuncu isimleri genelde virgülle ayrılır
+                const currentPlayers = playersStr.split(',').map(p => p.trim()).filter(p => p);
+                
+                // Sadece değişiklik varsa emit et
+                if (this.players.length !== currentPlayers.length || !this.players.every(p => currentPlayers.includes(p))) {
+                    this.players = currentPlayers;
+                    this.emit('players', this.players);
+                }
+            } else {
+                if (this.players.length !== 0) {
+                    this.players = [];
+                    this.emit('players', this.players);
+                }
+            }
+        }
     }
 
     // ── Java process izleyici (screen modu) ──────────────────────────────────
 
     _startStatusWatch() {
         this._stopStatusWatch();
+        let loopCount = 0;
         this._statusCheckInterval = setInterval(() => {
             // Panel kapanıyorsa hiçbir şey yapma
             if (this._shuttingDown) { this._stopStatusWatch(); return; }
@@ -217,6 +245,20 @@ class MinecraftService extends EventEmitter {
                 this._onServerExited();
             } else if (javaPid) {
                 this._javaPid = javaPid;
+            }
+            
+            // Her 60 saniyede bir (5000ms * 12) gizlice oyuncu listesini senkronize et
+            loopCount++;
+            if (loopCount >= 12 && this.status === 'running') {
+                loopCount = 0;
+                try {
+                    if (this._useScreen()) {
+                        const execSync = require('child_process').execSync;
+                        execSync(`screen -S ${this._screenName} -X stuff 'list\r'`, { timeout: 3000, stdio: 'ignore' });
+                    } else if (this.process?.stdin) {
+                        this.process.stdin.write('list\n');
+                    }
+                } catch { /* ignore */ }
             }
         }, 5000);
     }
