@@ -29,9 +29,16 @@ class DiscordBotService {
 
     isBotRunning() {
         try {
-            const out = execSync('screen -list 2>/dev/null || true').toString();
-            return out.includes(SCREEN_NAME);
-        } catch { return false; }
+            const pm2Out = execSync('pm2 jlist 2>/dev/null || echo "[]"').toString();
+            const pm2List = JSON.parse(pm2Out);
+            if (pm2List.some(p => p.name === 'KnozyBot' && p.pm2_env.status === 'online')) return true;
+        } catch {}
+
+        try {
+            const screenOut = execSync('screen -list 2>/dev/null || true').toString();
+            return screenOut.includes(SCREEN_NAME);
+        } catch {}
+        return false;
     }
 
     startBot() {
@@ -40,16 +47,14 @@ class DiscordBotService {
         if (!fs.existsSync(dir)) throw new Error(`Bot dizini bulunamadı: ${dir}`);
         if (this.isBotRunning()) throw new Error('Bot zaten çalışıyor.');
 
-        // Node.js bot (yeni sistem) veya Python bot (eski sistem) için
         const packageJsonPath = path.join(dir, 'package.json');
         const isNodeBot = fs.existsSync(packageJsonPath);
 
         let cmd;
         if (isNodeBot) {
-            cmd = `screen -dmS ${SCREEN_NAME} bash -c "cd ${dir} && npm install > /dev/null 2>&1 && node index.js 2>&1 | tee /tmp/knozy-discord.log"`;
+            cmd = `cd ${dir} && npm install > /dev/null 2>&1 && pm2 start index.js --name "KnozyBot"`;
         } else {
-            // Python bot (eski)
-            cmd = `screen -dmS ${SCREEN_NAME} bash -c "cd ${dir} && python3 main.py 2>&1 | tee /tmp/knozy-discord.log"`;
+            cmd = `cd ${dir} && pm2 start main.py --interpreter python3 --name "KnozyBot"`;
         }
 
         try {
@@ -61,17 +66,23 @@ class DiscordBotService {
 
     stopBot() {
         if (!this.isBotRunning()) throw new Error('Bot zaten çalışmıyor.');
-        try {
-            execSync(`screen -S ${SCREEN_NAME} -X quit`, { stdio: 'ignore' });
-        } catch (e) {
-            throw new Error(`Bot durdurulamadı: ${e.message}`);
+        let errors = [];
+        try { execSync(`pm2 stop KnozyBot 2>/dev/null`); } catch (e) { errors.push(e.message); }
+        try { execSync(`screen -S ${SCREEN_NAME} -X quit 2>/dev/null`); } catch (e) { errors.push(e.message); }
+        
+        if (this.isBotRunning()) {
+            throw new Error(`Bot durdurulamadı. PM2 veya Screen oturumu kapatılamıyor.`);
         }
     }
 
     getRecentLog(lines = 50) {
         try {
-            const out = execSync(`tail -n ${lines} /tmp/knozy-discord.log 2>/dev/null || echo ""`)
+            const out = execSync(`pm2 logs KnozyBot --raw --nostream --lines ${lines} 2>/dev/null || echo ""`)
                 .toString().trim();
+            // Eğer pm2 log yoksa (henüz pm2 geçişi tam yapılmadıysa eski logu göster)
+            if (!out) {
+                return execSync(`tail -n ${lines} /tmp/knozy-discord.log 2>/dev/null || echo ""`).toString().trim();
+            }
             return out;
         } catch { return ''; }
     }
