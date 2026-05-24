@@ -722,7 +722,9 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         whitelistRoleIds: [],
         whitelistAddRoleIds: [],
         dashboard_channel_id: '',
-        whitelist_channel_id: ''
+        whitelist_channel_id: '',
+        role_log_channel_id: '',
+        night_guard_log_channel_id: ''
     });
 
     const getArray = (val) => Array.isArray(val) ? val : (typeof val === 'string' && val ? val.split(',') : []);
@@ -734,7 +736,9 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 whitelistRoleIds: getArray(botSettings.whitelistRoleIds),
                 whitelistAddRoleIds: getArray(botSettings.whitelistAddRoleIds),
                 dashboard_channel_id: botSettings.dashboard_channel_id || '',
-                whitelist_channel_id: botSettings.whitelist_channel_id || ''
+                whitelist_channel_id: botSettings.whitelist_channel_id || '',
+                role_log_channel_id: botSettings.role_log_channel_id || '',
+                night_guard_log_channel_id: botSettings.night_guard_log_channel_id || ''
             });
         }
     }, [botSettings]);
@@ -797,6 +801,20 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                             onChange={e => handleChange('whitelist_channel_id', e.target.value)} 
                             placeholder="Örn: 123456789" style={inputStyle}/>
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!whitelist kanal #kanal" komutunun yerine geçer. Whitelist kayıt işlemleri bu kanalda bildirilir.</div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Süreli Rol İptal Log Kanalı ID</div>
+                        <input type="text" value={form.role_log_channel_id} 
+                            onChange={e => handleChange('role_log_channel_id', e.target.value)} 
+                            placeholder="Örn: 123456789" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Süresi dolan roller geri alındığında bu kanala bildirim gönderilir.</div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Gece Rol Kontrolü Log Kanalı ID</div>
+                        <input type="text" value={form.night_guard_log_channel_id} 
+                            onChange={e => handleChange('night_guard_log_channel_id', e.target.value)} 
+                            placeholder="Örn: 123456789" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Gece koruması (Night Guard) tamamlandığında yetkisi alınan/geri verilen kişilerin özeti bu kanala atılır.</div>
                     </div>
                 </div>
             </div>
