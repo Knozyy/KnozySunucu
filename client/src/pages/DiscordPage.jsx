@@ -721,6 +721,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         adminRoleIds: [],
         whitelistRoleIds: [],
         whitelistAddRoleIds: [],
+        whitelist_required_role_ids: [],
         dashboard_channel_id: '',
         whitelist_channel_id: '',
         role_log_channel_id: '',
@@ -735,6 +736,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 adminRoleIds: getArray(botSettings.adminRoleIds),
                 whitelistRoleIds: getArray(botSettings.whitelistRoleIds),
                 whitelistAddRoleIds: getArray(botSettings.whitelistAddRoleIds),
+                whitelist_required_role_ids: getArray(botSettings.whitelist_required_role_ids),
                 dashboard_channel_id: botSettings.dashboard_channel_id || '',
                 whitelist_channel_id: botSettings.whitelist_channel_id || '',
                 role_log_channel_id: botSettings.role_log_channel_id || '',
@@ -772,7 +774,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                         <input type="text" value={form.whitelistRoleIds.join(', ')} 
                             onChange={e => handleArrayChange('whitelistRoleIds', e.target.value)} 
                             placeholder="123456789, 987654321" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olanlar sadece whitelist listesini görüntüleyebilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer sadece whitelist listesini görüntüleyebilir.</div>
                     </div>
                     
                     <div>
@@ -780,7 +782,15 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                         <input type="text" value={form.whitelistAddRoleIds.join(', ')} 
                             onChange={e => handleArrayChange('whitelistAddRoleIds', e.target.value)} 
                             placeholder="123456789, 987654321" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olanlar whitelist'e yeni kullanıcı ekleyebilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer whitelist'e yeni kullanıcı ekleyebilir.</div>
+                    </div>
+
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Kayıtlı Oyuncu Rolleri (Whitelist Alabilecek Roller)</div>
+                        <input type="text" value={form.whitelist_required_role_ids.join(', ')} 
+                            onChange={e => handleArrayChange('whitelist_required_role_ids', e.target.value)} 
+                            placeholder="123456789, 987654321" style={inputStyle}/>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Sadece bu role sahip oyuncular whitelist'te kalabilir. Gece Koruması (Night Guard) sırasında bu rollerden hiçbirine sahip olmayanların whitelist'i silinir.</div>
                     </div>
                 </div>
             </div>
