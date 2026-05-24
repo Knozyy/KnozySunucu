@@ -215,6 +215,47 @@ function ServerSettingsPanel() {
                     </span>
                 </div>
             </div>
+
+            <Cap style={{ marginTop: 8 }}>Sistem Güncellemeleri</Cap>
+            <div style={{
+                background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4,
+                padding: '16px', display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+                <div style={{ fontSize: 13, color: A.text, fontWeight: 500 }}>
+                    Yazılım Güncellemeleri (Git Pull)
+                </div>
+                <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, lineHeight: 1.6 }}>
+                    Bu butonlar sistemi Github'dan en son sürüme günceller. Güncelleme işlemi sırasında panel veya bot kısa süreliğine erişilemez olabilir (yaklaşık 10-15 saniye). Konsoldan manuel komut girmek yerine bu butonları kullanabilirsiniz.
+                </div>
+                
+                <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    <button 
+                        onClick={() => {
+                            if (window.confirm('Paneli güncellemek ve yeniden başlatmak istediğinize emin misiniz? Sayfa birkaç saniye sonra yenilenmelidir.')) {
+                                api.post('/system/update', { target: 'panel' })
+                                   .then(r => toast.success(r.data.message))
+                                   .catch(e => toast.error(e.response?.data?.error || 'Güncelleme başlatılamadı'));
+                            }
+                        }}
+                        style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                        <I.Download size={14}/> Paneli Güncelle
+                    </button>
+                    
+                    <button 
+                        onClick={() => {
+                            if (window.confirm('Discord botunu güncellemek ve yeniden başlatmak istediğinize emin misiniz?')) {
+                                api.post('/system/update', { target: 'bot' })
+                                   .then(r => toast.success(r.data.message))
+                                   .catch(e => toast.error(e.response?.data?.error || 'Güncelleme başlatılamadı'));
+                            }
+                        }}
+                        style={{ ...btnGhost, color: A.ok, borderColor: 'rgba(22, 163, 74, 0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                        <I.Download size={14}/> Botu Güncelle
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

@@ -805,7 +805,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                         api.post('/discord/rcon-queue', { command: 'whitelist list' });
                         toast.success('Minecraft sunucusundan whitelist listesi istendi. Bot eşitlemeyi yapacak.');
                     }}>
-                        <I.Refresh size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (Tetikle)
+                        <I.Restart size={14} style={{ marginRight: 6 }}/> Whitelist Sync-MC (Tetikle)
                     </button>
                 </div>
                 <div style={{ fontSize: 11, color: A.faint, marginTop: 8 }}>Eski "!whitelist sync-mc" vb. komutları buradan hızlıca tetikleyebilirsiniz.</div>

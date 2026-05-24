@@ -262,4 +262,62 @@ router.put('/alert-thresholds', authMiddleware, requireRole('admin'), (req, res)
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/system/update - Trigger git pull and restart for Panel or Bot
+router.post('/update', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const { target } = req.body;
+        const { spawn } = require('child_process');
+        const path = require('path');
+        const fs = require('fs');
+
+        let scriptPath = '';
+        let cwd = '';
+
+        if (target === 'panel') {
+            cwd = path.resolve(__dirname, '../../');
+            scriptPath = path.join(cwd, 'update.sh');
+        } else if (target === 'bot') {
+            // Check possible bot paths
+            const possiblePaths = [
+                '/root/Knozy/KnozyBot',
+                path.resolve(__dirname, '../../../KnozyBot'),
+                path.resolve(__dirname, '../../../Knozy/KnozyBot')
+            ];
+            
+            for (const p of possiblePaths) {
+                if (fs.existsSync(path.join(p, 'update.sh'))) {
+                    cwd = p;
+                    scriptPath = path.join(cwd, 'update.sh');
+                    break;
+                }
+            }
+        } else {
+            return res.status(400).json({ error: 'Geçersiz hedef' });
+        }
+
+        if (!scriptPath || !fs.existsSync(scriptPath)) {
+            return res.status(404).json({ error: `${target} için update.sh bulunamadı` });
+        }
+
+        // Run update.sh in background detached
+        const logPath = path.join(cwd, 'update.log');
+        const out = fs.openSync(logPath, 'a');
+        
+        fs.appendFileSync(logPath, `\n\n--- UPDATE TRIGGERED VIA API: ${new Date().toISOString()} ---\n`);
+
+        const child = spawn('bash', ['update.sh'], {
+            cwd,
+            detached: true,
+            stdio: ['ignore', out, out]
+        });
+
+        child.unref();
+
+        res.json({ message: `${target === 'panel' ? 'Panel' : 'Bot'} güncellemesi arka planda başlatıldı. İşlem 10-15 saniye sürebilir.` });
+    } catch (error) {
+        console.error('[System] Update error:', error.message);
+        res.status(500).json({ error: 'Güncelleme başlatılamadı: ' + error.message });
+    }
+});
+
 module.exports = router;
