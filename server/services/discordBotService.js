@@ -247,13 +247,17 @@ class DiscordBotService {
             for (const row of rows) {
                 const key = row.key.replace('discord_bot_', '');
                 try {
-                    // Sadece obje veya array ise parse et, veya tamsayı/boolean ise kontrol et
-                    if (row.value.startsWith('{') || row.value.startsWith('[')) {
+                    // Sayısal olup olmadığını kontrol et (15 haneden uzunsa Discord ID'sidir, bozma)
+                    if (/^\d{16,}$/.test(row.value)) {
+                        settings[key] = row.value;
+                    } else if (row.value === 'null') {
+                        settings[key] = null;
+                    } else if (row.value.startsWith('{') || row.value.startsWith('[')) {
                         settings[key] = JSON.parse(row.value);
                     } else if (row.value === 'true' || row.value === 'false') {
                         settings[key] = row.value === 'true';
                     } else {
-                        // Geriye kalanlar (Özellikle Discord ID'leri gibi büyük sayılar) string kalsın
+                        // Diğer normal string'ler
                         settings[key] = row.value;
                     }
                 } catch {
