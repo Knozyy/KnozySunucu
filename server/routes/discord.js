@@ -480,6 +480,24 @@ router.post('/sync-settings', authMiddleware, requireRole('admin'), (req, res) =
     }
 });
 
+// POST /api/discord/trigger-test
+router.post('/trigger-test', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { test_command } = req.body;
+        if (!test_command) return res.status(400).json({ error: 'test_command is required' });
+
+        // test_command'ı veritabanına kaydet
+        discordBotService.saveBotSettings({ test_command });
+        
+        // Bota SIGUSR1 göndererek çalışmasını tetikle
+        discordBotService.forceSyncBot();
+
+        res.json({ message: 'Test komutu bota iletildi.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // POST /api/discord/bot-command (start/stop/restart)
 router.post('/bot-command', authMiddleware, requireRole('admin'), (req, res) => {
     try {

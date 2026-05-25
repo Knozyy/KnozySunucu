@@ -374,6 +374,7 @@ export default function DiscordPage() {
         { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
         { key: 'webhook',         label: 'Webhook',          icon: I.Send },
         { key: 'settings',        label: 'Ayarlar (Bot Yetki & Kanallar)', icon: I.Cog },
+        { key: 'test-actions',    label: 'Test İşlemleri',   icon: I.Play },
     ];
 
     return (
@@ -696,6 +697,9 @@ export default function DiscordPage() {
 
             {/* ══ Ayarlar ══ */}
             {activeTab === 'settings' && <SettingsTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
+
+            {/* ══ Test İşlemleri ══ */}
+            {activeTab === 'test-actions' && <TestActionsTab/>}
         </div>
     );
 }
@@ -1727,6 +1731,66 @@ function WebhookTab() {
                     <I.Check size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
                     {saveMutation.isPending ? 'KAYDET...' : 'KAYDET'}
                 </button>
+            </div>
+        </div>
+    );
+}
+        
+// ── Test İşlemleri Sekmesi ───────────────────────────────────────────────────
+
+function TestActionsTab() {
+    const triggerTest = useMutation({
+        mutationFn: async (testCommand) => {
+            const res = await api.post('/discord/trigger-test', { test_command: testCommand });
+            return res.data;
+        },
+        onSuccess: (data) => toast.success(data.message),
+        onError: (err) => toast.error(err.response?.data?.error || 'Test tetiklenemedi')
+    });
+
+    const buttons = [
+        { id: 'nightlyCleanup', label: 'Whitelist Gece Temizliği Testi', desc: 'Gece saat 00:00 da yapılan whitelist rol kontrolünü anında tetikler.' },
+        { id: 'timedRolesCheck', label: 'Süreli Roller Testi', desc: 'Süresi dolan rolleri anında kontrol eder ve geri alır.' },
+        { id: 'dashboardUpdate', label: 'Dashboard Güncellemesi Testi', desc: 'Dashboard kanalındaki online oyuncu tablosunu anında günceller.' },
+        { id: 'serverHealthMonitor', label: 'Sunucu Sağlık Testi', desc: 'Botun sunucunun durumuna bakıp bio\'sunu güncellemesini tetikler.' },
+        { id: 'presenceUpdate', label: 'Bot Durumu (Presence) Testi', desc: 'Discord botunun Oynuyor (Presence) durumunu günceller.' },
+        { id: 'nightGuardTest', label: 'Gece Koruması Log Testi', desc: 'Log kanalına test amaçlı bir Gece Koruması raporu gönderir.' },
+    ];
+
+    return (
+        <div style={{ ...card, padding: 24 }}>
+            <Cap style={{ display: 'block', marginBottom: 20 }}>Bot Test İşlemleri</Cap>
+            <div style={{ fontSize: 13, color: A.faint, marginBottom: 24, lineHeight: 1.5 }}>
+                Aşağıdaki butonları kullanarak botun normalde kendi kendine otomatik yaptığı işlemleri anında tetikleyebilirsiniz. Butona bastığınızda komut direkt olarak bota iletilir.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                {buttons.map(b => (
+                    <div key={b.id} style={{ 
+                        border: `1px solid ${A.border}`, 
+                        borderRadius: 8, 
+                        padding: 16, 
+                        background: 'rgba(0,0,0,0.02)',
+                        display: 'flex', flexDirection: 'column', gap: 12
+                    }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: A.text }}>{b.label}</div>
+                        <div style={{ fontSize: 11, color: A.faint, flex: 1 }}>{b.desc}</div>
+                        <button 
+                            onClick={() => triggerTest.mutate(b.id)}
+                            disabled={triggerTest.isPending}
+                            style={{ 
+                                ...btnGhost, 
+                                alignSelf: 'flex-start',
+                                fontSize: 11,
+                                padding: '6px 12px',
+                                border: `1px solid rgba(167, 139, 250, 0.3)`
+                            }}
+                        >
+                            <I.Play size={12} style={{ marginRight: 6 }}/>
+                            Testi Başlat
+                        </button>
+                    </div>
+                ))}
             </div>
         </div>
     );
