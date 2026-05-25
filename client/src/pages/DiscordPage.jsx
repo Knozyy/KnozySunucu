@@ -890,61 +890,61 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Admin Rolleri</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Tam Yetkili (Admin) Rolleri</div>
                         <MultiRoleInput value={form.adminRoleIds} onChange={v => handleChange('adminRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu rollere sahip kişiler botun tüm admin özelliklerine erişebilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu rollere sahip kişiler botun tüm özelliklerine kısıtlamasız erişebilir. Sadece güvendiğiniz yöneticilere verin.</div>
                     </div>
                     
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Görüntüleme Rolleri</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Listesini Görebilen Roller</div>
                         <MultiRoleInput value={form.whitelistRoleIds} onChange={v => handleChange('whitelistRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer sadece whitelist listesini görüntüleyebilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan moderatörler sadece onaylı oyuncu listesini görüntüleyebilir, ekleme yapamaz.</div>
                     </div>
                     
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Ekleme Rolleri</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist'e Oyuncu Ekleyebilen Roller</div>
                         <MultiRoleInput value={form.whitelistAddRoleIds} onChange={v => handleChange('whitelistAddRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer whitelist'e yeni kullanıcı ekleyebilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bu role sahip olan yetkililer whitelist komutuyla oyuna yeni oyuncuları ekleyebilir.</div>
                     </div>
 
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Kayıtlı Oyuncu Rolleri (Whitelist Alabilecek Roller)</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Oyuncularda Zorunlu Olan 'Whitelist' Rolü</div>
                         <MultiRoleInput value={form.whitelist_required_role_ids} onChange={v => handleChange('whitelist_required_role_ids', v)} savedRoles={botSettings?.savedRoles || []} />
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Sadece bu role sahip oyuncular whitelist'te kalabilir. Gece Koruması (Night Guard) sırasında bu rollerden hiçbirine sahip olmayanların whitelist'i silinir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Gece 00:00'da yapılan rutin temizlikte, <b>bu role (veya admin rolüne) sahip olmayan</b> herkes whitelist'ten silinir. Oyuncuların kaydının silinmemesi için seçili rollerden en az birine sahip olmaları gerekir.</div>
                     </div>
                 </div>
             </div>
 
             <div style={{ ...card, padding: 20 }}>
-                <Cap style={{ display: 'block', marginBottom: 16 }}>Kanal Ayarları</Cap>
+                <Cap style={{ display: 'block', marginBottom: 16 }}>Kanal Ayarları (ID'leri Buraya Girin)</Cap>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Dashboard Kanalı ID</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Canlı Sunucu İstatistikleri Kanalı</div>
                         <input type="text" value={form.dashboard_channel_id} 
                             onChange={e => handleChange('dashboard_channel_id', e.target.value)} 
                             placeholder="Örn: 981273918237" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!dashboard_kur #kanal" komutunun yerine geçer. Bot, online oyuncu istatistiklerini bu kanalda sürekli günceller.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bot, sunucunun aktif oyuncu sayısını ve online tablosunu bu kanala atar ve kendi kendine günceller.</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Log Kanalı ID</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Ekleme (Kayıt) Log Kanalı</div>
                         <input type="text" value={form.whitelist_channel_id} 
                             onChange={e => handleChange('whitelist_channel_id', e.target.value)} 
                             placeholder="Örn: 123456789" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Eski "!whitelist kanal #kanal" komutunun yerine geçer. Whitelist kayıt işlemleri bu kanalda bildirilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Oyuncular whitelist'e kayıt edildiğinde bu kanala log (bildirim) mesajı gönderilir.</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Süreli Rol İptal Log Kanalı ID</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Süreli Rol Bitiş Log Kanalı</div>
                         <input type="text" value={form.role_log_channel_id} 
                             onChange={e => handleChange('role_log_channel_id', e.target.value)} 
                             placeholder="Örn: 123456789" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Süresi dolan roller geri alındığında bu kanala bildirim gönderilir.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Verilen süreli VIP/Özel rollerin zamanı dolup geri alındığında bu kanala bilgi düşer.</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Gece Rol Kontrolü Log Kanalı ID</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Gece Whitelist Temizliği Log Kanalı</div>
                         <input type="text" value={form.night_guard_log_channel_id} 
                             onChange={e => handleChange('night_guard_log_channel_id', e.target.value)} 
                             placeholder="Örn: 123456789" style={inputStyle}/>
-                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Gece koruması (Night Guard) tamamlandığında yetkisi alınan/geri verilen kişilerin özeti bu kanala atılır.</div>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Gece 00:00'da yapılan otomatik whitelist temizliğinde (rolü olmayanların silinmesi) sonucun raporlandığı kanaldır.</div>
                     </div>
                 </div>
             </div>
