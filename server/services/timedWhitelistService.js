@@ -54,17 +54,35 @@ class TimedWhitelistService {
 
             if (expired.length === 0) return;
 
-            const mcService = require('./minecraftService');
+            const serverRegistry = require('./serverRegistry');
+            const inst = serverRegistry.getDefault();
+            const isRunning = inst && inst.status === 'running';
+
+            // Sunucu çalışmıyorsa komut gönderilemez. Kayıtları SİLME — aksi halde
+            // oyuncu whitelist.json içinde kalır ama takip kaydı kaybolurdu ve bir
+            // daha asla çıkarılamazdı. Sunucu açıldığında bir sonraki turda işlenir.
+            if (!isRunning) {
+                console.warn('[TimedWhitelist] Sunucu çalışmıyor; süresi dolan kayıtlar sunucu açılınca işlenecek.');
+                return;
+            }
+
+            // Sadece komutu başarıyla iletilen kayıtların id'lerini topla
+            const removedIds = [];
             for (const entry of expired) {
                 try {
-                    mcService.sendCommand(`whitelist remove ${entry.mc_nick}`);
-                    console.error(`[TimedWhitelist] ${entry.mc_nick} süresi doldu, çıkarıldı.`);
+                    inst.sendCommand(`whitelist remove ${entry.mc_nick}`);
+                    removedIds.push(entry.id);
+                    console.log(`[TimedWhitelist] ${entry.mc_nick} süresi doldu, çıkarıldı.`);
                 } catch (e) {
                     console.error(`[TimedWhitelist] MC komutu gönderilemedi (${entry.mc_nick}): ${e.message}`);
                 }
             }
 
-            db.prepare('DELETE FROM timed_whitelist WHERE expires_at <= ?').run(now);
+            // Yalnızca gerçekten kaldırılan kayıtları sil
+            if (removedIds.length) {
+                const placeholders = removedIds.map(() => '?').join(',');
+                db.prepare(`DELETE FROM timed_whitelist WHERE id IN (${placeholders})`).run(...removedIds);
+            }
         } catch (err) {
             console.error('[TimedWhitelist] Kontrol hatası:', err.message);
         }
