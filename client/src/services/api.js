@@ -21,7 +21,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
+        const url = error.config?.url || '';
+        // Login/register isteğinde 401 "yanlış kullanıcı adı/şifre" demektir —
+        // oturum süresinin dolması değil. Bu durumda yönlendirme yapma, yoksa sayfa
+        // yeniden yüklenip formdaki hata mesajı silinir. Çağıran bileşen göstersin.
+        const isAuthAttempt = url.includes('/auth/login') || url.includes('/auth/register');
+        if (error.response?.status === 401 && !isAuthAttempt) {
             localStorage.removeItem('knozy_token');
             localStorage.removeItem('knozy_user');
             window.location.href = '/login';
