@@ -120,9 +120,13 @@ class FileManager {
     }
 
     _resolve(relativePath) {
-        const resolved = path.resolve(this.basePath, relativePath || '');
-        // Path traversal koruması
-        if (!resolved.startsWith(path.resolve(this.basePath))) {
+        const base = path.resolve(this.basePath);
+        const resolved = path.resolve(base, relativePath || '');
+        // Path traversal koruması — ayraç duyarlı kontrol. Düz startsWith yetersiz:
+        // base "/srv/server" iken "/srv/server-secret" de startsWith'i geçer ve
+        // kardeş dizine kaçış mümkün olurdu. base'in kendisine veya base + ayraç
+        // ile başlayan yollara izin ver.
+        if (resolved !== base && !resolved.startsWith(base + path.sep)) {
             throw new Error('Geçersiz dizin yolu');
         }
         return resolved;
