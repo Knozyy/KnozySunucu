@@ -3,6 +3,34 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+// ── JWT_SECRET güvencesi ────────────────────────────────────────────────────
+// JWT_SECRET tanımsızsa tüm kimlik doğrulama sessizce kırılır (login 500 döner,
+// jwt.verify 401 verir) ve teşhisi zordur. Tanımlı değilse güvenli rastgele bir
+// değer üretip .env'e kalıcı yazıyoruz; böylece panel kutudan çıktığı gibi
+// çalışır ve üretilen token'lar yeniden başlatmalar arasında geçerli kalır.
+function ensureJwtSecret() {
+    if (process.env.JWT_SECRET && process.env.JWT_SECRET.trim()) return;
+    const crypto = require('crypto');
+    const secret = crypto.randomBytes(48).toString('hex');
+    process.env.JWT_SECRET = secret;
+    try {
+        const envPath = path.resolve(__dirname, '../.env');
+        let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+        if (/^JWT_SECRET=.*$/m.test(content)) {
+            // Var olan (muhtemelen boş) tanımı değiştir — tekrar üretmeyi önler
+            content = content.replace(/^JWT_SECRET=.*$/m, `JWT_SECRET=${secret}`);
+        } else {
+            if (content && !content.endsWith('\n')) content += '\n';
+            content += `JWT_SECRET=${secret}\n`;
+        }
+        fs.writeFileSync(envPath, content);
+        console.warn('[Güvenlik] JWT_SECRET tanımlı değildi; rastgele üretilip .env dosyasına yazıldı.');
+    } catch (err) {
+        console.warn('[Güvenlik] JWT_SECRET üretildi fakat .env\'e yazılamadı (bellek içi kullanılacak):', err.message);
+    }
+}
+ensureJwtSecret();
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
