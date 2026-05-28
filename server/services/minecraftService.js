@@ -179,8 +179,11 @@ class MinecraftService extends EventEmitter {
             };
         }
 
-        // Oyuncu giriş/çıkış
-        const joinMatch = line.match(/(\w+) joined the game/);
+        // Oyuncu giriş/çıkış — chat ile taklit edilmesin diye log önekine (]:)
+        // sabitlendi ve geçerli MC nick uzunluğuyla (1-16) sınırlandı. Sohbet
+        // satırı "]: <Nick> ... joined the game" biçiminde olduğundan ]: ile nick
+        // arasındaki "<...>" bu kalıbı eşleştirmez.
+        const joinMatch = line.match(/\]:\s+(\w{1,16}) joined the game/);
         if (joinMatch && !this.players.includes(joinMatch[1])) {
             this.players.push(joinMatch[1]);
             this.emit('players', this.players);
@@ -189,7 +192,7 @@ class MinecraftService extends EventEmitter {
                 db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)').run(joinMatch[1], Date.now());
             } catch { /* ignore */ }
         }
-        const leaveMatch = line.match(/(\w+) left the game/);
+        const leaveMatch = line.match(/\]:\s+(\w{1,16}) left the game/);
         if (leaveMatch) {
             this.players = this.players.filter(p => p !== leaveMatch[1]);
             this.emit('players', this.players);

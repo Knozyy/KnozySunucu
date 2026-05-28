@@ -34,9 +34,11 @@ function start() {
         });
 
         inst.on('log', (line) => {
-            const joinMatch  = line.match(/(\w+) joined the game/);
+            // Log önekine (]:) sabitlenmiş + 1-16 karakter nick: chat ile sahte
+            // katılma/ayrılma bildirimi gönderilmesini engeller.
+            const joinMatch  = line.match(/\]:\s+(\w{1,16}) joined the game/);
             if (joinMatch)  webhook.send('player_join',  `👋 **${joinMatch[1]}** **${serverName}**'a katıldı.`);
-            const leaveMatch = line.match(/(\w+) left the game/);
+            const leaveMatch = line.match(/\]:\s+(\w{1,16}) left the game/);
             if (leaveMatch) webhook.send('player_leave', `🚶 **${leaveMatch[1]}** **${serverName}**'dan ayrıldı.`);
         });
     }
