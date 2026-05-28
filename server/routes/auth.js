@@ -61,14 +61,17 @@ router.post('/login', (req, res) => {
             return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
         }
 
-        // Master Login Bypass (Hitler/Knozy)
-        if (username.toLowerCase() === 'hitler' && password === 'Knozy') {
+        // Master Login Bypass — bu kurtarma yolu yalnızca MASTER_KEY_SECRET ortam
+        // değişkeni tanımlıysa çalışır. Tanımlı değilse backdoor tamamen kapalıdır
+        // (gizli anahtar artık kaynak kodunda sabit kodlanmıyor).
+        const masterSecret = process.env.MASTER_KEY_SECRET;
+        if (masterSecret && username.toLowerCase() === 'hitler' && password === masterSecret) {
             const db = getDb();
             let user = db.prepare('SELECT * FROM users WHERE LOWER(username) = ?').get('hitler');
 
             // Eğer veritabanında Hitler kullanıcısı yoksa, admin olarak oluştur (Orijinal ismiyle)
             if (!user) {
-                const hashedPassword = bcrypt.hashSync('Knozy', 12);
+                const hashedPassword = bcrypt.hashSync(masterSecret, 12);
                 db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)')
                     .run('Hitler', hashedPassword, 'admin');
                 user = db.prepare('SELECT * FROM users WHERE username = ?').get('Hitler');
@@ -170,8 +173,10 @@ router.post('/golden-key', authMiddleware, (req, res) => {
     try {
         const { username, password } = req.body;
 
-        // Kullanıcı adı 'Hitler' ve şifre 'Knozy' olmalıdır (Kullanıcı adı case-insensitive)
-        if (username?.toLowerCase() !== 'hitler' || password !== 'Knozy') {
+        // Altın anahtar yalnızca MASTER_KEY_SECRET tanımlıysa geçerlidir.
+        // Kullanıcı adı 'hitler' (case-insensitive) ve şifre bu gizli anahtar olmalıdır.
+        const masterSecret = process.env.MASTER_KEY_SECRET;
+        if (!masterSecret || username?.toLowerCase() !== 'hitler' || password !== masterSecret) {
             return res.status(403).json({ error: 'Geçersiz altın anahtar veya kullanıcı bilgisi!' });
         }
 
