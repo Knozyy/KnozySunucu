@@ -23,6 +23,9 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
         if (!name?.trim()) return res.status(400).json({ error: 'Sunucu adı gerekli' });
         if (!path?.trim()) return res.status(400).json({ error: 'Sunucu yolu gerekli' });
         const db = getDb();
+        // Port benzersizliği — aynı port iki sunucuda çakışır
+        const portTaken = db.prepare('SELECT id FROM servers WHERE port = ?').get(port);
+        if (portTaken) return res.status(400).json({ error: `Port ${port} zaten başka bir sunucu tarafından kullanılıyor` });
         const result = db.prepare(
             'INSERT INTO servers (name, path, port, jvm_args, is_active) VALUES (?, ?, ?, ?, 0)'
         ).run(name.trim(), path.trim(), port, jvm_args);
@@ -36,6 +39,11 @@ router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const { name, path, port, jvm_args } = req.body;
         const db = getDb();
+        // Port benzersizliği — kendisi hariç başka sunucu aynı portu kullanıyorsa engelle
+        if (port != null) {
+            const portTaken = db.prepare('SELECT id FROM servers WHERE port = ? AND id != ?').get(port, req.params.id);
+            if (portTaken) return res.status(400).json({ error: `Port ${port} zaten başka bir sunucu tarafından kullanılıyor` });
+        }
         db.prepare(
             'UPDATE servers SET name = ?, path = ?, port = ?, jvm_args = ? WHERE id = ?'
         ).run(name, path, port, jvm_args, req.params.id);

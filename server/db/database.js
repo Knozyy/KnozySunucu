@@ -248,7 +248,7 @@ function initDatabase() {
     }
   } catch (err) { console.error('Migration error:', err.message) }
 
-  console.error('[DB] Database initialized successfully');
+  console.log('[DB] Database initialized successfully');
 }
 
 module.exports = { getDb, initDatabase };

@@ -32,6 +32,10 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
         return res.status(400).json({ error: 'Kullanıcı adı ve şifre zorunludur' });
     }
 
+    if (password.length < 5) {
+        return res.status(400).json({ error: 'Şifre en az 5 karakter olmalı' });
+    }
+
     try {
         const db = getDb();
         const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
