@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const PlayerManager = require('../services/playerManager');
 const { getDb } = require('../db/database');
 const serverRegistry = require('../services/serverRegistry');
@@ -41,11 +42,11 @@ router.delete('/whitelist/:name', authMiddleware, (req, res) => {
 router.get('/ops', authMiddleware, (req, res) => {
     res.json({ players: pmFor(req).getOps() });
 });
-router.post('/ops', authMiddleware, (req, res) => {
+router.post('/ops', authMiddleware, requireRole('admin'), (req, res) => {
     try { pmFor(req).addOp(req.body.name, req.body.uuid); res.json({ message: 'OP yapıldı' }); }
     catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.delete('/ops/:name', authMiddleware, (req, res) => {
+router.delete('/ops/:name', authMiddleware, requireRole('admin'), (req, res) => {
     pmFor(req).removeOp(req.params.name); res.json({ message: 'OP kaldırıldı' });
 });
 
@@ -54,7 +55,7 @@ router.get('/banned', authMiddleware, (req, res) => {
     const pm = pmFor(req);
     res.json({ players: pm.getBannedPlayers(), ips: pm.getBannedIps() });
 });
-router.post('/ban', authMiddleware, (req, res) => {
+router.post('/ban', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         pmFor(req).banPlayer(req.body.name, req.body.reason);
         logBan(req.body.name, 'ban', req.body.reason, req.user?.username);
@@ -62,13 +63,13 @@ router.post('/ban', authMiddleware, (req, res) => {
         res.json({ message: 'Banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.delete('/ban/:name', authMiddleware, (req, res) => {
+router.delete('/ban/:name', authMiddleware, requireRole('admin'), (req, res) => {
     pmFor(req).unbanPlayer(req.params.name);
     logBan(req.params.name, 'unban', '', req.user?.username);
     logAudit(req.user?.username, 'oyuncu_ban_kaldir', req.params.name, req.ip);
     res.json({ message: 'Ban kaldırıldı' });
 });
-router.post('/ban-ip', authMiddleware, (req, res) => {
+router.post('/ban-ip', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         pmFor(req).banIp(req.body.ip, req.body.reason);
         logBan(req.body.ip, 'ban-ip', req.body.reason, req.user?.username);
@@ -76,7 +77,7 @@ router.post('/ban-ip', authMiddleware, (req, res) => {
         res.json({ message: 'IP banlandı' });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.delete('/ban-ip/:ip', authMiddleware, (req, res) => {
+router.delete('/ban-ip/:ip', authMiddleware, requireRole('admin'), (req, res) => {
     pmFor(req).unbanIp(req.params.ip);
     logBan(req.params.ip, 'unban-ip', '', req.user?.username);
     logAudit(req.user?.username, 'ip_ban_kaldir', req.params.ip, req.ip);

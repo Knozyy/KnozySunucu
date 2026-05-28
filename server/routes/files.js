@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const FileManager = require('../services/fileManager');
 const serverRegistry = require('../services/serverRegistry');
 
@@ -37,7 +38,7 @@ router.get('/read', authMiddleware, (req, res) => {
 });
 
 // PUT /api/files/write   body: { path, content, serverId? }
-router.put('/write', authMiddleware, (req, res) => {
+router.put('/write', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         fmFor(req).write(req.body.path, req.body.content);
         res.json({ message: 'Dosya kaydedildi' });
@@ -47,7 +48,7 @@ router.put('/write', authMiddleware, (req, res) => {
 });
 
 // POST /api/files/create   body: { path, isDirectory, serverId? }
-router.post('/create', authMiddleware, (req, res) => {
+router.post('/create', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         fmFor(req).create(req.body.path, req.body.isDirectory);
         res.json({ message: 'Oluşturuldu' });
@@ -57,7 +58,7 @@ router.post('/create', authMiddleware, (req, res) => {
 });
 
 // DELETE /api/files/delete?path=&serverId=X
-router.delete('/delete', authMiddleware, (req, res) => {
+router.delete('/delete', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         fmFor(req).remove(req.query.path);
         res.json({ message: 'Silindi' });
@@ -67,7 +68,7 @@ router.delete('/delete', authMiddleware, (req, res) => {
 });
 
 // PUT /api/files/rename   body: { path, newName, serverId? }
-router.put('/rename', authMiddleware, (req, res) => {
+router.put('/rename', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         fmFor(req).rename(req.body.path, req.body.newName);
         res.json({ message: 'Yeniden adlandırıldı' });

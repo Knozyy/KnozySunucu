@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const JavaManager = require('../services/javaManager');
 
 const router = express.Router();
@@ -38,7 +39,7 @@ router.get('/required', authMiddleware, (req, res) => {
 });
 
 // POST /api/java/install
-router.post('/install', authMiddleware, async (req, res) => {
+router.post('/install', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const { version } = req.body;
         if (!version) return res.status(400).json({ error: 'Java sürümü gerekli' });
@@ -65,7 +66,7 @@ router.post('/install', authMiddleware, async (req, res) => {
 });
 
 // DELETE /api/java/cleanup
-router.delete('/cleanup', authMiddleware, (req, res) => {
+router.delete('/cleanup', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const { keepVersion } = req.query;
         if (!keepVersion) return res.status(400).json({ error: 'keepVersion gerekli' });

@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const authMiddleware = require('../middleware/authMiddleware');
+const requireRole = require('../middleware/requireRole');
 const WorldManager = require('../services/worldManager');
 const serverRegistry = require('../services/serverRegistry');
 
@@ -18,7 +19,7 @@ router.get('/', authMiddleware, (req, res) => {
     res.json({ worlds: wm.list(), totalSize: wm.totalSize(), resolvedPath: wm.serverPath });
 });
 
-router.post('/reset', authMiddleware, (req, res) => {
+router.post('/reset', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         if (!req.body.worldName) return res.status(400).json({ error: 'Dünya adı gerekli' });
         const result = wmFor(req).reset(req.body.worldName);
@@ -26,7 +27,7 @@ router.post('/reset', authMiddleware, (req, res) => {
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/backup', authMiddleware, (req, res) => {
+router.post('/backup', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         if (!req.body.worldName) return res.status(400).json({ error: 'Dünya adı gerekli' });
         const result = wmFor(req).backup(req.body.worldName);

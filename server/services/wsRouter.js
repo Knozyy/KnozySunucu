@@ -83,7 +83,9 @@ function getServiceStatus(serverId) {
 }
 
 // ─── /ws/console handler — log dosyasını doğrudan tail et ─────────────────
-function handleConsole(ws, serverId) {
+// `user` parametresi komut gönderme yetkisini denetlemek için kullanılır.
+// Log görüntüleme tüm yetkili kullanıcılara açık; komut çalıştırma sadece admin.
+function handleConsole(ws, serverId, user) {
     const { screenName: screenNm, logFile } = resolvePaths(serverId);
 
     // 1) Anlık durum gönder
@@ -155,11 +157,17 @@ function handleConsole(ws, serverId) {
         }
     } catch { /* ignore */ }
 
-    // 7) Komut alma
+    // 7) Komut alma — sadece admin konsola komut gönderebilir
     ws.on('message', (message) => {
         try {
             const parsed = JSON.parse(message.toString());
             if (parsed.type !== 'command' || !parsed.data) return;
+            // Yetki denetimi: admin olmayan kullanıcılar komut çalıştıramaz
+            if (!user || user.role !== 'admin') {
+                if (ws.readyState === WebSocket.OPEN)
+                    ws.send(JSON.stringify({ type: 'log', data: '[Sistem] Komut göndermek için admin yetkisi gerekli.' }));
+                return;
+            }
             const cmd = parsed.data.trim();
             if (!cmd) return;
 
@@ -252,10 +260,16 @@ function setupWebSockets(server) {
             socket.destroy(); return;
         }
 
+        // /ws/terminal ham bir PTY kabuğu açar (tam sistem erişimi) — sadece admin.
+        if (pathname === '/ws/terminal' && user.role !== 'admin') {
+            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+            socket.destroy(); return;
+        }
+
         const serverId = urlObj.searchParams.get('serverId') || null;
 
         wss.handleUpgrade(req, socket, head, (ws) => {
-            if (pathname === '/ws/console') handleConsole(ws, serverId);
+            if (pathname === '/ws/console') handleConsole(ws, serverId, user);
             else handleTerminal(ws);
         });
     });
