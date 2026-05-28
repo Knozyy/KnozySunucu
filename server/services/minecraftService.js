@@ -809,13 +809,29 @@ class MinecraftService extends EventEmitter {
                 try { this.start(); resolve(); } catch (err) { reject(err); }
                 return;
             }
-            this.once('status', (status) => {
-                if (status === 'stopped') {
-                    setTimeout(() => {
-                        try { this.start(); resolve(); } catch (err) { reject(err); }
-                    }, 2000);
-                }
-            });
+
+            // NOT: once() kullanılamaz — stop() önce 'stopping' event'i emit eder ve
+            // once dinleyicisi onu tüketip kendini kaldırır, gerçek 'stopped' asla
+            // yakalanmaz. Bunun yerine kalıcı bir dinleyici kullanıp 'stopped'
+            // dışındaki durumları yok sayıyor, 'stopped' gelince kendimizi kaldırıyoruz.
+            let timer = null;
+            const onStatus = (status) => {
+                if (status !== 'stopped') return;
+                this.off('status', onStatus);
+                if (timer) { clearTimeout(timer); timer = null; }
+                setTimeout(() => {
+                    try { this.start(); resolve(); } catch (err) { reject(err); }
+                }, 2000);
+            };
+            this.on('status', onStatus);
+
+            // Güvenlik ağı: 'stopped' makul sürede gelmezse takılı kalma.
+            // stop() 15sn sonra zorla kapatır, dolayısıyla 30sn fazlasıyla yeterli.
+            timer = setTimeout(() => {
+                this.off('status', onStatus);
+                reject(new Error('Yeniden başlatma zaman aşımı: sunucu durmadı'));
+            }, 30000);
+
             this.stop();
         });
     }
