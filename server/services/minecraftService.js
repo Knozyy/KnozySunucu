@@ -280,6 +280,7 @@ class MinecraftService extends EventEmitter {
         this._startedAt   = null;
         this.processStats = { cpuPercent: 0, memoryMB: 0 };
         this._lastTps     = { one: null, five: null, fifteen: null };
+        this._invalidateInfoCache();
 
         // Sunucu kapanınca açık oturumları kapat
         try {
@@ -497,10 +498,24 @@ class MinecraftService extends EventEmitter {
         };
     }
 
+    /** Bağlantı/RAM bilgisi önbelleğini geçersiz kıl (durum değişiminde çağrılır). */
+    _invalidateInfoCache() {
+        this._connInfoCache = null;
+        this._maxRamCache = null;
+    }
+
     /**
      * server.properties + modpack'ten bağlantı bilgisi.
+     * getStatus() sık çağrıldığından (WS konsol her 3sn) sonuç ~10sn önbelleğe
+     * alınır; aksi halde her çağrıda server.properties okuması + dizin taraması +
+     * DB sorgusu yapılırdı. Durum değişiminde (start/stop) önbellek geçersiz kılınır.
      */
     _getConnectionInfo() {
+        const TTL = 10000;
+        if (!this._connInfoCache) this._connInfoCache = { value: null, ts: 0 };
+        if (this._connInfoCache.value && (Date.now() - this._connInfoCache.ts) < TTL) {
+            return this._connInfoCache.value;
+        }
         try {
             const serverPath = this.getServerPath();
             const propsPath = path.join(serverPath, 'server.properties');
@@ -544,8 +559,15 @@ class MinecraftService extends EventEmitter {
                     if (low.includes('spigot') && low.endsWith('.jar'))     { loader = 'Spigot';    break; }
                 }
             } catch { /* ignore */ }
-            return { port, motd, whitelist, mcVersion, loader };
-        } catch { return { port: 25565, motd: '', whitelist: false, mcVersion: null, loader: null }; }
+            const info = { port, motd, whitelist, mcVersion, loader };
+            this._connInfoCache = { value: info, ts: Date.now() };
+            return info;
+        } catch {
+            const fallback = { port: 25565, motd: '', whitelist: false, mcVersion: null, loader: null };
+            // Hatada da kısa süre önbelleğe al — sürekli başarısız I/O denemesini önle
+            this._connInfoCache = { value: fallback, ts: Date.now() };
+            return fallback;
+        }
     }
 
     /**
@@ -553,6 +575,17 @@ class MinecraftService extends EventEmitter {
      * Öncelik: server.jvm_args (-Xmx) → modpack.jvm_args → modpack.max_ram → env → 4
      */
     getEffectiveMaxRamGB() {
+        const TTL = 10000;
+        if (!this._maxRamCache) this._maxRamCache = { value: null, ts: 0 };
+        if (this._maxRamCache.value != null && (Date.now() - this._maxRamCache.ts) < TTL) {
+            return this._maxRamCache.value;
+        }
+        const val = this._computeEffectiveMaxRamGB();
+        this._maxRamCache = { value: val, ts: Date.now() };
+        return val;
+    }
+
+    _computeEffectiveMaxRamGB() {
         const parseXmx = (str) => {
             if (!str) return 0;
             const m = String(str).match(/-Xmx(\d+)([GgMm])/);
@@ -595,6 +628,8 @@ class MinecraftService extends EventEmitter {
         if (this.status === 'running' || this.status === 'starting') {
             throw new Error('Sunucu zaten çalışıyor');
         }
+        // Yeni modpack/yapılandırma uygulanmış olabilir — önbelleği tazele
+        this._invalidateInfoCache();
 
         // Manuel başlatma → çöküm sayacını sıfırla, aksi halde kullanıcı
         // hata düzelttikten sonra bile auto-restart blocklu kalıyordu
