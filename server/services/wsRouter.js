@@ -62,9 +62,12 @@ function isScreenRunning(screenName) {
 }
 
 // ─── Screen'e komut gönder ────────────────────────────────────────────────
+// Tek tırnak sarmalama + tek tırnak kaçırma kullanılıyor (minecraftService ile aynı pattern).
+// Çift tırnak ile "$(...)" veya backtick expansion riski ortadan kalkıyor.
 function sendToScreen(screenName, command) {
     try {
-        execSync(`screen -S ${screenName} -p 0 -X stuff "${command.replace(/"/g, '\\"')}\n"`, { stdio: 'ignore' });
+        const escaped = command.replace(/'/g, "'\\''");
+        execSync(`screen -S ${screenName} -p 0 -X stuff '${escaped}\n'`, { stdio: 'ignore' });
         return true;
     } catch { return false; }
 }

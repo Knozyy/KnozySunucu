@@ -176,12 +176,12 @@ function initDatabase() {
       name TEXT NOT NULL,
       path TEXT NOT NULL,
       port INTEGER DEFAULT 25565,
-      min_ram TEXT DEFAULT '2G',
-      max_ram TEXT DEFAULT '4G',
       jvm_args TEXT DEFAULT '',
       is_active INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    -- Not: min_ram / max_ram kolonları kaldırıldı (v2).
+    -- RAM artık modpack.jvm_args / modpack.max_ram / JVM_ARGS env üzerinden okunuyor.
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle

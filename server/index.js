@@ -31,9 +31,34 @@ function ensureJwtSecret() {
 }
 ensureJwtSecret();
 
+// ── Eski 'Hitler' kurtarma hesabını geçersiz kıl ────────────────────────────
+// Backdoor env'e taşınmadan önce DB'de oluşturulmuş bir 'Hitler' hesabı varsa
+// parolası hâlâ 'Knozy' hash'i olabilir → env boş olsa bile normal girişle admin
+// verebilir. Başlangıçta tespit edip parolayı rastgele değerle geçersiz kılıyoruz.
+function invalidateLegacyMasterAccount() {
+    try {
+        const { getDb } = require('./db/database');
+        const bcrypt = require('bcryptjs');
+        const crypto = require('crypto');
+        const db = getDb();
+        const user = db.prepare("SELECT id, password FROM users WHERE LOWER(username) = 'hitler'").get();
+        if (!user) return;
+        const isLegacy = bcrypt.compareSync('Knozy', user.password);
+        if (isLegacy) {
+            const newHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
+            db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newHash, user.id);
+            console.warn('[Güvenlik] Eski master hesabı tespit edildi; parolası geçersiz kılındı. Kurtarma için MASTER_KEY_SECRET kullanın.');
+        }
+    } catch (err) {
+        console.warn('[Güvenlik] Legacy master hesap kontrolü başarısız:', err.message);
+    }
+}
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { initDatabase } = require('./db/database');
 const { setupWebSockets } = require('./services/wsRouter');
@@ -69,14 +94,35 @@ const serverRegistry = require('./services/serverRegistry');
 const app = express();
 const server = http.createServer(app);
 
-// Middleware
+// ── Güvenlik başlıkları (helmet) ────────────────────────────────────────────
+// X-Frame-Options, X-Content-Type-Options, HSTS vb. — clickjacking + MIME sniff koruması
+app.use(helmet({ contentSecurityPolicy: false })); // CSP kapalı: inline script/style kullanan SPA ile çakışmaz
+
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// Login brute-force koruması: 15 dakikada en fazla 20 başarısız deneme
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 dakika
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla giriş denemesi. Lütfen 15 dakika bekleyin.' },
+    skipSuccessfulRequests: true, // Başarılı girişleri saymaz
+});
+app.use('/api/auth/login', loginLimiter);
+
+// ── Middleware ───────────────────────────────────────────────────────────────
 app.use(compression()); // Gzip sıkıştırma — JS/CSS boyutunu ~%70 azaltır
-app.use(cors());
+// CORS: production'da ALLOWED_ORIGIN env ile kısıtla, yoksa localhost geliştirme varsayılanı
+app.use(cors({
+    origin: process.env.ALLOWED_ORIGIN || 'http://localhost:5173',
+    credentials: true,
+}));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Database
 initDatabase();
+invalidateLegacyMasterAccount();
 
 // ServerRegistry — DB'deki tüm sunucular için instance hazırla
 // (panel yeniden başlasa bile çalışan screen'leri yakalar)

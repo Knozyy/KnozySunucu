@@ -699,7 +699,11 @@ class MinecraftService extends EventEmitter {
             }
 
             // Screen başlat — çıktıyı log dosyasına yönlendir
-            const fullCmd = `cd '${cwd}' && { ${runCmd}; } 2>&1 | tee '${this._logFile}'`;
+            // cwd ve jvmArgs içindeki tek tırnak kaçırılır; özel karakterli
+            // path/jvm_args değerlerinin bash enjeksiyonuna neden olması engellenir.
+            const escapedCwd    = cwd.replace(/'/g, "'\\''");
+            const escapedRunCmd = runCmd.replace(/'/g, "'\\''");
+            const fullCmd = `cd '${escapedCwd}' && { ${escapedRunCmd}; } 2>&1 | tee '${this._logFile}'`;
             execSync(`screen -dmS ${this._screenName} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
 
             this.addLog(`[System] Sunucu başlatılıyor (screen: ${this._screenName})`);

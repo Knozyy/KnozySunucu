@@ -16,13 +16,14 @@ class Scheduler {
     _loadAndStart() {
         try {
             const db = getDb();
+            // cron_expression kaldırıldı: yalnızca interval_minutes destekleniyor.
+            // Gerçek cron desteği gerekirse croner paketi ile ayrıca eklenecek.
             db.exec(`
                 CREATE TABLE IF NOT EXISTS scheduled_tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     type TEXT NOT NULL,
-                    cron_expression TEXT,
-                    interval_minutes INTEGER,
+                    interval_minutes INTEGER NOT NULL,
                     action TEXT NOT NULL,
                     action_data TEXT,
                     enabled INTEGER DEFAULT 1,
