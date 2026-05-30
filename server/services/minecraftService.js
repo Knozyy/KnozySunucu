@@ -603,15 +603,19 @@ class MinecraftService extends EventEmitter {
     _computeEffectiveMaxRamGB() {
         const parseXmx = (str) => {
             if (!str) return 0;
-            const m = String(str).match(/-Xmx(\d+)([GgMm])/);
+            const m = String(str).match(/-Xmx\s*(\d+)\s*([GgMmKk])/);
             if (!m) return 0;
-            return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+            const val = parseInt(m[1]);
+            const unit = m[2].toLowerCase();
+            return unit === 'g' ? val : (unit === 'm' ? val / 1024 : val / 1048576);
         };
         const parseRam = (str) => {
             if (!str) return 0;
-            const m = String(str).match(/^(\d+)([GgMm])$/);
+            const m = String(str).match(/(\d+)\s*([GgMmKk])/);
             if (!m) return 0;
-            return m[2].toLowerCase() === 'g' ? parseInt(m[1]) : parseInt(m[1]) / 1024;
+            const val = parseInt(m[1]);
+            const unit = m[2].toLowerCase();
+            return unit === 'g' ? val : (unit === 'm' ? val / 1024 : val / 1048576);
         };
         try {
             // 1) Sunucunun kendi jvm_args'ı varsa -Xmx'i oradan çıkar
@@ -635,8 +639,7 @@ class MinecraftService extends EventEmitter {
         const envMax = parseRam(process.env.MINECRAFT_MAX_RAM);
         if (envMax) return envMax;
         
-        const os = require('os');
-        return Math.floor(os.totalmem() / (1024 * 1024 * 1024)); // Fallback to system RAM
+        return 4; // Fallback to 4 GB if nothing is configured
     }
 
     // ── start() ──────────────────────────────────────────────────────────────

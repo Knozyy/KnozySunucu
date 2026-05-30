@@ -10,9 +10,9 @@ export function RamKpi({ server, series }) {
         refetchInterval: 3000,
     });
 
-    // Fallback'li olarak sistem RAM bilgisini al
-    const memTotalGB = (usage?.memory?.total || 16 * 1024) / 1024;
-    const memUsedGB = (usage?.memory?.used || 0) / 1024;
+    // systeminformation memory values are in bytes, so divide by 1024^3 for GB
+    const memTotalGB = (usage?.memory?.total || 16 * 1024 * 1024 * 1024) / (1024 * 1024 * 1024);
+    const memUsedGB = (usage?.memory?.used || 0) / (1024 * 1024 * 1024);
     const ramPct = memTotalGB > 0 ? Math.min(100, (memUsedGB / memTotalGB) * 100) : 0;
     
     // Sparkline için hala server'ın (veya sistemin) kullanım serisini alabiliriz. 
