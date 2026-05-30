@@ -92,6 +92,20 @@ router.post('/whitelist', authMiddleware, requireRole('admin'), (req, res) => {
         if (!/^[a-zA-Z0-9_]{3,16}$/.test(mcNick))
             return res.status(400).json({ error: 'Geçersiz Minecraft nick (3-16 karakter, harf/rakam/alt çizgi)' });
 
+        const whitelistData = discordBotService.getWhitelist() || {};
+        const lowerMcNick = mcNick.trim().toLowerCase();
+        
+        // Find if this nick is already registered by a different user
+        const existingUserId = Object.keys(whitelistData).find(
+            uid => uid !== String(userId).trim() && String(whitelistData[uid]).trim().toLowerCase() === lowerMcNick
+        );
+
+        if (existingUserId) {
+            return res.status(400).json({ 
+                error: `Bu Minecraft nick'i (${mcNick}) zaten <@${existingUserId}> tarafından kayıt edilmiş!` 
+            });
+        }
+
         const { oldNick } = discordBotService.addWhitelistEntry(userId.trim(), mcNick.trim());
 
         // MC sunucusuna gönder (hata olursa sessizce geç)
