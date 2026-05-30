@@ -347,7 +347,8 @@ class CurseForgeService {
 
         try {
             const db = getDb();
-            const baseServerPath = process.env.MINECRAFT_SERVER_PATH || path.join(__dirname, '../../sunucular');
+            // Yeni modpackler her zaman Panel'in altındaki 'sunucular' klasörüne kurulmalıdır.
+            const baseServerPath = path.join(__dirname, '../../sunucular');
 
             // 1. Bilgi al
             this._updateProgress('Bilgi Alınıyor', 5, 'Modpack bilgileri alınıyor...');
