@@ -34,7 +34,8 @@ export function ActiveProfileWidget({ server, installedModpacks }) {
     const activePack = (installedModpacks || []).find(p => p.id === server?.active_modpack_id);
 
     const ramMB     = server?.processStats?.memoryMB || 0;
-    const maxRamGB  = server?.maxRamGB || 4;
+    // Backend maxRamGB'yi gönderiyor. Eğer 0 gelirse (sınırsız), panelin toplam RAM'ini bilmesi zor ama şimdilik backend'in gönderdiği değeri kullanalım.
+    const maxRamGB  = server?.maxRamGB || 16; // Eğer tanımsızsa 16GB varsayıyoruz. Backend artık gerçek os.totalmem değerini gönderecek.
     const ramGB     = ramMB / 1024;
     const ramPct    = maxRamGB > 0 ? Math.min(100, (ramGB / maxRamGB) * 100) : 0;
 

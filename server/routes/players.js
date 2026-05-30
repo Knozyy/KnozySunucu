@@ -190,6 +190,67 @@ router.get('/stats', authMiddleware, (req, res) => {
     }
 });
 
+// GET /api/players/stats/archives
+router.get('/stats/archives', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const rows = db.prepare('SELECT archive_name, COUNT(DISTINCT username) as player_count, SUM(total_seconds) as total_playtime, MAX(created_at) as created_at FROM player_stats_archives GROUP BY archive_name ORDER BY created_at DESC').all();
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/players/stats/archives/:name
+router.get('/stats/archives/:name', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const rows = db.prepare('SELECT * FROM player_stats_archives WHERE archive_name = ? ORDER BY total_seconds DESC').all(req.params.name);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/players/stats/archive
+router.post('/stats/archive', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { archiveName } = req.body;
+        if (!archiveName) return res.status(400).json({ error: 'Arşiv adı gerekli' });
+
+        const db = getDb();
+        
+        // Mevcut istatistikleri topla
+        const stats = db.prepare(`
+            SELECT
+                username,
+                COUNT(*) AS session_count,
+                SUM(COALESCE(duration_seconds, 0)) AS total_seconds
+            FROM player_sessions
+            GROUP BY username
+        `).all();
+
+        if (stats.length === 0) {
+            return res.status(400).json({ error: 'Arşivlenecek veri bulunamadı' });
+        }
+
+        // Transaction ile kaydet ve sil
+        const insert = db.prepare('INSERT INTO player_stats_archives (archive_name, username, session_count, total_seconds) VALUES (?, ?, ?, ?)');
+        const deleteSessions = db.prepare('DELETE FROM player_sessions');
+
+        db.transaction(() => {
+            for (const stat of stats) {
+                insert.run(archiveName, stat.username, stat.session_count, stat.total_seconds);
+            }
+            deleteSessions.run();
+        })();
+
+        res.json({ message: 'İstatistikler başarıyla arşivlendi ve sıfırlandı' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/players/profile/:username — oyuncu profili (DB + MC stats JSON)
 router.get('/profile/:username', authMiddleware, (req, res) => {
     try {

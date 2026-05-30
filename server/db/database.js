@@ -83,6 +83,15 @@ function initDatabase() {
       duration_seconds INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS player_stats_archives (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      archive_name TEXT NOT NULL,
+      username TEXT NOT NULL,
+      session_count INTEGER NOT NULL,
+      total_seconds INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS api_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

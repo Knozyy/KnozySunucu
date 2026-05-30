@@ -634,7 +634,9 @@ class MinecraftService extends EventEmitter {
         // 4) Env
         const envMax = parseRam(process.env.MINECRAFT_MAX_RAM);
         if (envMax) return envMax;
-        return 4;
+        
+        const os = require('os');
+        return Math.floor(os.totalmem() / (1024 * 1024 * 1024)); // Fallback to system RAM
     }
 
     // ── start() ──────────────────────────────────────────────────────────────
@@ -791,8 +793,8 @@ class MinecraftService extends EventEmitter {
                 this._stopStatsTracking();
                 this.emit('status', this.status);
                 this.emit('log', `[System] Sunucu kapandı (exit code: ${code})`);
-                // Crash: çalışırken beklenmedik kapanma
-                if (wasRunning && !wasStopping && code !== 0) {
+                // Crash: çalışırken beklenmedik kapanma (Kullanıcı panelden kapatmadıysa)
+                if (wasRunning && !wasStopping) {
                     this._handleCrash(code);
                 }
             });
