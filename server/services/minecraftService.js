@@ -443,7 +443,9 @@ class MinecraftService extends EventEmitter {
         const target = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(profileId);
         if (!target) throw new Error('Profil bulunamadı');
 
-        if (this.status === 'running' || this.process || this._javaPid) {
+        const wasRunning = this.status === 'running' || this.status === 'starting';
+
+        if (wasRunning || this.process || this._javaPid) {
             this.addLog('[Profil] Sunucu kapatılıyor (save-all)...');
             try { this.sendCommand('save-all'); } catch { /* ignore */ }
             await new Promise(r => setTimeout(r, 3000));
@@ -463,6 +465,10 @@ class MinecraftService extends EventEmitter {
         db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
         db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(profileId);
 
+        if (this._serverConfig && this._serverConfig.id) {
+            db.prepare('UPDATE servers SET active_modpack_id = ? WHERE id = ?').run(profileId, this._serverConfig.id);
+        }
+
         if (target.server_port && target.install_path) {
             const propsPath = path.join(target.install_path, 'server.properties');
             if (fs.existsSync(propsPath)) {
@@ -474,6 +480,12 @@ class MinecraftService extends EventEmitter {
         }
 
         this.addLog(`[Profil] "${target.name}" profili aktif edildi`);
+        
+        if (wasRunning) {
+            this.addLog(`[Profil] Sunucu otomatik olarak yeniden başlatılıyor...`);
+            setTimeout(() => this.start(), 1000);
+        }
+        
         return { message: `"${target.name}" profili aktif edildi`, profile: target };
     }
 
