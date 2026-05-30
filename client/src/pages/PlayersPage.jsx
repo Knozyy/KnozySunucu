@@ -124,11 +124,40 @@ export default function PlayersPage() {
         return Array.from(seen.values());
     })();
 
-    const { data: statsRaw, isLoading: statsLoading } = useQuery({
-        queryKey: ['player-stats'],
-        queryFn: () => api('/players/stats'),
-        refetchInterval: 30000,
+    const [selectedArchive, setSelectedArchive] = useState('current');
+
+    const { data: archives = [] } = useQuery({
+        queryKey: ['player-stats-archives'],
+        queryFn: () => api('/players/stats/archives'),
     });
+
+    const { data: statsRaw, isLoading: statsLoading } = useQuery({
+        queryKey: ['player-stats', selectedArchive],
+        queryFn: () => selectedArchive === 'current' 
+            ? api('/players/stats') 
+            : api(`/players/stats/archives/${encodeURIComponent(selectedArchive)}`),
+        refetchInterval: selectedArchive === 'current' ? 30000 : false,
+    });
+
+    const archiveMutation = useMutation({
+        mutationFn: (name) => api('/players/stats/archive', { method: 'POST', data: { archiveName: name } }),
+        onSuccess: () => {
+            toast.success('İstatistikler arşivlendi!');
+            qc.invalidateQueries(['player-stats']);
+            qc.invalidateQueries(['player-stats-archives']);
+            setSelectedArchive('current');
+        },
+        onError: (err) => toast.error(err.response?.data?.error || err.message),
+    });
+
+    const handleArchive = () => {
+        const name = prompt('Bu arşive bir isim verin (Örn: Mayıs 2026):');
+        if (name && name.trim()) {
+            if (confirm(`Şu anki tüm istatistikler "${name}" başlığı altında arşivlenip SIFIRLANACAKTIR. Emin misiniz?`)) {
+                archiveMutation.mutate(name.trim());
+            }
+        }
+    };
     const stats = Array.isArray(statsRaw) ? statsRaw : [];
 
     const onlinePlayers = online?.players ?? [];
@@ -330,8 +359,26 @@ export default function PlayersPage() {
             {/* ── İstatistikler ── */}
             {activeTab === 'stats' && (
                 <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ padding: '10px 16px', borderBottom: `1px solid ${A.border}` }}>
-                        <Cap>En Fazla Oynayan — Top 20</Cap>
+                    <div style={{ padding: '10px 16px', borderBottom: `1px solid ${A.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                        <Cap>En Fazla Oynayan — Top 20 {selectedArchive !== 'current' && `(${selectedArchive})`}</Cap>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <select 
+                                value={selectedArchive} 
+                                onChange={e => setSelectedArchive(e.target.value)}
+                                style={{ background: A.bgDeeper, color: A.text, border: `1px solid ${A.border}`, borderRadius: 4, padding: '4px 8px', fontSize: 12, outline: 'none' }}
+                            >
+                                <option value="current">Mevcut İstatistikler</option>
+                                {(archives.data || archives).map(a => (
+                                    <option key={a.archive_name} value={a.archive_name}>{a.archive_name}</option>
+                                ))}
+                            </select>
+                            {selectedArchive === 'current' && (
+                                <button onClick={handleArchive} disabled={archiveMutation.isLoading} style={{ ...btnGhost, padding: '4px 8px', fontSize: 12, color: A.ok }}>
+                                    <I.Calendar size={12} style={{ marginRight: 4 }}/>
+                                    Arşive Kaldır ve Sıfırla
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {statsLoading ? (
