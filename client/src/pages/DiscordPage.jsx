@@ -847,6 +847,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         whitelistAddRoleIds: [],
         whitelist_required_role_ids: [],
         dashboard_channel_id: '',
+        dashboard_update_interval: '1',
         whitelist_channel_id: '',
         role_log_channel_id: '',
         night_guard_log_channel_id: ''
@@ -870,6 +871,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 whitelistAddRoleIds: getArray(botSettings.whitelistAddRoleIds),
                 whitelist_required_role_ids: getArray(botSettings.whitelist_required_role_ids),
                 dashboard_channel_id: botSettings.dashboard_channel_id || '',
+                dashboard_update_interval: botSettings.dashboard_update_interval || '1',
                 whitelist_channel_id: botSettings.whitelist_channel_id || '',
                 role_log_channel_id: botSettings.role_log_channel_id || '',
                 night_guard_log_channel_id: botSettings.night_guard_log_channel_id || ''
@@ -928,6 +930,20 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                             onChange={e => handleChange('dashboard_channel_id', e.target.value)} 
                             placeholder="Örn: 981273918237" style={inputStyle}/>
                         <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>Bot, sunucunun aktif oyuncu sayısını ve online tablosunu bu kanala atar ve kendi kendine günceller.</div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Dashboard Güncelleme Sıklığı (Dakika)</div>
+                        <select value={form.dashboard_update_interval || "1"} 
+                            onChange={e => handleChange('dashboard_update_interval', e.target.value)} 
+                            style={inputStyle}>
+                            <option value="1">1 Dakikada Bir (Hızlı)</option>
+                            <option value="5">5 Dakikada Bir</option>
+                            <option value="10">10 Dakikada Bir</option>
+                            <option value="15">15 Dakikada Bir</option>
+                            <option value="30">30 Dakikada Bir</option>
+                            <option value="60">Saat Başı (60 Dk)</option>
+                        </select>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>İstatistiklerin Discord üzerinde kaç dakikada bir yenileneceğini belirler.</div>
                     </div>
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Whitelist Ekleme (Kayıt) Log Kanalı</div>
