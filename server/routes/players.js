@@ -234,18 +234,39 @@ router.post('/stats/archive', authMiddleware, requireRole('admin'), (req, res) =
             return res.status(400).json({ error: 'Arşivlenecek veri bulunamadı' });
         }
 
+        // Şu an online olan oyuncuları al (silmeden ÖNCE)
+        let onlinePlayers = [];
+        try {
+            const inst = serverRegistry.getDefault();
+            if (inst && inst.players && inst.players.length > 0) {
+                onlinePlayers = [...inst.players];
+            }
+        } catch { /* ignore */ }
+
         // Transaction ile kaydet ve sil
         const insert = db.prepare('INSERT INTO player_stats_archives (archive_name, username, session_count, total_seconds) VALUES (?, ?, ?, ?)');
         const deleteSessions = db.prepare('DELETE FROM player_sessions');
+        const insertSession = db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)');
 
         db.transaction(() => {
+            // 1. Arşive kaydet
             for (const stat of stats) {
                 insert.run(archiveName, stat.username, stat.session_count, stat.total_seconds);
             }
+            // 2. Tüm eski session'ları sil
             deleteSessions.run();
+            // 3. Online oyuncular için yeni açık session oluştur (böylece istatistikleri hemen başlar)
+            const now = Date.now();
+            for (const playerName of onlinePlayers) {
+                insertSession.run(playerName, now);
+            }
         })();
 
-        res.json({ message: 'İstatistikler başarıyla arşivlendi ve sıfırlandı' });
+        const msg = onlinePlayers.length > 0
+            ? `İstatistikler arşivlendi. ${onlinePlayers.length} online oyuncu için yeni oturum başlatıldı.`
+            : 'İstatistikler başarıyla arşivlendi ve sıfırlandı.';
+
+        res.json({ message: msg, onlineSessionsCreated: onlinePlayers.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
