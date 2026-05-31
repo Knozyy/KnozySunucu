@@ -98,6 +98,7 @@ function TrophyIcon({ size = 14, style: s }) {
 }
 
 export default function PlayersPage() {
+    const qc = useQueryClient();
     const [search, setSearch]       = useState('');
     const [activeTab, setActiveTab] = useState('sessions');
     const [profileUser, setProfileUser] = useState(null);
@@ -140,7 +141,7 @@ export default function PlayersPage() {
     });
 
     const archiveMutation = useMutation({
-        mutationFn: (name) => api('/players/stats/archive', { method: 'POST', data: { archiveName: name } }),
+        mutationFn: (name) => apiClient.post('/players/stats/archive', { archiveName: name }),
         onSuccess: () => {
             toast.success('İstatistikler arşivlendi!');
             qc.invalidateQueries(['player-stats']);
