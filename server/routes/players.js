@@ -272,6 +272,41 @@ router.post('/stats/archive', authMiddleware, requireRole('admin'), (req, res) =
     }
 });
 
+// POST /api/players/sessions/sync-online — online oyuncular için açık session yoksa oluştur
+router.post('/sessions/sync-online', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const inst = serverRegistry.getDefault();
+        if (!inst || !inst.players || inst.players.length === 0) {
+            return res.json({ message: 'Şu an online oyuncu yok.', created: 0 });
+        }
+
+        const db = getDb();
+        const checkOpen = db.prepare('SELECT id FROM player_sessions WHERE username = ? AND left_at IS NULL LIMIT 1');
+        const insertSession = db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)');
+
+        const now = Date.now();
+        let created = 0;
+
+        db.transaction(() => {
+            for (const playerName of inst.players) {
+                const existing = checkOpen.get(playerName);
+                if (!existing) {
+                    insertSession.run(playerName, now);
+                    created++;
+                }
+            }
+        })();
+
+        const msg = created > 0
+            ? `${created} oyuncu için yeni oturum başlatıldı.`
+            : 'Tüm online oyuncuların zaten açık oturumu var.';
+
+        res.json({ message: msg, created, onlinePlayers: inst.players });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/players/profile/:username — oyuncu profili (DB + MC stats JSON)
 router.get('/profile/:username', authMiddleware, (req, res) => {
     try {

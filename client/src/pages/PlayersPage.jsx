@@ -151,6 +151,17 @@ export default function PlayersPage() {
         onError: (err) => toast.error(err.response?.data?.error || err.message),
     });
 
+    const syncOnlineMutation = useMutation({
+        mutationFn: () => apiClient.post('/players/sessions/sync-online'),
+        onSuccess: (res) => {
+            const data = res.data || res;
+            toast.success(data.message || 'Online oyuncular senkronize edildi!');
+            qc.invalidateQueries(['player-stats']);
+            qc.invalidateQueries(['player-sessions']);
+        },
+        onError: (err) => toast.error(err.response?.data?.error || err.message),
+    });
+
     const handleArchive = () => {
         const name = prompt('Bu arşive bir isim verin (Örn: Mayıs 2026):');
         if (name && name.trim()) {
@@ -373,12 +384,16 @@ export default function PlayersPage() {
                                     <option key={a.archive_name} value={a.archive_name}>{a.archive_name}</option>
                                 ))}
                             </select>
-                            {selectedArchive === 'current' && (
+                            {selectedArchive === 'current' && (<>
+                                <button onClick={() => syncOnlineMutation.mutate()} disabled={syncOnlineMutation.isPending} style={{ ...btnGhost, padding: '4px 8px', fontSize: 12, color: 'var(--accent)' }}>
+                                    <RefreshIcon size={12} spinning={syncOnlineMutation.isPending}/>
+                                    <span style={{ marginLeft: 4 }}>Online Senkronize Et</span>
+                                </button>
                                 <button onClick={handleArchive} disabled={archiveMutation.isLoading} style={{ ...btnGhost, padding: '4px 8px', fontSize: 12, color: A.ok }}>
                                     <I.Calendar size={12} style={{ marginRight: 4 }}/>
                                     Arşive Kaldır ve Sıfırla
                                 </button>
-                            )}
+                            </>)}
                         </div>
                     </div>
 
