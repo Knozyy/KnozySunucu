@@ -36,4 +36,30 @@ router.post('/:id/toggle', authMiddleware, requireRole('admin'), (req, res) => {
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Tek seferlik zamanlanmış restart ──────────────────────────────────────
+
+// GET /api/scheduler/one-time-restart — mevcut planı sorgula
+router.get('/one-time-restart', authMiddleware, (req, res) => {
+    res.json({ restart: scheduler.getOneTimeRestartStatus() });
+});
+
+// POST /api/scheduler/one-time-restart — yeni restart planla
+router.post('/one-time-restart', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { delayMinutes, serverId } = req.body;
+        if (!delayMinutes || delayMinutes < 1) return res.status(400).json({ error: 'En az 1 dakika olmalı' });
+        if (delayMinutes > 1440) return res.status(400).json({ error: 'En fazla 24 saat (1440 dakika) olabilir' });
+        const result = scheduler.scheduleOneTimeRestart(parseInt(delayMinutes), serverId ? parseInt(serverId) : null);
+        res.json({ message: `Sunucu ${delayMinutes} dakika sonra yeniden başlatılacak`, ...result });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// DELETE /api/scheduler/one-time-restart — planı iptal et
+router.delete('/one-time-restart', authMiddleware, requireRole('admin'), (req, res) => {
+    const cancelled = scheduler.cancelOneTimeRestart();
+    res.json({ message: cancelled ? 'Zamanlanmış restart iptal edildi' : 'Aktif restart planı yok', cancelled });
+});
+
 module.exports = router;

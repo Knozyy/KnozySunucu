@@ -10,6 +10,7 @@ class Scheduler {
     constructor() {
         this.timers = new Map();
         this.executionLog = []; // Son çalışma logları
+        this._oneTimeRestart = null; // { serverId, scheduledAt, restartAt, delayMinutes, timers[], cancelled }
         this._loadAndStart();
     }
 
@@ -340,6 +341,127 @@ class Scheduler {
                 reject(err);
             }
         });
+    }
+
+    // ── Tek seferlik zamanlanmış restart ──────────────────────────────────────
+
+    scheduleOneTimeRestart(delayMinutes, serverId) {
+        // Mevcut planı iptal et
+        this.cancelOneTimeRestart();
+
+        const serverRegistry = require('./serverRegistry');
+        const mcService = serverId ? serverRegistry.get(serverId) : serverRegistry.getDefault();
+        if (!mcService) throw new Error('Sunucu bulunamadı');
+        if (mcService.status !== 'running') throw new Error('Sunucu çalışmıyor, restart planlanamaz');
+
+        const now = Date.now();
+        const restartAt = now + (delayMinutes * 60 * 1000);
+        const timers = [];
+        const state = { serverId, scheduledAt: now, restartAt, delayMinutes, timers, cancelled: false };
+        this._oneTimeRestart = state;
+
+        const getMcService = () => {
+            try {
+                return serverId ? serverRegistry.get(serverId) : serverRegistry.getDefault();
+            } catch { return null; }
+        };
+
+        // İlk duyuru
+        try {
+            mcService.sendCommand(`say §c§l[Restart] §r§eSunucu ${delayMinutes} dakika içinde yeniden başlatılacak!`);
+        } catch { /* ignore */ }
+
+        // Dakika başı uyarılar (her dakika kalan süreyi duyur)
+        for (let m = 1; m < delayMinutes; m++) {
+            const remaining = delayMinutes - m;
+            const timer = setTimeout(() => {
+                if (state.cancelled) return;
+                try {
+                    const svc = getMcService();
+                    if (svc && svc.status === 'running') {
+                        if (remaining <= 1) {
+                            svc.sendCommand(`say §c§l[Restart] §r§cSunucu 1 dakika içinde yeniden başlatılacak!`);
+                        } else {
+                            svc.sendCommand(`say §c§l[Restart] §r§eSunucu ${remaining} dakika içinde yeniden başlatılacak!`);
+                        }
+                    }
+                } catch { /* ignore */ }
+            }, m * 60 * 1000);
+            timers.push(timer);
+        }
+
+        // Son 10 saniye geri sayım
+        const countdownStartMs = Math.max(0, (delayMinutes * 60 * 1000) - 10000);
+        for (let s = 10; s >= 1; s--) {
+            const timer = setTimeout(() => {
+                if (state.cancelled) return;
+                try {
+                    const svc = getMcService();
+                    if (svc && svc.status === 'running') {
+                        const color = s <= 3 ? '§4§l' : '§c';
+                        svc.sendCommand(`say ${color}[Restart] §r§c${s}...`);
+                    }
+                } catch { /* ignore */ }
+            }, countdownStartMs + ((10 - s) * 1000));
+            timers.push(timer);
+        }
+
+        // Restart tetikle
+        const restartTimer = setTimeout(async () => {
+            if (state.cancelled) return;
+            try {
+                const svc = getMcService();
+                if (svc && svc.status === 'running') {
+                    this._addLog('tek-seferlik-restart', 'Zamanlanmış restart tetikleniyor...');
+                    await svc.restart();
+                    this._addLog('tek-seferlik-restart', 'Sunucu başarıyla yeniden başlatıldı');
+                } else {
+                    this._addLog('tek-seferlik-restart', `Sunucu çalışmıyor (durum: ${svc?.status}), restart atlandı`);
+                }
+            } catch (err) {
+                this._addLog('tek-seferlik-restart', `Restart hatası: ${err.message}`);
+            }
+            this._oneTimeRestart = null;
+        }, delayMinutes * 60 * 1000);
+        timers.push(restartTimer);
+
+        this._addLog('tek-seferlik-restart', `${delayMinutes} dakika sonra restart planlandı`);
+        return { restartAt, delayMinutes };
+    }
+
+    cancelOneTimeRestart() {
+        if (!this._oneTimeRestart) return false;
+
+        this._oneTimeRestart.cancelled = true;
+        for (const timer of this._oneTimeRestart.timers) {
+            clearTimeout(timer);
+        }
+
+        // Oyunculara iptal duyurusu
+        try {
+            const serverRegistry = require('./serverRegistry');
+            const svc = this._oneTimeRestart.serverId
+                ? serverRegistry.get(this._oneTimeRestart.serverId)
+                : serverRegistry.getDefault();
+            if (svc && svc.status === 'running') {
+                svc.sendCommand('say §a§l[Restart] §r§aZamanlanmış restart iptal edildi!');
+            }
+        } catch { /* ignore */ }
+
+        this._addLog('tek-seferlik-restart', 'Zamanlanmış restart iptal edildi');
+        this._oneTimeRestart = null;
+        return true;
+    }
+
+    getOneTimeRestartStatus() {
+        if (!this._oneTimeRestart || this._oneTimeRestart.cancelled) return null;
+        return {
+            scheduledAt: this._oneTimeRestart.scheduledAt,
+            restartAt: this._oneTimeRestart.restartAt,
+            delayMinutes: this._oneTimeRestart.delayMinutes,
+            serverId: this._oneTimeRestart.serverId || null,
+            remainingMs: Math.max(0, this._oneTimeRestart.restartAt - Date.now()),
+        };
     }
 }
 

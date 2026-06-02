@@ -91,6 +91,33 @@ function LabelText({ children }) {
     );
 }
 
+// ── Hızlı Restart Geri Sayım ─────────────────────────────────────────────────
+function OneTimeRestartCountdown({ restartAt }) {
+    const [remaining, setRemaining] = useState(Math.max(0, restartAt - Date.now()));
+
+    useEffect(() => {
+        const update = () => setRemaining(Math.max(0, restartAt - Date.now()));
+        update();
+        const id = setInterval(update, 1000);
+        return () => clearInterval(id);
+    }, [restartAt]);
+
+    const totalSec = Math.floor(remaining / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    const urgent = totalSec <= 30;
+
+    return (
+        <span style={{
+            fontFamily: A.mono, fontSize: 20, fontWeight: 700,
+            color: urgent ? A.err : 'var(--accent)',
+            letterSpacing: '0.05em',
+        }}>
+            {String(min).padStart(2, '0')}:{String(sec).padStart(2, '0')}
+        </span>
+    );
+}
+
 export default function SchedulerPage() {
     const [showForm, setShowForm] = useState(false);
     const [showLog,  setShowLog]  = useState(false);
@@ -99,6 +126,7 @@ export default function SchedulerPage() {
         type: 'interval', actionData: {},
     });
     const [formInput, setFormInput] = useState({ intervalValue: 6, intervalUnit: 'hours' });
+    const [restartDelay, setRestartDelay] = useState(5);
     const queryClient = useQueryClient();
     const { t } = useI18n();
 
@@ -114,6 +142,33 @@ export default function SchedulerPage() {
         enabled: showLog,
         refetchInterval: showLog ? 5000 : false,
     });
+
+    // ── Tek seferlik restart ──
+    const { data: oneTimeData } = useQuery({
+        queryKey: ['one-time-restart'],
+        queryFn: () => api.get('/scheduler/one-time-restart').then(r => r.data),
+        refetchInterval: 3000,
+    });
+
+    const scheduleRestartMutation = useMutation({
+        mutationFn: (delayMinutes) => api.post('/scheduler/one-time-restart', { delayMinutes }),
+        onSuccess: (res) => {
+            toast.success(res.data?.message || 'Restart planlandı');
+            queryClient.invalidateQueries({ queryKey: ['one-time-restart'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Planlanamadı'),
+    });
+
+    const cancelRestartMutation = useMutation({
+        mutationFn: () => api.delete('/scheduler/one-time-restart'),
+        onSuccess: () => {
+            toast.success('Restart iptal edildi');
+            queryClient.invalidateQueries({ queryKey: ['one-time-restart'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'İptal edilemedi'),
+    });
+
+    const oneTimeRestart = oneTimeData?.restart || null;
 
     const createMutation = useMutation({
         mutationFn: (d) => api.post('/scheduler', d),
@@ -208,6 +263,80 @@ export default function SchedulerPage() {
                     }}>
                         <I.Plus size={13}/> Yeni Görev
                     </button>
+                </div>
+            </div>
+
+            {/* ── Hızlı Restart Planla ── */}
+            <div style={{
+                background: A.panel, border: `1px solid ${oneTimeRestart ? 'rgba(248,113,113,0.3)' : A.border}`,
+                borderRadius: 4, padding: '16px 18px',
+                ...(oneTimeRestart ? { boxShadow: '0 0 20px rgba(248,113,113,0.06)' } : {}),
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                        width: 40, height: 40, borderRadius: 6, flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: oneTimeRestart ? 'rgba(248,113,113,0.10)' : 'rgba(96,165,250,0.08)',
+                        border: `1px solid ${oneTimeRestart ? 'rgba(248,113,113,0.25)' : 'rgba(96,165,250,0.15)'}`,
+                        color: oneTimeRestart ? A.err : '#60a5fa',
+                    }}>
+                        <I.Clock size={18}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: A.text, marginBottom: 3 }}>
+                            Hızlı Restart Planla
+                        </div>
+                        <div style={{ fontSize: 11, color: A.dim }}>
+                            {oneTimeRestart
+                                ? 'Oyunculara dakika başı ve son 10 saniye geri sayım yapılıyor'
+                                : 'Tek seferlik zamanlanmış restart — oyunculara uyarı verilir'}
+                        </div>
+                    </div>
+
+                    {oneTimeRestart ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <OneTimeRestartCountdown restartAt={oneTimeRestart.restartAt}/>
+                                <div style={{ fontSize: 9, color: A.faint, marginTop: 2, fontFamily: A.mono }}>
+                                    KALAN SÜRE
+                                </div>
+                            </div>
+                            <button onClick={() => cancelRestartMutation.mutate()}
+                                disabled={cancelRestartMutation.isPending}
+                                style={{
+                                    ...btnGhost, padding: '8px 14px', fontSize: 11,
+                                    color: A.err, borderColor: 'rgba(248,113,113,0.3)',
+                                    display: 'flex', alignItems: 'center', gap: 5,
+                                }}>
+                                <I.Stop size={11}/>
+                                {cancelRestartMutation.isPending ? 'İPTAL...' : 'İPTAL ET'}
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Input type="number" min={1} max={1440}
+                                    value={restartDelay}
+                                    onChange={e => setRestartDelay(Math.max(1, parseInt(e.target.value) || 1))}
+                                    mono style={{ width: 60, textAlign: 'center' }}/>
+                                <span style={{ fontSize: 11, color: A.faint, whiteSpace: 'nowrap' }}>dakika</span>
+                            </div>
+                            <button onClick={() => {
+                                if (confirm(`Sunucu ${restartDelay} dakika sonra yeniden başlatılacak. Oyunculara uyarı verilecek. Devam?`)) {
+                                    scheduleRestartMutation.mutate(restartDelay);
+                                }
+                            }}
+                                disabled={scheduleRestartMutation.isPending}
+                                style={{
+                                    ...btnPrimary, padding: '8px 14px', fontSize: 11,
+                                    display: 'flex', alignItems: 'center', gap: 5,
+                                    whiteSpace: 'nowrap',
+                                }}>
+                                <RefreshIcon size={12}/>
+                                {scheduleRestartMutation.isPending ? 'PLANLANIYOR...' : 'PLANLA'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
