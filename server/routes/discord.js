@@ -85,15 +85,77 @@ router.get('/whitelist', authMiddleware, async (req, res) => {
 });
 
 // POST /api/discord/whitelist
-router.post('/whitelist', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/whitelist', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const { userId, mcNick } = req.body;
         if (!userId || !mcNick) return res.status(400).json({ error: 'userId ve mcNick gerekli' });
         if (!/^[a-zA-Z0-9_]{3,16}$/.test(mcNick))
             return res.status(400).json({ error: 'Geçersiz Minecraft nick (3-16 karakter, harf/rakam/alt çizgi)' });
 
+        let isOnlineMode = true;
+        try {
+            const props = minecraftService.getProperties();
+            if (props && props['online-mode'] === 'false') {
+                isOnlineMode = false;
+            }
+        } catch (e) {
+            console.error('Failed to get server properties:', e.message);
+        }
+
+        let canonicalMcNick = mcNick.trim();
+
+        if (isOnlineMode) {
+            const fetchUuid = (name) => new Promise((resolve, reject) => {
+                const https = require('https');
+                const opts = {
+                    hostname: 'api.mojang.com',
+                    path: `/users/profiles/minecraft/${encodeURIComponent(name)}`,
+                    method: 'GET',
+                    headers: { 'User-Agent': 'KnozyPanel (1.0)' },
+                };
+                const r = https.request(opts, (resp) => {
+                    let data = '';
+                    resp.on('data', c => { data += c; });
+                    resp.on('end', () => {
+                        if (resp.statusCode === 200) {
+                            try {
+                                const j = JSON.parse(data);
+                                if (j.id && j.name) {
+                                    resolve({ uuid: j.id, name: j.name, status: 200 });
+                                    return;
+                                }
+                            } catch { /* parse error */ }
+                        } else if (resp.statusCode === 204) {
+                            resolve({ uuid: null, name: null, status: 204 });
+                            return;
+                        }
+                        resolve({ uuid: null, name: null, status: resp.statusCode });
+                    });
+                });
+                r.on('error', (err) => reject(err));
+                r.setTimeout(5000, () => { r.destroy(); reject(new Error('timeout')); });
+                r.end();
+            });
+
+            try {
+                const mojangUser = await fetchUuid(canonicalMcNick);
+                if (mojangUser && mojangUser.status === 204) {
+                    return res.status(400).json({ 
+                        error: `Böyle bir Minecraft oyuncusu bulunamadı: "${canonicalMcNick}". Lütfen nickinizi doğru yazdığınızdan emin olun.` 
+                    });
+                }
+                if (mojangUser && mojangUser.name) {
+                    canonicalMcNick = mojangUser.name;
+                } else {
+                    console.warn(`Mojang API could not verify ${canonicalMcNick}, status: ${mojangUser?.status}`);
+                }
+            } catch (err) {
+                console.error(`Mojang API error while verifying ${canonicalMcNick}:`, err.message);
+            }
+        }
+
         const whitelistData = discordBotService.getWhitelist() || {};
-        const lowerMcNick = mcNick.trim().toLowerCase();
+        const lowerMcNick = canonicalMcNick.toLowerCase();
         
         // Find if this nick is already registered by a different user
         const existingUserId = Object.keys(whitelistData).find(
@@ -102,19 +164,19 @@ router.post('/whitelist', authMiddleware, requireRole('admin'), (req, res) => {
 
         if (existingUserId) {
             return res.status(400).json({ 
-                error: `Bu Minecraft nick'i (${mcNick}) zaten <@${existingUserId}> tarafından kayıt edilmiş!` 
+                error: `Bu Minecraft nick'i (${canonicalMcNick}) zaten <@${existingUserId}> tarafından kayıt edilmiş!` 
             });
         }
 
-        const { oldNick } = discordBotService.addWhitelistEntry(userId.trim(), mcNick.trim());
+        const { oldNick } = discordBotService.addWhitelistEntry(userId.trim(), canonicalMcNick);
 
         // MC sunucusuna gönder (hata olursa sessizce geç)
-        if (oldNick && oldNick.toLowerCase() !== mcNick.toLowerCase()) {
+        if (oldNick && oldNick.toLowerCase() !== lowerMcNick) {
             try { minecraftService.sendCommand(`whitelist remove ${oldNick}`); } catch {}
         }
-        try { minecraftService.sendCommand(`whitelist add ${mcNick}`); } catch {}
+        try { minecraftService.sendCommand(`whitelist add ${canonicalMcNick}`); } catch {}
 
-        res.json({ message: `${mcNick} eklendi.` });
+        res.json({ message: `${canonicalMcNick} eklendi.`, mcNick: canonicalMcNick });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
