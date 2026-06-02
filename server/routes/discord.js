@@ -139,18 +139,18 @@ router.post('/whitelist', authMiddleware, requireRole('admin'), async (req, res)
 
             try {
                 const mojangUser = await fetchUuid(canonicalMcNick);
-                if (mojangUser && mojangUser.status === 204) {
-                    return res.status(400).json({ 
-                        error: `Böyle bir Minecraft oyuncusu bulunamadı: "${canonicalMcNick}". Lütfen nickinizi doğru yazdığınızdan emin olun.` 
-                    });
-                }
                 if (mojangUser && mojangUser.name) {
+                    // Oyuncu bulundu — canonical ismi kullan
                     canonicalMcNick = mojangUser.name;
                 } else {
-                    console.warn(`Mojang API could not verify ${canonicalMcNick}, status: ${mojangUser?.status}`);
+                    // 204, 404 veya başka hata — oyuncu bulunamadı
+                    return res.status(400).json({ 
+                        error: `"${canonicalMcNick}" adında bir Minecraft oyuncusu bulunamadı. Lütfen nick'i doğru yazdığınızdan emin olun.` 
+                    });
                 }
             } catch (err) {
-                console.error(`Mojang API error while verifying ${canonicalMcNick}:`, err.message);
+                // Mojang API'ye erişilemedi (timeout/ağ hatası) — kayda devam et, engellemek yerine uyar
+                console.error(`Mojang API erişim hatası (${canonicalMcNick}):`, err.message);
             }
         }
 
