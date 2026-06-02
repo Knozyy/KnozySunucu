@@ -368,7 +368,7 @@ class Scheduler {
 
         // İlk duyuru
         try {
-            mcService.sendCommand(`say §c§l[Restart] §r§eSunucu ${delayMinutes} dakika içinde yeniden başlatılacak!`);
+            mcService.sendCommand(`say §c§l[Restart] §r§eSunucu ${delayMinutes} dakika içinde planlanmış olarak yeniden başlatılacak!`);
         } catch { /* ignore */ }
 
         // Dakika başı uyarılar (her dakika kalan süreyi duyur)
@@ -380,9 +380,9 @@ class Scheduler {
                     const svc = getMcService();
                     if (svc && svc.status === 'running') {
                         if (remaining <= 1) {
-                            svc.sendCommand(`say §c§l[Restart] §r§cSunucu 1 dakika içinde yeniden başlatılacak!`);
+                            svc.sendCommand(`say §c§l[Restart] §r§cSunucu 1 dakika içinde planlanmış olarak yeniden başlatılacak!`);
                         } else {
-                            svc.sendCommand(`say §c§l[Restart] §r§eSunucu ${remaining} dakika içinde yeniden başlatılacak!`);
+                            svc.sendCommand(`say §c§l[Restart] §r§eSunucu ${remaining} dakika içinde planlanmış olarak yeniden başlatılacak!`);
                         }
                     }
                 } catch { /* ignore */ }
