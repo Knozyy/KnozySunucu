@@ -8,7 +8,7 @@ import {
     HiOutlineCommandLine, HiOutlineCog6Tooth, HiOutlineArchiveBox,
     HiOutlineFolder, HiOutlineCube, HiOutlineGlobeAlt, HiOutlineClock,
     HiOutlineSun, HiOutlineMoon, HiOutlineLanguage, HiOutlineArrowRightOnRectangle,
-    HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt, HiOutlineChartBar, HiOutlineUsers,
+    HiOutlineChatBubbleLeftRight, HiOutlineChevronDown, HiOutlineBolt, HiOutlineBoltSlash, HiOutlineChartBar, HiOutlineUsers,
     HiOutlineArrowPath, HiOutlineServerStack,
 } from 'react-icons/hi2';
 import { toast } from 'react-hot-toast';
@@ -49,6 +49,7 @@ const navGroups = [
             { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, permKey: 'scheduler' },
             { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, permKey: 'backup' },
             { path: '/automation', label: 'Otomasyon', icon: HiOutlineBolt, permKey: 'scheduler' },
+            { path: '/auto-throttle', label: 'Auto-Throttle', icon: HiOutlineBoltSlash, permKey: 'scheduler' },
         ],
     },
     {

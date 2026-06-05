@@ -21,6 +21,7 @@ import TerminalPage from '@/pages/TerminalPage';
 import DiscordPage from '@/pages/DiscordPage';
 import AutomationPage from '@/pages/AutomationPage';
 import PerformancePage from '@/pages/PerformancePage';
+import AutoThrottlePage from '@/pages/AutoThrottlePage';
 import PlayersPage from '@/pages/PlayersPage';
 import ServersPage from '@/pages/ServersPage';
 
@@ -89,6 +90,7 @@ function AppInner() {
           <Route path="discord" element={<DiscordPage />} />
           <Route path="automation" element={<AutomationPage />} />
           <Route path="performance" element={<PerformancePage />} />
+          <Route path="auto-throttle" element={<AutoThrottlePage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="servers" element={<ServersPage />} />
         </Route>

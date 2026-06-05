@@ -169,7 +169,8 @@ class MinecraftService extends EventEmitter {
             this.sendCommand('I agree');
         }
 
-        // TPS (Paper/Spigot: "TPS from last 1m, 5m, 15m: X.XX, X.XX, X.XX")
+        // ── TPS Parse (birden fazla format destekleniyor) ──
+        // Paper/Spigot: "TPS from last 1m, 5m, 15m: X.XX, X.XX, X.XX"
         const tpsMatch = line.match(/TPS from last 1m,\s*5m,\s*15m:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i);
         if (tpsMatch) {
             this._lastTps = {
@@ -177,6 +178,29 @@ class MinecraftService extends EventEmitter {
                 five: parseFloat(tpsMatch[2]),
                 fifteen: parseFloat(tpsMatch[3]),
             };
+            this._feedAutoThrottle(this._lastTps.one);
+        }
+        // Forge/NeoForge: "Overall : Mean tick time: XX.X ms. Mean TPS: XX.X"
+        const forgeTpsMatch = line.match(/Overall\s*:?\s*Mean tick time:\s*([\d.]+)\s*ms\.?\s*Mean TPS:\s*([\d.]+)/i);
+        if (forgeTpsMatch) {
+            const forgeTps = parseFloat(forgeTpsMatch[2]);
+            const forgeMspt = parseFloat(forgeTpsMatch[1]);
+            this._lastTps = { one: forgeTps, five: forgeTps, fifteen: forgeTps };
+            this._lastForgeMspt = forgeMspt;
+            this._feedAutoThrottle(forgeTps);
+        }
+        // Forge tek boyut satırı: "Dim: minecraft:overworld ... Mean TPS: XX.X"
+        // (bunları da kaydet ama _lastTps'yi sadece Overall yazar)
+
+        // ── "Can't keep up" lag algılama ──
+        const cantKeepUpMatch = line.match(/Can't keep up!.*Running\s+(\d+)ms/i);
+        if (cantKeepUpMatch) {
+            const behindMs = parseInt(cantKeepUpMatch[1]);
+            try {
+                const autoThrottle = require('./autoThrottle');
+                autoThrottle.feedCantKeepUp(behindMs);
+            } catch { /* ignore — servis henüz yüklenmemiş olabilir */ }
+            this.emit('lag', { behindMs, time: Date.now() });
         }
 
         // Oyuncu giriş/çıkış — chat ile taklit edilmesin diye log önekine (]:)
@@ -250,18 +274,29 @@ class MinecraftService extends EventEmitter {
                 this._javaPid = javaPid;
             }
             
-            // Her 60 saniyede bir (5000ms * 12) gizlice oyuncu listesini senkronize et
+            // Her 30 saniyede bir (5000ms * 6) TPS sorgula + oyuncu listesi senkronize et
             loopCount++;
-            if (loopCount >= 12 && this.status === 'running') {
-                loopCount = 0;
-                try {
-                    if (this._useScreen()) {
-                        const execSync = require('child_process').execSync;
-                        execSync(`screen -S ${this._screenName} -X stuff 'list\r'`, { timeout: 3000, stdio: 'ignore' });
-                    } else if (this.process?.stdin) {
-                        this.process.stdin.write('list\n');
-                    }
-                } catch { /* ignore */ }
+            if (loopCount >= 6 && this.status === 'running') {
+                const sendSilent = (cmd) => {
+                    try {
+                        if (this._useScreen()) {
+                            const execSync = require('child_process').execSync;
+                            execSync(`screen -S ${this._screenName} -X stuff '${cmd}\r'`, { timeout: 3000, stdio: 'ignore' });
+                        } else if (this.process?.stdin) {
+                            this.process.stdin.write(cmd + '\n');
+                        }
+                    } catch { /* ignore */ }
+                };
+
+                // Her 30sn: TPS sorgula (tps Vanilla/Paper için, forge tps Forge/NeoForge için)
+                sendSilent('tps');
+                sendSilent('forge tps');
+
+                // Her 60sn (2 döngüde bir): oyuncu listesini senkronize et
+                if (loopCount >= 12) {
+                    loopCount = 0;
+                    sendSilent('list');
+                }
             }
         }, 5000);
     }
@@ -495,9 +530,13 @@ class MinecraftService extends EventEmitter {
 
     getStatus() {
         const tps = this._lastTps?.one ?? null;
-        // MSPT yaklaşık: 20 TPS = 50ms; düşerse 1000/TPS
+        // MSPT: Forge'dan gerçek değer varsa onu kullan, yoksa yaklaşık hesapla
         let mspt = null;
-        if (tps != null) mspt = tps >= 20 ? 50 : Math.round((1000 / Math.max(tps, 1)) * 10) / 10;
+        if (this._lastForgeMspt != null) {
+            mspt = this._lastForgeMspt;
+        } else if (tps != null) {
+            mspt = tps >= 20 ? 50 : Math.round((1000 / Math.max(tps, 1)) * 10) / 10;
+        }
         return {
             status: this.status,
             players: this.players,
@@ -511,6 +550,17 @@ class MinecraftService extends EventEmitter {
             startedAt: this._startedAt || null,
             uptimeSec: this._startedAt ? Math.floor((Date.now() - this._startedAt) / 1000) : 0,
         };
+    }
+
+    /**
+     * TPS verisini AutoThrottle servisine besle
+     * @param {number} tps
+     */
+    _feedAutoThrottle(tps) {
+        try {
+            const autoThrottle = require('./autoThrottle');
+            autoThrottle.feedTps(tps);
+        } catch { /* servis henüz yüklenmemiş olabilir */ }
     }
 
     /** Bağlantı/RAM bilgisi önbelleğini geçersiz kıl (durum değişiminde çağrılır). */

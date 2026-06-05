@@ -25,6 +25,7 @@
     "multer": "^2.1.1",
     "node-pty": "^1.0.0",
     "pidusage": "^4.0.1",
+    "smol-toml": "^1.6.1",
     "systeminformation": "^5.31.3",
     "web-push": "^3.6.7",
     "ws": "^8.19.0"

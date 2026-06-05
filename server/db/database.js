@@ -191,6 +191,42 @@ function initDatabase() {
     );
     -- Not: min_ram / max_ram kolonları kaldırıldı (v2).
     -- RAM artık modpack.jvm_args / modpack.max_ram / JVM_ARGS env üzerinden okunuyor.
+
+    CREATE TABLE IF NOT EXISTS throttle_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      priority INTEGER DEFAULT 1,
+      enabled INTEGER DEFAULT 1,
+      config_path TEXT NOT NULL,
+      config_format TEXT NOT NULL DEFAULT 'toml',
+      reload_command TEXT,
+      server_id INTEGER NULL REFERENCES servers(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS throttle_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL REFERENCES throttle_profiles(id) ON DELETE CASCADE,
+      config_key TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      value_type TEXT NOT NULL DEFAULT 'number',
+      default_value TEXT NOT NULL,
+      min_value TEXT NOT NULL,
+      step_down REAL NOT NULL DEFAULT 1,
+      step_up REAL NOT NULL DEFAULT 1,
+      current_value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS throttle_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER,
+      rule_id INTEGER,
+      action TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      tps_at_time REAL,
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle
