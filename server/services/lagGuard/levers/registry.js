@@ -53,6 +53,11 @@ function normalize(data, isUpdate = false) {
     row.enabled = data.enabled === false ? 0 : (data.enabled === 0 ? 0 : 1);
     if (row.default_value == null) throw new Error('default_value gerekli');
     if (row.relief_value == null) throw new Error('relief_value (lag\'de gidilecek değer) gerekli');
+    // Legacy min_value/max_value sütunları eski DB'lerde NOT NULL olabilir →
+    // default/relief'ten türetip doldur (yoksa "NOT NULL constraint" hatası).
+    const dv = Number(row.default_value), rv = Number(row.relief_value);
+    if (row.min_value == null) row.min_value = Math.min(dv, rv);
+    if (row.max_value == null) row.max_value = Math.max(dv, rv);
     return row;
 }
 
@@ -62,9 +67,13 @@ const registry = {
             const d = db();
             const existing = d.prepare('SELECT lever_key FROM lag_levers').all().map(r => r.lever_key);
             const ins = d.prepare(`INSERT INTO lag_levers
-                (lever_key,name,description,apply_method,apply_template,value_type,default_value,relief_value,step,priority,enabled,is_builtin)
-                VALUES (@lever_key,@name,@description,@apply_method,@apply_template,@value_type,@default_value,@relief_value,@step,@priority,@enabled,@is_builtin)`);
-            for (const l of STARTER) if (!existing.includes(l.lever_key)) ins.run(l);
+                (lever_key,name,description,apply_method,apply_template,value_type,default_value,relief_value,step,min_value,max_value,priority,enabled,is_builtin)
+                VALUES (@lever_key,@name,@description,@apply_method,@apply_template,@value_type,@default_value,@relief_value,@step,@min_value,@max_value,@priority,@enabled,@is_builtin)`);
+            for (const l of STARTER) {
+                if (existing.includes(l.lever_key)) continue;
+                // legacy min/max sütunlarını doldur (eski DB'lerde NOT NULL)
+                ins.run({ ...l, min_value: Math.min(l.default_value, l.relief_value), max_value: Math.max(l.default_value, l.relief_value) });
+            }
         } catch { /* tablo henüz olmayabilir */ }
     },
 
