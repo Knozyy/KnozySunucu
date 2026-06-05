@@ -36,6 +36,8 @@ export default function LagGuardPage() {
     const [obsSeconds, setObsSeconds] = useState(20);
     const [obsResult, setObsResult] = useState(null);
     const [editing, setEditing] = useState(null); // lever object or EMPTY_LEVER for new
+    const [histAction, setHistAction] = useState('all'); // all | throttle | recover | reset
+    const [histSearch, setHistSearch] = useState('');
 
     const { data: status } = useQuery({
         queryKey: ['lagguard-status'],
@@ -50,6 +52,10 @@ export default function LagGuardPage() {
         queryKey: ['lagguard-history'],
         queryFn: () => api.get('/lag-guard/history?limit=80').then(r => r.data),
         refetchInterval: 8000,
+    });
+    const { data: settingsData } = useQuery({
+        queryKey: ['lagguard-settings'],
+        queryFn: () => api.get('/lag-guard/settings').then(r => r.data),
     });
 
     const invalidate = () => {
@@ -108,6 +114,11 @@ export default function LagGuardPage() {
         onSuccess: (d) => { setObsResult(d); toast.dismiss('obs'); d.ok ? toast.success('Sonuç yakalandı') : toast.error(d.note || 'URL yok'); },
         onError: (e) => { toast.dismiss('obs'); toast.error(e.response?.data?.error || 'Çalıştırılamadı'); },
     });
+    const saveSettings = useMutation({
+        mutationFn: (patch) => api.put('/lag-guard/settings', patch).then(r => r.data),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['lagguard-settings'] }); toast.success('Ayarlar kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
 
     const lvl = LEVELS[status?.level || 'unknown'];
     const mode = status?.mode || 'off';
@@ -119,6 +130,26 @@ export default function LagGuardPage() {
     const dec = status?.decision || {};
     const decLog = dec.log || [];
     const history = historyData?.history || [];
+    const settings = settingsData?.settings || null;
+    const filteredHistory = history.filter(h =>
+        (histAction === 'all' || h.action === histAction) &&
+        (!histSearch || (h.lever_key || '').toLowerCase().includes(histSearch.toLowerCase()))
+    );
+    const exportHistoryCsv = () => {
+        const cols = ['created_at', 'lever_key', 'action', 'mode', 'old_value', 'new_value', 'mspt_at'];
+        const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+        const rows = filteredHistory.map(h => cols.map(c => esc(h[c])).join(','));
+        const csv = [cols.join(','), ...rows].join('\n');
+        // BOM (U+FEFF) — Excel'in Türkçe karakterleri UTF-8 olarak doğru açması için
+        const bom = String.fromCharCode(0xFEFF);
+        const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lag-guard-history-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: A.sans, color: A.text }}>
@@ -184,7 +215,7 @@ export default function LagGuardPage() {
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'genel', label: 'Genel', icon: I.Signal }, { id: 'levers', label: 'Kaldıraçlar', icon: I.Wrench }, { id: 'log', label: 'Aksiyon Logu', icon: I.Clock }].map(t => (
+                {[{ id: 'genel', label: 'Genel', icon: I.Signal }, { id: 'levers', label: 'Kaldıraçlar', icon: I.Wrench }, { id: 'log', label: 'Aksiyon Logu', icon: I.Clock }, { id: 'ayarlar', label: 'Ayarlar', icon: I.Cog }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none',
                         borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
@@ -290,15 +321,36 @@ export default function LagGuardPage() {
                             ))}
                         </div>
                     </Card>
-                    <Card title="Kaldıraç Değişiklik Geçmişi">
+                    <Card title="Kaldıraç Değişiklik Geçmişi" action={
+                        <button onClick={exportHistoryCsv} disabled={filteredHistory.length === 0}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 6, opacity: filteredHistory.length === 0 ? 0.4 : 1 }}>
+                            <I.Download size={12} /> CSV
+                        </button>
+                    }>
+                        {/* Filtre çubuğu */}
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                {[{ id: 'all', label: 'Tümü' }, { id: 'throttle', label: 'Kıs' }, { id: 'recover', label: 'Aç' }, { id: 'reset', label: 'Sıfırla' }].map(o => (
+                                    <button key={o.id} onClick={() => setHistAction(o.id)} style={{
+                                        ...btnGhost, padding: '5px 10px', fontSize: 11,
+                                        borderColor: histAction === o.id ? 'var(--accent)' : A.border,
+                                        color: histAction === o.id ? '#fff' : A.dim,
+                                    }}>{o.label}</button>
+                                ))}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 160, maxWidth: 260 }}>
+                                <Input mono value={histSearch} onChange={e => setHistSearch(e.target.value)} placeholder="kaldıraç ara…" />
+                            </div>
+                            <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>{filteredHistory.length} / {history.length}</span>
+                        </div>
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
                                 <thead><tr style={{ borderBottom: `1px solid ${A.border}` }}>
                                     {['Zaman', 'Kaldıraç', 'Aksiyon', 'Mod', 'Eski', 'Yeni', 'MSPT'].map(h => <th key={h} style={{ padding: '6px 10px' }}><Cap>{h}</Cap></th>)}
                                 </tr></thead>
                                 <tbody>
-                                    {history.length === 0 ? <tr><td colSpan={7} style={{ padding: 16, color: A.faint, textAlign: 'center' }}>Kayıt yok.</td></tr> :
-                                        history.map(h => (
+                                    {filteredHistory.length === 0 ? <tr><td colSpan={7} style={{ padding: 16, color: A.faint, textAlign: 'center' }}>{history.length === 0 ? 'Kayıt yok.' : 'Filtreye uyan kayıt yok.'}</td></tr> :
+                                        filteredHistory.map(h => (
                                             <tr key={h.id} style={{ borderBottom: `1px solid ${A.border}` }}>
                                                 <td style={{ padding: '8px 10px', fontFamily: A.mono, color: A.dim }}>{new Date(h.created_at).toLocaleString('tr-TR')}</td>
                                                 <td style={{ padding: '8px 10px' }}>{h.lever_key}</td>
@@ -316,6 +368,13 @@ export default function LagGuardPage() {
                 </div>
             )}
 
+            {/* AYARLAR */}
+            {tab === 'ayarlar' && (
+                settings
+                    ? <SettingsPanel key={JSON.stringify(settings)} initial={settings} onSave={(patch) => saveSettings.mutate(patch)} saving={saveSettings.isPending} />
+                    : <Empty text="Ayarlar yükleniyor…" />
+            )}
+
             {/* Kaldıraç ekle/düzenle modal */}
             {editing && <LeverModal lever={editing} onClose={() => setEditing(null)} onSave={(l) => saveLever.mutate(l)} onBulk={(items) => bulkAdd.mutate(items)} saving={saveLever.isPending || bulkAdd.isPending} />}
         </div>
@@ -324,6 +383,98 @@ export default function LagGuardPage() {
 
 function Empty({ text = 'Veri bekleniyor…' }) {
     return <div style={{ color: A.faint, fontSize: 12, padding: '36px 0', textAlign: 'center' }}>{text}</div>;
+}
+
+const SETTINGS_GROUPS = [
+    {
+        title: 'Karar Eşikleri — MSPT (birincil sinyal, ms)',
+        hint: 'Sunucu bir tick\'i bu süreden uzun işlerse lag sayılır. Karar bu değerlere göre verilir.',
+        fields: [
+            { k: 'msptTarget', label: 'Hedef (≤ → stabil)' },
+            { k: 'msptWarn', label: 'Uyarı (≥ → kıs)' },
+            { k: 'msptCritical', label: 'Kritik (≥ → agresif kıs)' },
+            { k: 'cantKeepUpCritical', label: '"Can\'t keep up" / 5dk → kritik' },
+        ],
+    },
+    {
+        title: 'Görüntüleme Eşikleri — TPS',
+        hint: 'Yalnızca durum etiketi/rengi için. Karar MSPT ile verilir.',
+        fields: [
+            { k: 'tpsTarget', label: 'Hedef' },
+            { k: 'tpsWarn', label: 'Uyarı' },
+            { k: 'tpsCritical', label: 'Kritik' },
+        ],
+    },
+    {
+        title: 'Zamanlama (saniye)',
+        fields: [
+            { k: 'checkInterval', label: 'Karar aralığı' },
+            { k: 'cooldownAfterThrottle', label: 'Kısma sonrası bekleme' },
+            { k: 'cooldownAfterRecovery', label: 'Açma sonrası bekleme' },
+            { k: 'stableForRecovery', label: 'Açmadan önce stabil kalma' },
+            { k: 'observableSeconds', label: 'Observable profil süresi' },
+        ],
+    },
+];
+
+function SettingsPanel({ initial, onSave, saving }) {
+    const [form, setForm] = useState(() => ({ ...initial }));
+    const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+    const allowRestart = Number(form.allowRestartLevers) === 1;
+
+    const dirty = Object.keys(form).some(k => String(form[k]) !== String(initial[k]));
+
+    const save = () => {
+        // Yalnızca değişen alanları gönder (backend zaten süzüyor ama temiz kalsın)
+        const patch = {};
+        for (const k of Object.keys(form)) {
+            if (String(form[k]) !== String(initial[k])) patch[k] = Number(form[k]);
+        }
+        if (Object.keys(patch).length === 0) { toast('Değişiklik yok'); return; }
+        onSave(patch);
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Restart kaldıraçları — en kritik ayar */}
+            <Card title="Restart Gerektiren Kaldıraçlar" accent={allowRestart ? A.warn : A.faint}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                    <p style={{ fontSize: 12, color: A.dim, margin: 0, maxWidth: 560 }}>
+                        <code style={{ fontFamily: A.mono, color: A.warn }}>config_restart</code> yöntemli kaldıraçlar yalnızca
+                        sonraki yeniden başlatmada etkin olur. Açık değilken bu kaldıraçlar
+                        otomatik karar motorunda <strong style={{ color: A.dim }}>atlanır</strong>.
+                        Sadece dosyayı değiştirip restart'ta etki etmesini istiyorsan aç.
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 11, color: allowRestart ? A.warn : A.faint, fontFamily: A.mono }}>{allowRestart ? 'AÇIK' : 'KAPALI'}</span>
+                        <Toggle value={allowRestart} onChange={(v) => set('allowRestartLevers', v ? 1 : 0)} />
+                    </div>
+                </div>
+            </Card>
+
+            {SETTINGS_GROUPS.map(g => (
+                <Card key={g.title} title={g.title}>
+                    {g.hint && <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>{g.hint}</p>}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                        {g.fields.map(f => (
+                            <div key={f.k}>
+                                <Cap style={{ display: 'block', marginBottom: 4 }}>{f.label}</Cap>
+                                <Input type="number" mono value={form[f.k] ?? ''} onChange={e => set(f.k, e.target.value)} />
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            ))}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button onClick={save} disabled={saving || !dirty}
+                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, opacity: (saving || !dirty) ? 0.5 : 1 }}>
+                    <I.Check size={13} /> {saving ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
+                </button>
+                {dirty && <span style={{ fontSize: 11, color: A.warn, fontFamily: A.mono }}>kaydedilmemiş değişiklik var</span>}
+            </div>
+        </div>
+    );
 }
 
 function LeverModal({ lever, onClose, onSave, onBulk, saving }) {

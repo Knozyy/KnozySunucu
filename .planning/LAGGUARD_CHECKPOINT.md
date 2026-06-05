@@ -15,7 +15,7 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 - `routes/lagGuard.js` — `/api/lag-guard/{status,metrics,settings,observable/run}`
 - `client/src/pages/LagGuardPage.jsx` — canlı TPS/MSPT grafiği, Can't Keep Up sayacı, Observable butonu, TPS kaynağı göstergesi
 - DB: `lag_samples` tablosu; NAV + Cmd+K girişi
-- `minecraftService` artık `tps` event'i yayar (gevşek bağlılık; eski `_feedAutoThrottle` korundu)
+- `minecraftService` artık `tps` event'i yayar (gevşek bağlılık)
 
 ### Konsol & TPS bug fix'leri (TAMAMLANDI, doğrulandı)
 - `server/utils/text.js` — `cleanConsoleLine`/`stripAnsi`: "[m> [K" terminal kodlarını + screen prompt artıklarını temizler. `wsRouter` (gösterim) + `minecraftService._parseLine` (parse) kullanıyor.
@@ -50,6 +50,12 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 - **Toplu ekleme**: config gezgininde çoklu seçim (checkbox) → "Lag'de AZALT/ARTIR %X" → tek tıkla N kaldıraç (`/levers/bulk`). Pipez gibi onlarca anahtarı hızlı ekler.
 - **Test adımı:** sunucuda mod=dryrun yap, lag'de "öner" loglarını izle; mantık doğruysa auto'ya al.
 
+### Temizlik & UI tamamlama (TAMAMLANDI ✅)
+- **AutoThrottle tamamen söküldü** (planlı temizlik): `services/autoThrottle.js`, `routes/autoThrottle.js`, `pages/AutoThrottlePage.jsx` silindi; `minecraftService` (`_feedAutoThrottle`/`feedCantKeepUp` çağrıları), `server/index.js` (require/attach/route), `App.jsx`, `Sidebar.jsx`, `database.js` (`throttle_*` tabloları) temizlendi. LagGuard tek sistem.
+- **Sidebar'a Lag-Guard girişi** eklendi (eski Auto-Throttle navının yerine; LagGuard sayfası route'luydu ama menüde yoktu).
+- **LagGuard Ayarlar sekmesi** eklendi: `allowRestartLevers` toggle (config_restart kaldıraçları için kritik) + MSPT/TPS eşikleri + zamanlama alanları (`/settings` GET/PUT'a bağlı).
+- **History filtre + CSV export**: aksiyon filtresi (kıs/aç/sıfırla) + kaldıraç arama + BOM'lu UTF-8 CSV indirme.
+
 ## ⏳ YAPILACAKLAR
 
 ### Faz 2 — Profiler-güdümlü hedefleme + restart-config kuyruğu (toggle'lı)
@@ -59,6 +65,6 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 ---
 
 ## ⚠️ NOTLAR
-- Eski `autoThrottle*` WIP dormant referans; Faz 1 sonunda temizlenecek.
+- ~~Eski `autoThrottle*` WIP dormant referans; Faz 1 sonunda temizlenecek.~~ → TEMİZLENDİ ✅
 - Standing rule: her commit otomatik `main`'e push.
 - Tam tasarım planı: `~/.claude/plans/eventual-juggling-raccoon.md`
