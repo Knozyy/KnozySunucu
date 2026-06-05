@@ -45,7 +45,9 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 - Modlar: **off / dryrun (öner) / auto** — varsayılan off, dryrun güvenli test
 - Route: mode, levers CRUD, seed, reset, history
 - Panel: mod seçici + Genel/Kaldıraçlar/Log sekmeleri + kaldıraç ekle-düzenle modal + canlı karar logu
-- **Config gezgini** (`configExplorer.js` + `/config/files`,`/config/read`): config kaldıracı eklerken mevcut mod config dosyalarını listeler, parse edip sayısal anahtarları+güncel değerleri gösterir; tıklayınca kaldıraç alanları otomatik dolar (yol/anahtar elle yazılmaz)
+- **Config gezgini** (`configExplorer.js` + `/config/files`,`/config/read`): config kaldıracı eklerken mevcut mod config dosyalarını listeler, parse edip sayısal anahtarları+güncel değerleri gösterir; tıklayınca kaldıraç alanları otomatik dolar
+- **YÖN-BAĞIMSIZ model** (önemli): min/max yerine `default_value` (normal) + `relief_value` (lag'de gidilecek). Yön otomatik: relief<default→lag'de AZALT (randomTickSpeed), relief>default→lag'de ARTIR (ör. pipez tick gecikmesi). decision.js her iki yönde de throttle/recover + sweet-spot yapıyor. DB migration: eski min_value/step_down → relief_value/step backfill.
+- **Toplu ekleme**: config gezgininde çoklu seçim (checkbox) → "Lag'de AZALT/ARTIR %X" → tek tıkla N kaldıraç (`/levers/bulk`). Pipez gibi onlarca anahtarı hızlı ekler.
 - **Test adımı:** sunucuda mod=dryrun yap, lag'de "öner" loglarını izle; mantık doğruysa auto'ya al.
 
 ## ⏳ YAPILACAKLAR

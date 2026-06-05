@@ -84,7 +84,7 @@ class LagGuard {
             else level = 'minor';
         }
         const levers = registry.list();
-        const throttled = levers.filter(l => l.current_value != null && l.current_value < l.default_value).length;
+        const throttled = levers.filter(l => l.current_value != null && l.current_value !== l.default_value).length;
         return {
             phase: 1,
             mode: this._mode,
@@ -111,6 +111,7 @@ class LagGuard {
     // ── Kaldıraçlar (passthrough) ────────────────────────────────────────
     getLevers() { return { levers: registry.list() }; }
     createLever(data) { return registry.create(data); }
+    bulkCreateLevers(items) { return registry.bulkCreate(items || []); }
     updateLever(id, data) { return registry.update(id, data); }
     deleteLever(id) { return registry.remove(id); }
     toggleLever(id) { return registry.toggle(id); }

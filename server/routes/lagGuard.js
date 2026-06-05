@@ -87,6 +87,13 @@ router.post('/levers/:id/toggle', authMiddleware, requireRole('admin'), (req, re
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+router.post('/levers/bulk', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const n = lagGuard.bulkCreateLevers(req.body?.levers || []);
+        res.json({ message: `${n} kaldıraç eklendi`, count: n });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 router.post('/levers/seed', authMiddleware, requireRole('admin'), (req, res) => {
     try { res.json({ message: 'Başlangıç kütüphanesi yüklendi', levers: lagGuard.seedLevers() }); }
     catch (e) { res.status(400).json({ error: e.message }); }

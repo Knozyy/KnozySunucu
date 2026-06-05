@@ -27,8 +27,7 @@ const STATE_LABEL = {
 
 const EMPTY_LEVER = {
     name: '', lever_key: '', apply_method: 'gamerule', apply_template: '',
-    value_type: 'int', default_value: 3, min_value: 0, max_value: 3,
-    step_down: 1, step_up: 1, priority: 50, description: '',
+    value_type: 'int', default_value: 3, relief_value: 0, step: 1, priority: 50, description: '',
 };
 
 export default function LagGuardPage() {
@@ -88,6 +87,11 @@ export default function LagGuardPage() {
         mutationFn: (l) => l.id ? api.put(`/lag-guard/levers/${l.id}`, l) : api.post('/lag-guard/levers', l),
         onSuccess: () => { invalidate(); setEditing(null); toast.success('Kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    const bulkAdd = useMutation({
+        mutationFn: (items) => api.post('/lag-guard/levers/bulk', { levers: items }),
+        onSuccess: (r) => { invalidate(); setEditing(null); toast.success(r.data.message); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Eklenemedi'),
     });
     const runObservable = useMutation({
         mutationFn: (s) => api.post('/lag-guard/observable/run', { seconds: s }).then(r => r.data),
@@ -227,8 +231,10 @@ export default function LagGuardPage() {
 
                     {levers.length === 0 ? <Empty text="Kaldıraç yok. 'Başlangıç Kütüphanesini Yükle' ile başla." /> : levers.map(l => {
                         const cur = l.current_value != null ? l.current_value : l.default_value;
-                        const throttled = cur < l.default_value;
-                        const pct = l.default_value !== l.min_value ? ((cur - l.min_value) / (l.default_value - l.min_value)) * 100 : 100;
+                        const throttled = cur !== l.default_value;
+                        const span = (l.relief_value ?? l.default_value) - l.default_value;
+                        const pct = span !== 0 ? Math.abs((cur - l.default_value) / span) * 100 : 0;
+                        const dirTxt = span < 0 ? 'azalt' : span > 0 ? 'artır' : '—';
                         return (
                             <div key={l.id} style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                                 <div style={{ flex: 1 }}>
@@ -245,7 +251,7 @@ export default function LagGuardPage() {
                                         <div style={{ flex: 1, maxWidth: 220, height: 5, background: A.bg, borderRadius: 3, overflow: 'hidden' }}>
                                             <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: '100%', background: throttled ? A.warn : A.ok }} />
                                         </div>
-                                        <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>min {l.min_value} · def {l.default_value}{l.lag_ceiling != null ? ` · tavan ${l.lag_ceiling}` : ''}</span>
+                                        <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>normal {l.default_value} → relief {l.relief_value} ({dirTxt}){l.lag_ceiling != null ? ` · tavan ${l.lag_ceiling}` : ''}</span>
                                     </div>
                                     {l.apply_template ? <code style={{ display: 'block', marginTop: 6, fontSize: 10, color: A.faint, fontFamily: A.mono }}>{l.apply_template}</code> : null}
                                 </div>
@@ -298,7 +304,7 @@ export default function LagGuardPage() {
             )}
 
             {/* Kaldıraç ekle/düzenle modal */}
-            {editing && <LeverModal lever={editing} onClose={() => setEditing(null)} onSave={(l) => saveLever.mutate(l)} saving={saveLever.isPending} />}
+            {editing && <LeverModal lever={editing} onClose={() => setEditing(null)} onSave={(l) => saveLever.mutate(l)} onBulk={(items) => bulkAdd.mutate(items)} saving={saveLever.isPending || bulkAdd.isPending} />}
         </div>
     );
 }
@@ -307,7 +313,7 @@ function Empty({ text = 'Veri bekleniyor…' }) {
     return <div style={{ color: A.faint, fontSize: 12, padding: '36px 0', textAlign: 'center' }}>{text}</div>;
 }
 
-function LeverModal({ lever, onClose, onSave, saving }) {
+function LeverModal({ lever, onClose, onSave, onBulk, saving }) {
     const [f, setF] = useState(lever);
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
     const isConfig = f.apply_method === 'config_reload' || f.apply_method === 'config_restart';
@@ -332,21 +338,50 @@ function LeverModal({ lever, onClose, onSave, saving }) {
     const pickEntry = (e) => {
         setF(p => ({
             ...p,
-            config_path: cfgPath,
-            config_format: cfgFmt || 'toml',
-            config_key: e.key,
+            config_path: cfgPath, config_format: cfgFmt || 'toml', config_key: e.key,
             default_value: e.value,
-            max_value: e.value,
+            relief_value: e.type === 'boolean' ? 0 : e.value, // relief'i sen ayarla (lag'de gidilecek değer)
+            step: 1,
             value_type: Number.isInteger(e.value) ? 'int' : 'float',
-            min_value: e.type === 'boolean' ? 0 : Math.max(0, Math.floor(e.value / 2)),
             name: p.name || e.key.split('.').pop(),
             lever_key: p.lever_key || e.key.replace(/[^a-z0-9]+/gi, '_').toLowerCase().slice(0, 40),
         }));
     };
-    const num = ['default_value', 'min_value', 'max_value', 'step_down', 'step_up', 'priority'];
+
+    // Çoklu seçim + toplu ekleme
+    const [sel, setSel] = useState({});
+    const [bulkDir, setBulkDir] = useState('down');
+    const [bulkPct, setBulkPct] = useState(50);
+    const [bulkStep, setBulkStep] = useState(1);
+    const [bulkPrio, setBulkPrio] = useState(50);
+    const selCount = Object.keys(sel).length;
+    const toggleSel = (e) => setSel(p => { const n = { ...p }; if (n[e.key]) delete n[e.key]; else n[e.key] = e; return n; });
+    const doBulk = () => {
+        const items = Object.values(sel).map(e => {
+            const v = e.value, isInt = Number.isInteger(v);
+            let relief;
+            if (e.type === 'boolean') relief = bulkDir === 'down' ? 0 : 1;
+            else { relief = bulkDir === 'down' ? v * (1 - bulkPct / 100) : v * (1 + bulkPct / 100); relief = isInt ? Math.round(relief) : Math.round(relief * 1000) / 1000; }
+            if (relief === v) relief = bulkDir === 'down' ? Math.max(0, v - 1) : v + 1;
+            return {
+                apply_method: f.apply_method, config_path: cfgPath, config_format: cfgFmt || 'toml', config_key: e.key,
+                value_type: isInt ? 'int' : 'float', default_value: v, relief_value: relief, step: Number(bulkStep), priority: Number(bulkPrio),
+                name: e.key.split('.').pop(), lever_key: (cfgPath + '_' + e.key).replace(/[^a-z0-9]+/gi, '_').toLowerCase().slice(0, 48), description: '',
+            };
+        });
+        if (items.length) onBulk(items);
+    };
+    const num = ['default_value', 'relief_value', 'step', 'priority'];
+    const diff = Number(f.relief_value) - Number(f.default_value);
+    const dirInfo = diff < 0
+        ? { text: `Lag'de AZALACAK (${f.default_value} → ${f.relief_value})`, color: A.warn }
+        : diff > 0
+            ? { text: `Lag'de ARTACAK (${f.default_value} → ${f.relief_value})`, color: A.warn }
+            : { text: 'relief = normal → etkisiz. relief\'i değiştir (lag\'de gidilecek değer).', color: A.err };
     const submit = () => {
         const out = { ...f };
         for (const k of num) out[k] = Number(out[k]);
+        if (Number(out.relief_value) === Number(out.default_value)) { toast.error('relief, normal değerden farklı olmalı'); return; }
         onSave(out);
     };
     return (
@@ -388,15 +423,30 @@ function LeverModal({ lever, onClose, onSave, saving }) {
                                             {cfgErr ? <div style={{ padding: 10, fontSize: 11, color: A.err }}>Parse edilemedi: {cfgErr.response?.data?.error || 'hata'}</div>
                                                 : cfgLoading ? <div style={{ padding: 10, fontSize: 11, color: A.faint }}>Okunuyor…</div>
                                                 : cfgEntries.length === 0 ? <div style={{ padding: 10, fontSize: 11, color: A.faint }}>Sayısal anahtar bulunamadı.</div>
-                                                : cfgEntries.slice(0, 200).map((e, i) => (
-                                                    <button key={i} type="button" onClick={() => pickEntry(e)}
-                                                        style={{ display: 'flex', justifyContent: 'space-between', width: '100%', textAlign: 'left', background: f.config_key === e.key ? 'rgba(167,139,250,0.12)' : 'transparent', border: 'none', borderBottom: `1px solid ${A.border}`, padding: '6px 10px', cursor: 'pointer', color: A.text, fontFamily: A.mono, fontSize: 11 }}>
-                                                        <span style={{ color: A.dim, wordBreak: 'break-all', marginRight: 8 }}>{e.key}</span>
-                                                        <span style={{ color: A.ok, flexShrink: 0 }}>{e.value}{e.type === 'boolean' ? ' (bool)' : ''}</span>
-                                                    </button>
+                                                : cfgEntries.slice(0, 300).map((e, i) => (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: `1px solid ${A.border}`, padding: '4px 8px', background: sel[e.key] ? 'rgba(167,139,250,0.10)' : (f.config_key === e.key ? 'rgba(167,139,250,0.06)' : 'transparent') }}>
+                                                        <input type="checkbox" checked={!!sel[e.key]} onChange={() => toggleSel(e)} />
+                                                        <button type="button" onClick={() => pickEntry(e)} style={{ display: 'flex', justifyContent: 'space-between', flex: 1, textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', color: A.text, fontFamily: A.mono, fontSize: 11 }}>
+                                                            <span style={{ color: A.dim, wordBreak: 'break-all', marginRight: 8 }}>{e.key}</span>
+                                                            <span style={{ color: A.ok, flexShrink: 0 }}>{e.value}{e.type === 'boolean' ? ' (bool)' : ''}</span>
+                                                        </button>
+                                                    </div>
                                                 ))}
                                         </div>
-                                        <div style={{ fontSize: 10, color: A.faint, marginTop: 6 }}>Bir anahtara tıkla → aşağıdaki alanlar otomatik dolar.</div>
+                                        {selCount > 0 && (
+                                            <div style={{ marginTop: 10, padding: 10, background: 'rgba(167,139,250,0.08)', border: `1px solid ${A.border}`, borderRadius: 4 }}>
+                                                <Cap style={{ display: 'block', marginBottom: 6 }}>{selCount} anahtar seçili — toplu ekle</Cap>
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                                    <div><Cap style={{ display: 'block', marginBottom: 2 }}>Lag'de</Cap><select value={bulkDir} onChange={e => setBulkDir(e.target.value)} style={selStyle}><option value="down">AZALT</option><option value="up">ARTIR</option></select></div>
+                                                    <div style={{ width: 80 }}><Cap style={{ display: 'block', marginBottom: 2 }}>Oran %</Cap><Input type="number" value={bulkPct} onChange={e => setBulkPct(Number(e.target.value))} /></div>
+                                                    <div style={{ width: 70 }}><Cap style={{ display: 'block', marginBottom: 2 }}>Adım</Cap><Input type="number" value={bulkStep} onChange={e => setBulkStep(Number(e.target.value))} /></div>
+                                                    <div style={{ width: 80 }}><Cap style={{ display: 'block', marginBottom: 2 }}>Öncelik</Cap><Input type="number" value={bulkPrio} onChange={e => setBulkPrio(Number(e.target.value))} /></div>
+                                                    <button type="button" onClick={doBulk} style={btnPrimary}>{selCount} kaldıraç ekle</button>
+                                                </div>
+                                                <div style={{ fontSize: 10, color: A.faint, marginTop: 6 }}>Örn: tüm <code style={{ fontFamily: A.mono }}>speed.*</code> anahtarlarını seç → "Lag'de ARTIR %50" → hepsi tek tıkla eklenir.</div>
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: 10, color: A.faint, marginTop: 6 }}>Tek seçim: anahtara tıkla (alanlar dolar). Çoklu: kutucukları işaretle.</div>
                                     </>
                                 )}
                             </div>
@@ -410,12 +460,13 @@ function LeverModal({ lever, onClose, onSave, saving }) {
                             {f.apply_method === 'config_reload' && <Field label="Reload komutu" span><Input value={f.reload_command || ''} onChange={e => set('reload_command', e.target.value)} /></Field>}
                         </>
                     )}
-                    <Field label="Default"><Input type="number" value={f.default_value} onChange={e => set('default_value', e.target.value)} /></Field>
-                    <Field label="Min"><Input type="number" value={f.min_value} onChange={e => set('min_value', e.target.value)} /></Field>
-                    <Field label="Max"><Input type="number" value={f.max_value ?? ''} onChange={e => set('max_value', e.target.value)} /></Field>
+                    <Field label="Normal değer (default)"><Input type="number" value={f.default_value} onChange={e => set('default_value', e.target.value)} /></Field>
+                    <Field label="Lag'de gidilecek (relief)"><Input type="number" value={f.relief_value} onChange={e => set('relief_value', e.target.value)} /></Field>
+                    <Field label="Adım (step)"><Input type="number" value={f.step} onChange={e => set('step', e.target.value)} /></Field>
                     <Field label="Öncelik (düşük=önce)"><Input type="number" value={f.priority} onChange={e => set('priority', e.target.value)} /></Field>
-                    <Field label="Kısma adımı"><Input type="number" value={f.step_down} onChange={e => set('step_down', e.target.value)} /></Field>
-                    <Field label="Açma adımı"><Input type="number" value={f.step_up} onChange={e => set('step_up', e.target.value)} /></Field>
+                    <Field label="Yön" span>
+                        <div style={{ fontSize: 11, color: dirInfo.color, fontFamily: A.mono, padding: '6px 0' }}>{dirInfo.text}</div>
+                    </Field>
                     <Field label="Açıklama" span><Input value={f.description || ''} onChange={e => set('description', e.target.value)} /></Field>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>

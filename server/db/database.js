@@ -253,13 +253,15 @@ function initDatabase() {
       config_key TEXT,
       reload_command TEXT,                           -- config_reload için
       value_type TEXT NOT NULL DEFAULT 'int',        -- int | float
-      default_value REAL NOT NULL,
-      min_value REAL NOT NULL,
+      default_value REAL NOT NULL,                   -- normal/istenen değer (lag yokken)
+      relief_value REAL,                             -- lag'de gidilecek değer (rahatlama); < veya > default olabilir
+      step REAL NOT NULL DEFAULT 1,                  -- her aksiyonda değişim miktarı
+      min_value REAL,                                -- (legacy/opsiyonel sert sınır)
       max_value REAL,
-      step_down REAL NOT NULL DEFAULT 1,
-      step_up REAL NOT NULL DEFAULT 1,
+      step_down REAL,                                -- (legacy)
+      step_up REAL,                                  -- (legacy)
       current_value REAL,                            -- NULL = default'ta
-      lag_ceiling REAL,                              -- sweet-spot: bu değer lag yapmıştı (recovery üst sınırı)
+      lag_ceiling REAL,                              -- sweet-spot: bu değer lag yapmıştı
       priority INTEGER NOT NULL DEFAULT 50,          -- düşük = önce kısılır
       enabled INTEGER NOT NULL DEFAULT 1,
       is_builtin INTEGER NOT NULL DEFAULT 0,
@@ -280,6 +282,16 @@ function initDatabase() {
     );
     CREATE INDEX IF NOT EXISTS idx_lag_lever_history_ts ON lag_lever_history(created_at);
   `);
+
+  // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)
+  try {
+    const lc = database.prepare("PRAGMA table_info(lag_levers)").all().map(c => c.name);
+    if (!lc.includes('relief_value')) database.exec('ALTER TABLE lag_levers ADD COLUMN relief_value REAL');
+    if (!lc.includes('step')) database.exec('ALTER TABLE lag_levers ADD COLUMN step REAL');
+    // Backfill: eski model "min'e doğru azalt" → relief = min_value, step = step_down
+    database.exec(`UPDATE lag_levers SET relief_value = min_value WHERE relief_value IS NULL AND min_value IS NOT NULL`);
+    database.exec(`UPDATE lag_levers SET step = COALESCE(step_down, 1) WHERE step IS NULL`);
+  } catch (e) { /* tablo henüz yoksa sorun değil */ }
 
   // Migration: install_path ve is_active sütunları yoksa ekle
   try {
