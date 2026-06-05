@@ -51,7 +51,7 @@ export function OnlinePlayersWidget({ server }) {
 
     return (
         <Card title={`çevrimiçi oyuncular · ${players.length}`} accent="var(--accent)"
-            style={{ height: '100%' }}
+            fill style={{ height: '100%' }}
             action={
                 <div style={{ position: 'relative', width: 110 }}>
                     <I.Search size={11} style={{
@@ -67,7 +67,7 @@ export function OnlinePlayersWidget({ server }) {
                         }}/>
                 </div>
             }>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                 {/* Header */}
                 <div style={{
                     display: 'grid',
@@ -75,7 +75,7 @@ export function OnlinePlayersWidget({ server }) {
                     gap: 8, padding: '4px 0',
                     fontSize: 9.5, color: A.faint, fontFamily: A.mono,
                     letterSpacing: '0.08em', textTransform: 'uppercase',
-                    borderBottom: `1px solid ${A.border}`,
+                    borderBottom: `1px solid ${A.border}`, flexShrink: 0,
                 }}>
                     <span/>
                     <span>player</span>
@@ -84,6 +84,8 @@ export function OnlinePlayersWidget({ server }) {
                     <span>ping</span>
                 </div>
 
+                {/* Kaydırılabilir satır listesi — çok oyuncuda kart taşmaz */}
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 {players.length === 0 ? (
                     <div style={{ color: A.faint, fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
                         Şu an online oyuncu yok
@@ -116,6 +118,7 @@ export function OnlinePlayersWidget({ server }) {
                         </span>
                     </div>
                 ))}
+                </div>
             </div>
         </Card>
     );

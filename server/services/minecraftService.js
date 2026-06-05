@@ -75,6 +75,22 @@ class MinecraftService extends EventEmitter {
         } catch { return null; }
     }
 
+    /**
+     * Çalışan sürecin GERÇEK başlangıç zamanını (ms epoch) OS'ten türetir.
+     * Panel restart sonrası reconnect'te uptime'ın doğru olması için kullanılır
+     * (panelin değil, sunucunun gerçek başlangıcı). `ps -o etimes` = saniye cinsi
+     * geçen süre. Windows/başarısızlıkta null döner → çağıran Date.now()'a düşer.
+     */
+    _processStartedAt(pid) {
+        if (!pid || process.platform === 'win32') return null;
+        try {
+            const out = execSync(`ps -o etimes= -p ${pid} 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+            const sec = parseInt(out, 10);
+            if (Number.isFinite(sec) && sec >= 0) return Date.now() - sec * 1000;
+        } catch { /* ignore */ }
+        return null;
+    }
+
     // ── Panel restart sonrası yeniden bağlanma ────────────────────────────────
 
     _reconnectIfRunning() {
@@ -85,6 +101,8 @@ class MinecraftService extends EventEmitter {
 
             this._javaPid = javaPid;
             this.status   = 'running';
+            // Uptime: panelin değil, çalışan Java sürecinin gerçek başlangıcı
+            this._startedAt = this._processStartedAt(javaPid) || Date.now();
             this.addLog('[System] ✅ Panel yeniden başlatıldı — çalışan sunucu tespit edildi, yeniden bağlanıldı.');
             this.emit('log', '[System] ✅ Panel yeniden başlatıldı — çalışan sunucu tespit edildi.');
             this.emit('status', this.status);
@@ -832,7 +850,7 @@ class MinecraftService extends EventEmitter {
                     // Sunucu hâlâ çalışıyor; durumu düzelt ve başlatmayı iptal et
                     this._javaPid = existingPid;
                     this.status   = 'running';
-                    if (!this._startedAt) this._startedAt = Date.now();
+                    if (!this._startedAt) this._startedAt = this._processStartedAt(existingPid) || Date.now();
                     this.emit('status', this.status);
                     this._startLogTail(true);
                     this._startStatsTracking();

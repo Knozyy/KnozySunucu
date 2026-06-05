@@ -35,16 +35,22 @@ export const Pill = ({ children, color = A.dim, bg = 'rgba(255,255,255,0.04)', s
 
 // ── Card (panel) ────────────────────────────────────────────────────────
 
-export function Card({ title, action, children, style, padding = 16, accent }) {
+// `fill`: kart kendi yüksekliğini doldurur ve gövde taşması kart içinde kalır
+// (bodyStyle ile overflowY:'auto' verilerek iç kaydırma sağlanır). Opt-in —
+// fill verilmeyen kartlar eskisi gibi blok akışında, davranış değişmez.
+export function Card({ title, action, children, style, padding = 16, accent, fill, bodyStyle }) {
     return (
         <div style={{
             background: A.panel, border: `1px solid ${A.border}`,
-            borderRadius: 4, ...style,
+            borderRadius: 4,
+            ...(fill ? { display: 'flex', flexDirection: 'column', overflow: 'hidden' } : null),
+            ...style,
         }}>
             {title && (
                 <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 14px', borderBottom: `1px solid ${A.border}`, gap: 12,
+                    flexShrink: 0,
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {accent && <Dot color={accent} size={6} />}
@@ -53,7 +59,11 @@ export function Card({ title, action, children, style, padding = 16, accent }) {
                     {action}
                 </div>
             )}
-            <div style={{ padding }}>{children}</div>
+            <div style={{
+                padding,
+                ...(fill ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : null),
+                ...bodyStyle,
+            }}>{children}</div>
         </div>
     );
 }
@@ -99,7 +109,7 @@ export function MiniStat({ label, value }) {
 
 export function KPI({
     label, value, unit, sub, spark, sparkMin = 0, sparkMax = 100,
-    sparkColor = 'var(--accent)', mono,
+    sparkColor = 'var(--accent)',
 }) {
     return (
         <div style={{
