@@ -184,7 +184,6 @@ class MinecraftService extends EventEmitter {
                 five: parseFloat(tpsMatch[2]),
                 fifteen: parseFloat(tpsMatch[3]),
             };
-            this._feedAutoThrottle(this._lastTps.one);
             // LagGuard event'i — gevşek bağlılık (lagGuard bu event'e abone olur)
             this.emit('tps', { tps: this._lastTps.one, mspt: null, source: 'paper', time: Date.now() });
             this._markTpsCmdWorking();
@@ -196,7 +195,6 @@ class MinecraftService extends EventEmitter {
             const forgeMspt = parseFloat(forgeTpsMatch[1]);
             this._lastTps = { one: forgeTps, five: forgeTps, fifteen: forgeTps };
             this._lastForgeMspt = forgeMspt;
-            this._feedAutoThrottle(forgeTps);
             // LagGuard event'i
             this.emit('tps', { tps: forgeTps, mspt: forgeMspt, source: 'forge', time: Date.now() });
             this._markTpsCmdWorking();
@@ -209,7 +207,6 @@ class MinecraftService extends EventEmitter {
             const tps = mspt <= 50 ? 20 : Math.round((1000 / mspt) * 10) / 10;
             this._lastTps = { one: tps, five: tps, fifteen: tps };
             this._lastForgeMspt = mspt;
-            this._feedAutoThrottle(tps);
             this.emit('tps', { tps, mspt, source: 'tickquery', time: Date.now() });
             this._markTpsCmdWorking();
         }
@@ -235,10 +232,6 @@ class MinecraftService extends EventEmitter {
         const cantKeepUpMatch = line.match(/Can't keep up!.*Running\s+(\d+)ms/i);
         if (cantKeepUpMatch) {
             const behindMs = parseInt(cantKeepUpMatch[1]);
-            try {
-                const autoThrottle = require('./autoThrottle');
-                autoThrottle.feedCantKeepUp(behindMs);
-            } catch { /* ignore — servis henüz yüklenmemiş olabilir */ }
             this.emit('lag', { behindMs, time: Date.now() });
         }
 
@@ -588,17 +581,6 @@ class MinecraftService extends EventEmitter {
             startedAt: this._startedAt || null,
             uptimeSec: this._startedAt ? Math.floor((Date.now() - this._startedAt) / 1000) : 0,
         };
-    }
-
-    /**
-     * TPS verisini AutoThrottle servisine besle
-     * @param {number} tps
-     */
-    _feedAutoThrottle(tps) {
-        try {
-            const autoThrottle = require('./autoThrottle');
-            autoThrottle.feedTps(tps);
-        } catch { /* servis henüz yüklenmemiş olabilir */ }
     }
 
     // ── Adaptif TPS komut tespiti ────────────────────────────────────────────

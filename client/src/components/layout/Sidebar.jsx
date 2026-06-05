@@ -49,7 +49,7 @@ const navGroups = [
             { path: '/scheduler', i18nKey: 'nav.scheduler', icon: HiOutlineClock, permKey: 'scheduler' },
             { path: '/backup', i18nKey: 'nav.backup', icon: HiOutlineArchiveBox, permKey: 'backup' },
             { path: '/automation', label: 'Otomasyon', icon: HiOutlineBolt, permKey: 'scheduler' },
-            { path: '/auto-throttle', label: 'Auto-Throttle', icon: HiOutlineBoltSlash, permKey: 'scheduler' },
+            { path: '/lag-guard', label: 'Lag-Guard', icon: HiOutlineBoltSlash, permKey: 'console' },
         ],
     },
     {
