@@ -45,6 +45,7 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 - Modlar: **off / dryrun (öner) / auto** — varsayılan off, dryrun güvenli test
 - Route: mode, levers CRUD, seed, reset, history
 - Panel: mod seçici + Genel/Kaldıraçlar/Log sekmeleri + kaldıraç ekle-düzenle modal + canlı karar logu
+- **Config gezgini** (`configExplorer.js` + `/config/files`,`/config/read`): config kaldıracı eklerken mevcut mod config dosyalarını listeler, parse edip sayısal anahtarları+güncel değerleri gösterir; tıklayınca kaldıraç alanları otomatik dolar (yol/anahtar elle yazılmaz)
 - **Test adımı:** sunucuda mod=dryrun yap, lag'de "öner" loglarını izle; mantık doğruysa auto'ya al.
 
 ## ⏳ YAPILACAKLAR

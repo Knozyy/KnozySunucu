@@ -42,6 +42,17 @@ router.post('/observable/run', authMiddleware, requireRole('admin'), async (req,
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Config gezgini (kaldıraç eklerken mevcut configten seç) ─────────────────
+router.get('/config/files', authMiddleware, (req, res) => {
+    try { res.json(lagGuard.listConfigFiles()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/config/read', authMiddleware, (req, res) => {
+    try { res.json(lagGuard.readConfig(String(req.query.path || ''))); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Mod (off / dryrun / auto) ────────────────────────────────────────────────
 router.put('/mode', authMiddleware, requireRole('admin'), (req, res) => {
     try {

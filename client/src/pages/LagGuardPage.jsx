@@ -311,6 +311,38 @@ function LeverModal({ lever, onClose, onSave, saving }) {
     const [f, setF] = useState(lever);
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
     const isConfig = f.apply_method === 'config_reload' || f.apply_method === 'config_restart';
+
+    // ── Config gezgini ──
+    const [cfgPath, setCfgPath] = useState(f.config_path || '');
+    const [cfgSearch, setCfgSearch] = useState('');
+    const { data: filesData } = useQuery({
+        queryKey: ['lg-cfg-files'],
+        queryFn: () => api.get('/lag-guard/config/files').then(r => r.data),
+        enabled: isConfig,
+    });
+    const files = filesData?.files || [];
+    const cfgFmt = files.find(x => x.path === cfgPath)?.format;
+    const { data: entriesData, isFetching: cfgLoading, error: cfgErr } = useQuery({
+        queryKey: ['lg-cfg-read', cfgPath],
+        queryFn: () => api.get('/lag-guard/config/read', { params: { path: cfgPath } }).then(r => r.data),
+        enabled: isConfig && !!cfgPath,
+        retry: false,
+    });
+    const cfgEntries = (entriesData?.entries || []).filter(e => e.key.toLowerCase().includes(cfgSearch.toLowerCase()));
+    const pickEntry = (e) => {
+        setF(p => ({
+            ...p,
+            config_path: cfgPath,
+            config_format: cfgFmt || 'toml',
+            config_key: e.key,
+            default_value: e.value,
+            max_value: e.value,
+            value_type: Number.isInteger(e.value) ? 'int' : 'float',
+            min_value: e.type === 'boolean' ? 0 : Math.max(0, Math.floor(e.value / 2)),
+            name: p.name || e.key.split('.').pop(),
+            lever_key: p.lever_key || e.key.replace(/[^a-z0-9]+/gi, '_').toLowerCase().slice(0, 40),
+        }));
+    };
     const num = ['default_value', 'min_value', 'max_value', 'step_down', 'step_up', 'priority'];
     const submit = () => {
         const out = { ...f };
@@ -341,6 +373,33 @@ function LeverModal({ lever, onClose, onSave, saving }) {
                         <Field label="Komut şablonu ({value})" span><Input value={f.apply_template} onChange={e => set('apply_template', e.target.value)} placeholder="gamerule randomTickSpeed {value}" /></Field>
                     ) : (
                         <>
+                            <div style={{ gridColumn: '1 / -1', background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: 12 }}>
+                                <Cap style={{ display: 'block', marginBottom: 8 }}>Mevcut config'den seç</Cap>
+                                <select value={cfgPath} onChange={e => { setCfgPath(e.target.value); setCfgSearch(''); }} style={selStyle}>
+                                    <option value="">— Config dosyası seç ({files.length}) —</option>
+                                    {files.map(file => <option key={file.path} value={file.path}>{file.path} ({file.format})</option>)}
+                                </select>
+                                {cfgPath && (
+                                    <>
+                                        <div style={{ marginTop: 8 }}>
+                                            <Input value={cfgSearch} onChange={e => setCfgSearch(e.target.value)} placeholder="anahtar ara… (örn: tick, speed, range, max)" />
+                                        </div>
+                                        <div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', border: `1px solid ${A.border}`, borderRadius: 3 }}>
+                                            {cfgErr ? <div style={{ padding: 10, fontSize: 11, color: A.err }}>Parse edilemedi: {cfgErr.response?.data?.error || 'hata'}</div>
+                                                : cfgLoading ? <div style={{ padding: 10, fontSize: 11, color: A.faint }}>Okunuyor…</div>
+                                                : cfgEntries.length === 0 ? <div style={{ padding: 10, fontSize: 11, color: A.faint }}>Sayısal anahtar bulunamadı.</div>
+                                                : cfgEntries.slice(0, 200).map((e, i) => (
+                                                    <button key={i} type="button" onClick={() => pickEntry(e)}
+                                                        style={{ display: 'flex', justifyContent: 'space-between', width: '100%', textAlign: 'left', background: f.config_key === e.key ? 'rgba(167,139,250,0.12)' : 'transparent', border: 'none', borderBottom: `1px solid ${A.border}`, padding: '6px 10px', cursor: 'pointer', color: A.text, fontFamily: A.mono, fontSize: 11 }}>
+                                                        <span style={{ color: A.dim, wordBreak: 'break-all', marginRight: 8 }}>{e.key}</span>
+                                                        <span style={{ color: A.ok, flexShrink: 0 }}>{e.value}{e.type === 'boolean' ? ' (bool)' : ''}</span>
+                                                    </button>
+                                                ))}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: A.faint, marginTop: 6 }}>Bir anahtara tıkla → aşağıdaki alanlar otomatik dolar.</div>
+                                    </>
+                                )}
+                            </div>
                             <Field label="Config yolu" span><Input value={f.config_path || ''} onChange={e => set('config_path', e.target.value)} placeholder="config/xxx.toml" /></Field>
                             <Field label="Format">
                                 <select value={f.config_format || 'toml'} onChange={e => set('config_format', e.target.value)} style={selStyle}>

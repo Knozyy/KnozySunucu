@@ -15,6 +15,7 @@ const metrics = require('./metrics');
 const observable = require('./observable');
 const registry = require('./levers/registry');
 const decision = require('./decision');
+const configExplorer = require('./configExplorer');
 
 const DEFAULTS = {
     // Seviye etiketi (TPS) — görüntüleme amaçlı
@@ -136,6 +137,16 @@ class LagGuard {
 
     // ── Observable ───────────────────────────────────────────────────────
     async runObservable(seconds) { return observable.runProfile(seconds || this._settings.observableSeconds); }
+
+    // ── Config gezgini (kaldıraç eklerken mevcut configten seçmek için) ──
+    _serverPath() {
+        try { return this._mc?.getServerPath ? this._mc.getServerPath() : null; } catch { return null; }
+    }
+    listConfigFiles() { return { files: configExplorer.listFiles(this._serverPath()) }; }
+    readConfig(rel) {
+        if (!rel) throw new Error('path gerekli');
+        return configExplorer.read(this._serverPath(), rel);
+    }
 
     // ── Persist (app_settings · lagguard_ öneki) ────────────────────────
     _loadSettings() {
