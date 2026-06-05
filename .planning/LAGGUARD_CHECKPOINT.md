@@ -68,11 +68,31 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
   göre sıralanır; veri birikene kadar effect=0 → eski priority davranışıyla bire bir aynı.
   Panelde kaldıraç başına "etki ~X.Xms/adım" rozeti.
 
+### Faz 3 — Lag Atıf / Shadow Log (TAMAMLANDI ✅, parserlar canlı doğrulama bekliyor)
+- **Ceza YOK** — yalnızca kayıt (gözlem). `lag_attribution` shadow tablosu (30 gün retention).
+- `attribution/probe.js` taraması (sinyaller güvenilirlik sırasıyla):
+  1. **En kötü boyut** — `forge tps` per-dim "Mean tick time" satırları parse edilir.
+  2. **Entity census** — `forge entity list` tür→adet (neyin yığıldığı).
+  3. **Aday oyuncular** — online liste; **derin taramada** her oyuncunun boyutu
+     (`data get entity <n> Dimension`) sorgulanıp en kötü boyutta olanlar filtrelenir.
+  4. **UUID** — `usercache.json`'dan (Mojang'a gerek yok).
+  5. **FTB Chunks** — `attribution/ftbChunks.js` best-effort: veri dizinini + FTB Teams
+     sahip UUID↔isim eşlemesini bulur. Yoksa graceful (`available:false`), atıf yine çalışır.
+- Karar motoru: sürekli **kritik** lag'de 5dk'da bir otomatik hafif tarama (auto+dryrun).
+- Routes: GET `/attribution`, POST `/attribution/scan` (`{deep}`), DELETE `/attribution`.
+- Panel: **Atıf** sekmesi — shadow log kartları (en kötü boyut, adaylar+UUID, entity yığını,
+  notlar) + "Tara" / "Derin Tara" / "Temizle".
+- Smoke test (sahte forge-tps/entity-list/data-get çıktısı): worst-dim, census, derin
+  filtre, UUID çözümü, shadow kaydı, FTB graceful — hepsi geçti.
+- ⚠️ **CANLI DOĞRULAMA GEREKLİ:** `forge tps` per-dim, `forge entity list` ve FTB Chunks
+  dosya formatı paket/sürüm-özgü; parserlar savunmacı ama gerçek ATM10 çıktısıyla
+  kalibre edilmeli. chunk→claim TAM eşlemesi henüz yok (owner UUID listesi var).
+
 ## ⏳ YAPILACAKLAR
 
-### Faz 3 — Atıf (shadow log): **FTB Chunks claim sahibi UUID birincil**, Observable opsiyonel
 ### Faz 4 — Ceza: `lag_offense` + merdiven, muafiyet, mod off/shadow/enforce. Shadow'da bile ban eşiğine gelen oyuncuyu **Discord DM + webhook** ile bildir.
   - **KARAR (kullanıcı):** ceza felsefesi = **shadow + manuel onay** (sistem kick/ban ÖNERİR, admin panelden onaylar). Tam otomatik ban YOK.
+  - Altyapı hazır: `lag_attribution` (Faz 3) suspect besler, `ban_log` tablosu + `notificationService`/`webhookService` Discord için mevcut.
 
 ---
 

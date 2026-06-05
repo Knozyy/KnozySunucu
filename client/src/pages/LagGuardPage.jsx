@@ -62,6 +62,11 @@ export default function LagGuardPage() {
         queryFn: () => api.get('/lag-guard/restart-queue').then(r => r.data),
         refetchInterval: 5000,
     });
+    const { data: attrData } = useQuery({
+        queryKey: ['lagguard-attribution'],
+        queryFn: () => api.get('/lag-guard/attribution?limit=40').then(r => r.data),
+        refetchInterval: 10000,
+    });
 
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: ['lagguard-status'] });
@@ -145,6 +150,22 @@ export default function LagGuardPage() {
         onSuccess: () => invalidate(),
         onError: (e) => toast.error(e.response?.data?.error || 'İptal edilemedi'),
     });
+    const runScan = useMutation({
+        mutationFn: (deep) => api.post('/lag-guard/attribution/scan', { deep }).then(r => r.data),
+        onMutate: (deep) => toast.loading(deep ? 'Derin tarama…' : 'Atıf taraması…', { id: 'attr' }),
+        onSuccess: (d) => {
+            toast.dismiss('attr');
+            qc.invalidateQueries({ queryKey: ['lagguard-attribution'] });
+            if (!d.ok) toast.error(d.note || 'Tarama yapılamadı');
+            else toast.success(`Tarama bitti — ${d.worst ? `en kötü: ${d.worst.dim} (${d.worst.mspt?.toFixed(0)}ms)` : 'boyut yok'}, ${d.suspectCount} aday`, { duration: 6000 });
+        },
+        onError: (e) => { toast.dismiss('attr'); toast.error(e.response?.data?.error || 'Tarama yapılamadı'); },
+    });
+    const clearAttr = useMutation({
+        mutationFn: () => api.delete('/lag-guard/attribution').then(r => r.data),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['lagguard-attribution'] }); toast.success('Shadow log temizlendi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Temizlenemedi'),
+    });
 
     const lvl = LEVELS[status?.level || 'unknown'];
     const mode = status?.mode || 'off';
@@ -158,6 +179,7 @@ export default function LagGuardPage() {
     const history = historyData?.history || [];
     const settings = settingsData?.settings || null;
     const queue = queueData?.queue || [];
+    const attrLog = attrData?.log || [];
     const filteredHistory = history.filter(h =>
         (histAction === 'all' || h.action === histAction) &&
         (!histSearch || (h.lever_key || '').toLowerCase().includes(histSearch.toLowerCase()))
@@ -242,7 +264,7 @@ export default function LagGuardPage() {
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'genel', label: 'Genel', icon: I.Signal }, { id: 'levers', label: 'Kaldıraçlar', icon: I.Wrench }, { id: 'log', label: 'Aksiyon Logu', icon: I.Clock }, { id: 'ayarlar', label: 'Ayarlar', icon: I.Cog }].map(t => (
+                {[{ id: 'genel', label: 'Genel', icon: I.Signal }, { id: 'levers', label: 'Kaldıraçlar', icon: I.Wrench }, { id: 'atif', label: 'Atıf', icon: I.Users }, { id: 'log', label: 'Aksiyon Logu', icon: I.Clock }, { id: 'ayarlar', label: 'Ayarlar', icon: I.Cog }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none',
                         borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
@@ -407,6 +429,33 @@ export default function LagGuardPage() {
                 </div>
             )}
 
+            {/* ATIF / SHADOW LOG */}
+            {tab === 'atif' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <Card title="Lag Atıf — Shadow Log"
+                        action={
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => runScan.mutate(false)} disabled={runScan.isPending || !status?.running}
+                                    style={{ ...btnGhost, opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}>Tara</button>
+                                <button onClick={() => runScan.mutate(true)} disabled={runScan.isPending || !status?.running}
+                                    style={{ ...btnGhost, color: 'var(--accent)', opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}
+                                    title="Her oyuncunun boyutunu sorgular — daha kesin ama yavaş">Derin Tara</button>
+                                {attrLog.length > 0 && <button onClick={() => { if (confirm('Tüm shadow log silinsin mi?')) clearAttr.mutate(); }} style={{ ...btnGhost, color: A.err }}>Temizle</button>}
+                            </div>
+                        }>
+                        <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                            Lag anında <strong style={{ color: A.dim }}>kim/ne</strong> sorusuna en iyi-çaba yanıt: en kötü boyut (<code style={{ fontFamily: A.mono }}>forge tps</code>),
+                            entity yığını (<code style={{ fontFamily: A.mono }}>forge entity list</code>), o boyuttaki online oyuncular ve (varsa) FTB Chunks claim sahibi.
+                            <strong style={{ color: A.warn }}> Ceza uygulanmaz</strong> — yalnızca kayıt (gözlem). Kritik lag'de 5dk'da bir otomatik taranır.
+                        </p>
+                    </Card>
+
+                    {attrLog.length === 0
+                        ? <Empty text="Henüz atıf kaydı yok. Lag anında otomatik dolar ya da 'Tara' ile elle çalıştır." />
+                        : attrLog.map(a => <AttributionCard key={a.id} entry={a} />)}
+                </div>
+            )}
+
             {/* AYARLAR */}
             {tab === 'ayarlar' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -468,6 +517,63 @@ export default function LagGuardPage() {
 
 function Empty({ text = 'Veri bekleniyor…' }) {
     return <div style={{ color: A.faint, fontSize: 12, padding: '36px 0', textAlign: 'center' }}>{text}</div>;
+}
+
+function AttributionCard({ entry }) {
+    const ev = entry.evidence || {};
+    const suspects = ev.suspects || [];
+    const entities = ev.entities || [];
+    const notes = ev.notes || [];
+    const modeColor = entry.mode === 'auto' ? A.ok : entry.mode === 'manual' ? 'var(--accent)' : A.warn;
+    return (
+        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>{new Date(entry.ts).toLocaleString('tr-TR')}</span>
+                <Pill color={modeColor}>{entry.mode}</Pill>
+                {entry.worst_dim
+                    ? <Pill color={A.warn}>en kötü: {entry.worst_dim} · {entry.worst_dim_mspt != null ? `${Math.round(entry.worst_dim_mspt)}ms` : '—'}</Pill>
+                    : <Pill color={A.faint}>boyut yok</Pill>}
+                {entry.mspt_at != null ? <Pill color={A.faint}>MSPT {Math.round(entry.mspt_at)}</Pill> : null}
+                <Pill color={suspects.length ? 'var(--accent)' : A.faint}>{entry.suspect_count} aday</Pill>
+                {ev.deep ? <Pill color={A.ok}>derin</Pill> : null}
+            </div>
+
+            {suspects.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                    <Cap>Adaylar</Cap>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                        {suspects.map((s, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                                <span style={{ fontWeight: 600 }}>{s.name}</span>
+                                {s.dimension ? <span style={{ fontFamily: A.mono, fontSize: 11, color: A.dim }}>{s.dimension}</span> : null}
+                                <span style={{ fontSize: 11, color: A.faint }}>· {s.reason}</span>
+                                {s.uuid ? <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{s.uuid.slice(0, 8)}…</code> : <span style={{ fontSize: 10, color: A.faint }}>(UUID yok)</span>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {entities.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                    <Cap>Entity yığını (top)</Cap>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        {entities.slice(0, 8).map((e, i) => (
+                            <span key={i} style={{ fontSize: 11, fontFamily: A.mono, color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '2px 6px' }}>
+                                {e.type.replace('minecraft:', '')} <strong style={{ color: e.count > 1000 ? A.err : A.text }}>{e.count}</strong>
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {notes.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 11, color: A.faint, fontFamily: A.mono }}>
+                    {notes.map((n, i) => <div key={i}>· {n}</div>)}
+                </div>
+            )}
+        </div>
+    );
 }
 
 const SETTINGS_GROUPS = [
