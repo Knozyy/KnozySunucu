@@ -11,6 +11,7 @@
 const metrics = require('./metrics');
 const registry = require('./levers/registry');
 const appliers = require('./levers/appliers');
+const restartQueue = require('./levers/restartQueue');
 
 const STATE = { IDLE: 'idle', NORMAL: 'normal', THROTTLING: 'throttling', COOLDOWN: 'cooldown', RECOVERING: 'recovering' };
 
@@ -29,6 +30,7 @@ class Decision {
         this._ctx = null; this._timer = null;
         this._state = STATE.IDLE; this._lastActionAt = 0; this._stableSince = 0;
         this._log = []; this._lastSeverity = 'none';
+        this._pendingEffect = null; // { leverId, msptBefore, at } — etki ölçümü için
     }
     configure(ctx) { this._ctx = ctx; }
     start() {
@@ -65,12 +67,19 @@ class Decision {
         const cantKeepUp = live.cantKeepUpCount || 0;
         const now = Date.now();
 
+        // Faz 2 · etki ölçümü: önceki throttle'ın MSPT'ye etkisini değerlendir
+        this._measureEffect(avgMspt, now, s);
+
         let severity;
         if (avgMspt >= s.msptCritical || cantKeepUp >= s.cantKeepUpCritical) severity = 'critical';
         else if (avgMspt >= s.msptWarn || cantKeepUp > 0) severity = 'lag';
         else if (avgMspt <= s.msptTarget) severity = 'stable';
         else severity = 'hold';
         this._lastSeverity = severity;
+
+        // Faz 2 · config_restart kaldıraçları canlı uygulanamaz → restart kuyruğuna
+        // (live cooldown'dan bağımsız; idempotent, sadece hedef değiştiğinde yazar)
+        this._syncRestartLevers(severity, mode, s, avgMspt);
 
         const cooldownMs = (this._state === STATE.RECOVERING ? s.cooldownAfterRecovery : s.cooldownAfterThrottle) * 1000;
         if (this._lastActionAt && now - this._lastActionAt < cooldownMs) {
@@ -90,30 +99,82 @@ class Decision {
         } else { this._stableSince = 0; this._state = STATE.NORMAL; }
     }
 
-    // ── Throttle: default → relief ───────────────────────────────────────
+    // ── Throttle: default → relief (etki-güdümlü sıra) ───────────────────
     _throttle(severity, mspt, mode, s) {
         const ctx = this._ctx;
-        const allowRestart = !!s.allowRestartLevers;
-        for (const l of registry.enabledSorted()) {
-            const dir = dirOf(l);
-            if (dir === 0) continue; // relief == default → anlamsız
-            if (l.apply_method === 'config_restart' && !allowRestart) continue;
-            const cur = registry.currentOf(l);
-            if (atRelief(l, cur)) continue; // zaten relief'te
+        // Faz 2 · config_restart canlı döngüde değil (kuyruğa gider). Adaylar
+        // önce ÖLÇÜLEN ETKİye (effect_score), sonra priority'ye göre sıralanır;
+        // veri birikene kadar effect_score=0 → davranış eski priority sırasıyla aynı.
+        const candidates = registry.enabledSorted().filter(l =>
+            l.apply_method !== 'config_restart' && dirOf(l) !== 0 && !atRelief(l, registry.currentOf(l)));
+        candidates.sort((a, b) => {
+            const ea = a.effect_score == null ? 0 : a.effect_score;
+            const eb = b.effect_score == null ? 0 : b.effect_score;
+            if (eb !== ea) return eb - ea;                  // yüksek etki önce
+            return (a.priority ?? 50) - (b.priority ?? 50); // sonra düşük priority
+        });
 
+        for (const l of candidates) {
+            const dir = dirOf(l);
+            const cur = registry.currentOf(l);
             const factor = severity === 'critical' ? 2 : 1;
             const newVal = fmtV(l, clampRange(l, cur + dir * (l.step || 1) * factor));
             if (newVal === cur) continue;
 
-            const res = appliers.apply(l, newVal, { dryRun: mode !== 'auto', mc: ctx.getMc(), allowRestart });
+            const res = appliers.apply(l, newVal, { dryRun: mode !== 'auto', mc: ctx.getMc() });
             if (res.skipped) continue;
-            if (mode === 'auto') { registry.setCurrent(l.id, newVal); registry.setCeiling(l.id, cur); }
+            if (mode === 'auto') {
+                registry.setCurrent(l.id, newVal); registry.setCeiling(l.id, cur);
+                // Sonraki tick'te bu throttle'ın MSPT etkisini ölçmek için işaretle
+                this._pendingEffect = { leverId: l.id, msptBefore: mspt, at: Date.now() };
+            }
             registry.logHistory({ lever_id: l.id, lever_key: l.lever_key, action: 'throttle', mode, old_value: cur, new_value: newVal, mspt_at: mspt, detail: res.detail });
-            this._addLog('throttle', `${mode === 'auto' ? '⬇' : '⬇[öner]'} ${l.name}: ${cur} → ${newVal} (MSPT ${mspt.toFixed(0)}ms, ${severity})`);
+            const eff = l.effect_score != null ? `, etki ~${l.effect_score.toFixed(1)}ms/adım` : '';
+            this._addLog('throttle', `${mode === 'auto' ? '⬇' : '⬇[öner]'} ${l.name}: ${cur} → ${newVal} (MSPT ${mspt.toFixed(0)}ms, ${severity}${eff})`);
             this._state = STATE.THROTTLING; this._lastActionAt = Date.now();
             return;
         }
-        this._addLog('warn', `Tüm kaldıraçlar relief'te ama lag sürüyor (MSPT ${mspt.toFixed(0)}ms).`);
+        this._addLog('warn', `Canlı kaldıraçlar relief'te ama lag sürüyor (MSPT ${mspt.toFixed(0)}ms). Restart kuyruğu: ${restartQueue.count()} bekliyor.`);
+    }
+
+    // ── Faz 2 · Etki ölçümü ──────────────────────────────────────────────
+    // Bir throttle'dan ~bir tick sonra MSPT farkına bakıp kaldıracın gerçek
+    // etkisini öğrenir (delta = msptÖnce - msptŞimdi; + = kısmak işe yaradı).
+    _measureEffect(avgMspt, now, s) {
+        const pe = this._pendingEffect;
+        if (!pe) return;
+        const delayMs = Math.max(10000, ((s.checkInterval || 20) * 1000) - 3000);
+        if (now - pe.at < delayMs) return;
+        const delta = pe.msptBefore - avgMspt;
+        registry.recordEffect(pe.leverId, delta);
+        this._pendingEffect = null;
+    }
+
+    // ── Faz 2 · Restart-config kuyruğu senkronu ──────────────────────────
+    // config_restart kaldıraçlarını istenen restart-sonrası duruma (lag→relief,
+    // stabil→default) kuyrukta tutar. Toggle (allowRestartLevers) ile gated.
+    _syncRestartLevers(severity, mode, s, mspt) {
+        // Kuyruk gerçek bir yazma mekanizması → yalnızca auto modda. (dryrun gözlem
+        // modu; restart-config her tick "öner" basmasın diye burada işlem yapmaz.)
+        if (mode !== 'auto' || !s.allowRestartLevers) return;
+        let wantRelief;
+        if (severity === 'critical' || severity === 'lag') wantRelief = true;
+        else if (severity === 'stable') wantRelief = false;
+        else return; // hold → bekle
+
+        for (const l of registry.enabledSorted()) {
+            if (l.apply_method !== 'config_restart' || dirOf(l) === 0) continue;
+            const target = fmtV(l, wantRelief ? l.relief_value : l.default_value);
+            const cur = registry.currentOf(l);
+            if (Math.abs(cur - target) < 1e-9) continue; // zaten hedefte
+
+            restartQueue.enqueue(l, target, wantRelief ? `MSPT ${mspt.toFixed(0)}ms` : 'stabil → default');
+            registry.setCurrent(l.id, atDefault(l, target) ? null : target);
+            registry.logHistory({ lever_id: l.id, lever_key: l.lever_key, action: 'queue', mode,
+                old_value: cur, new_value: target, mspt_at: mspt,
+                detail: wantRelief ? 'restart kuyruğuna eklendi (relief)' : 'restart kuyruğuna eklendi (default)' });
+            this._addLog('queue', `⏳ ${l.name}: ${cur} → ${target} restart kuyruğunda (etki sonraki restart'ta)`);
+        }
     }
 
     // ── Recover: relief → default (sweet-spot tavanına saygıyla) ─────────
@@ -122,6 +183,7 @@ class Decision {
         for (const l of registry.enabledSorted().reverse()) {
             const dir = dirOf(l);
             if (dir === 0) continue;
+            if (l.apply_method === 'config_restart') continue; // canlı recover edilmez (kuyruk hallediyor)
             const cur = registry.currentOf(l);
             if (atDefault(l, cur)) continue; // zaten normalde
 
@@ -155,6 +217,7 @@ class Decision {
     resetAll(mode) {
         const ctx = this._ctx;
         let n = 0;
+        if (mode === 'auto') restartQueue.clear(); // bekleyen restart-config değişiklikleri iptal
         for (const l of registry.list()) {
             const cur = registry.currentOf(l);
             if (atDefault(l, cur) && l.current_value == null) continue;

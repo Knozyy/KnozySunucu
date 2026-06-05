@@ -15,6 +15,7 @@ const metrics = require('./metrics');
 const observable = require('./observable');
 const registry = require('./levers/registry');
 const appliers = require('./levers/appliers');
+const restartQueue = require('./levers/restartQueue');
 const decision = require('./decision');
 const configExplorer = require('./configExplorer');
 
@@ -103,6 +104,7 @@ class LagGuard {
             tpsCommandSearching: !!(this._mc && !this._mc._tpsCmdActive && this._mc.status === 'running'),
             leverCount: levers.length,
             throttledCount: throttled,
+            restartQueueCount: restartQueue.count(),
             decision: decision.getState(),
         };
     }
@@ -149,6 +151,30 @@ class LagGuard {
         if (intervalChanged) decision.restart();
         return this.getSettings();
     }
+
+    // ── Restart-config kuyruğu (Faz 2) ───────────────────────────────────
+    getRestartQueue() { return { queue: restartQueue.listPending(), count: restartQueue.count() }; }
+
+    /** Bekleyen config değişikliklerini dosyalara yaz (etki sonraki restart'ta). */
+    applyRestartQueue() {
+        const res = restartQueue.applyAll(this._mc);
+        registry.logHistory({ action: 'queue', mode: this._mode, detail: `kuyruk uygulandı: ${res.applied} yazıldı, ${res.errors} hata` });
+        return res;
+    }
+
+    /** Kuyruğu uygula + sunucuyu yeniden başlat (değişiklikler restart'ta etkin olur). */
+    async applyRestartQueueAndRestart() {
+        const res = restartQueue.applyAll(this._mc);
+        let restarted = false;
+        if (this._mc?.restart && this._mc.status === 'running') {
+            try { await this._mc.restart(); restarted = true; }
+            catch (e) { return { ...res, restarted: false, restartError: e.message }; }
+        }
+        return { ...res, restarted };
+    }
+
+    cancelRestartItem(id) { return restartQueue.cancel(parseInt(id)); }
+    clearRestartQueue() { return restartQueue.clear(); }
 
     // ── Observable ───────────────────────────────────────────────────────
     async runObservable(seconds) { return observable.runProfile(seconds || this._settings.observableSeconds); }

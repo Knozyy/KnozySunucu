@@ -229,8 +229,30 @@ function initDatabase() {
       priority INTEGER NOT NULL DEFAULT 50,          -- düşük = önce kısılır
       enabled INTEGER NOT NULL DEFAULT 1,
       is_builtin INTEGER NOT NULL DEFAULT 0,
+      effect_score REAL,                             -- Faz 2: kısınca MSPT'de ölçülen ortalama düşüş (adım başına ms; yüksek = daha etkili)
+      effect_samples INTEGER NOT NULL DEFAULT 0,     -- etki ölçüm sayısı
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- LagGuard · Restart-config kuyruğu (Faz 2)
+    -- config_restart kaldıraçları canlı uygulanamaz; istenen değer burada bekler,
+    -- admin "Uygula"/"Uygula+Restart" deyince config dosyalarına yazılır.
+    CREATE TABLE IF NOT EXISTS lag_restart_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lever_id INTEGER,
+      lever_key TEXT,
+      lever_name TEXT,
+      config_path TEXT,
+      config_format TEXT DEFAULT 'toml',
+      config_key TEXT,
+      target_value REAL,
+      value_type TEXT DEFAULT 'int',
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending', -- pending | applied | cancelled
+      queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      applied_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_lag_restart_queue_status ON lag_restart_queue(status);
 
     CREATE TABLE IF NOT EXISTS lag_lever_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -252,6 +274,9 @@ function initDatabase() {
     const lc = database.prepare("PRAGMA table_info(lag_levers)").all().map(c => c.name);
     if (!lc.includes('relief_value')) database.exec('ALTER TABLE lag_levers ADD COLUMN relief_value REAL');
     if (!lc.includes('step')) database.exec('ALTER TABLE lag_levers ADD COLUMN step REAL');
+    // Faz 2: etki-güdümlü hedefleme kolonları
+    if (!lc.includes('effect_score')) database.exec('ALTER TABLE lag_levers ADD COLUMN effect_score REAL');
+    if (!lc.includes('effect_samples')) database.exec('ALTER TABLE lag_levers ADD COLUMN effect_samples INTEGER NOT NULL DEFAULT 0');
     // Backfill: eski model "min'e doğru azalt" → relief = min_value, step = step_down
     database.exec(`UPDATE lag_levers SET relief_value = min_value WHERE relief_value IS NULL AND min_value IS NOT NULL`);
     database.exec(`UPDATE lag_levers SET step = COALESCE(step_down, 1) WHERE step IS NULL`);

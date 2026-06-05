@@ -149,6 +149,23 @@ const registry = {
     setCeiling(id, value) { db().prepare('UPDATE lag_levers SET lag_ceiling = ? WHERE id = ?').run(value, id); },
     resetAll() { db().prepare('UPDATE lag_levers SET current_value = NULL, lag_ceiling = NULL').run(); },
 
+    /**
+     * Faz 2 · Etki kaydı: bir kaldıraç kısıldıktan sonra MSPT'de ölçülen düşüşü
+     * (delta = msptÖnce - msptSonra) üstel hareketli ortalamayla biriktirir.
+     * Pozitif effect_score = kısmak gerçekten MSPT'yi düşürüyor (etkili kaldıraç).
+     */
+    recordEffect(id, delta) {
+        try {
+            const l = this.get(id);
+            if (!l) return;
+            const alpha = 0.3;
+            const prev = l.effect_score;
+            const next = prev == null ? delta : prev * (1 - alpha) + delta * alpha;
+            db().prepare('UPDATE lag_levers SET effect_score = ?, effect_samples = effect_samples + 1 WHERE id = ?')
+                .run(Math.round(next * 1000) / 1000, id);
+        } catch { /* ignore */ }
+    },
+
     logHistory(entry) {
         try {
             db().prepare(`INSERT INTO lag_lever_history

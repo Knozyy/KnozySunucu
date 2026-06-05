@@ -117,4 +117,32 @@ router.get('/history', authMiddleware, (req, res) => {
     catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Restart-config kuyruğu (Faz 2) ───────────────────────────────────────────
+router.get('/restart-queue', authMiddleware, (req, res) => {
+    try { res.json(lagGuard.getRestartQueue()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Bekleyenleri config dosyalarına yaz (etki sonraki restart'ta)
+router.post('/restart-queue/apply', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json(lagGuard.applyRestartQueue()); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Bekleyenleri yaz + sunucuyu yeniden başlat
+router.post('/restart-queue/apply-restart', authMiddleware, requireRole('admin'), async (req, res) => {
+    try { res.json(await lagGuard.applyRestartQueueAndRestart()); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.delete('/restart-queue/:id', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json(lagGuard.cancelRestartItem(req.params.id)); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.delete('/restart-queue', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json(lagGuard.clearRestartQueue()); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 module.exports = router;
