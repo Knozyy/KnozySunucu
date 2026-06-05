@@ -56,11 +56,23 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 - **LagGuard Ayarlar sekmesi** eklendi: `allowRestartLevers` toggle (config_restart kaldıraçları için kritik) + MSPT/TPS eşikleri + zamanlama alanları (`/settings` GET/PUT'a bağlı).
 - **History filtre + CSV export**: aksiyon filtresi (kıs/aç/sıfırla) + kaldıraç arama + BOM'lu UTF-8 CSV indirme.
 
+### Faz 2 — Restart-config kuyruğu + etki-güdümlü hedefleme (TAMAMLANDI ✅, sunucuda test bekliyor)
+- **Restart-config kuyruğu** (toggle'lı): `config_restart` kaldıraçları canlı AIMD döngüsünden
+  ayrıldı; karar motoru istenen restart-sonrası değeri `lag_restart_queue`'ya yazar
+  (lag→relief, stabil→default; lever başına tek pending, upsert). Panel Ayarlar sekmesinde
+  kuyruk kartı + "Uygula" (config'e yaz) / "Uygula + Restart" / "Temizle" / satır-iptal +
+  sekmede bekleyen-sayısı rozeti. `allowRestartLevers` ile gated.
+- **Etki-güdümlü ("profiler") hedefleme**: Observable SPA-only olduğundan ölçülen etkiye
+  geçildi — her throttle'dan ~1 tick sonra MSPT farkı `effect_score`'a EMA ile işlenir
+  (lag_levers.effect_score/effect_samples). Throttle adayları önce etkiye, sonra priority'ye
+  göre sıralanır; veri birikene kadar effect=0 → eski priority davranışıyla bire bir aynı.
+  Panelde kaldıraç başına "etki ~X.Xms/adım" rozeti.
+
 ## ⏳ YAPILACAKLAR
 
-### Faz 2 — Profiler-güdümlü hedefleme + restart-config kuyruğu (toggle'lı)
 ### Faz 3 — Atıf (shadow log): **FTB Chunks claim sahibi UUID birincil**, Observable opsiyonel
 ### Faz 4 — Ceza: `lag_offense` + merdiven, muafiyet, mod off/shadow/enforce. Shadow'da bile ban eşiğine gelen oyuncuyu **Discord DM + webhook** ile bildir.
+  - **KARAR (kullanıcı):** ceza felsefesi = **shadow + manuel onay** (sistem kick/ban ÖNERİR, admin panelden onaylar). Tam otomatik ban YOK.
 
 ---
 

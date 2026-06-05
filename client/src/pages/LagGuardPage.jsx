@@ -57,11 +57,17 @@ export default function LagGuardPage() {
         queryKey: ['lagguard-settings'],
         queryFn: () => api.get('/lag-guard/settings').then(r => r.data),
     });
+    const { data: queueData } = useQuery({
+        queryKey: ['lagguard-queue'],
+        queryFn: () => api.get('/lag-guard/restart-queue').then(r => r.data),
+        refetchInterval: 5000,
+    });
 
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: ['lagguard-status'] });
         qc.invalidateQueries({ queryKey: ['lagguard-levers'] });
         qc.invalidateQueries({ queryKey: ['lagguard-history'] });
+        qc.invalidateQueries({ queryKey: ['lagguard-queue'] });
     };
 
     const setMode = useMutation({
@@ -119,6 +125,26 @@ export default function LagGuardPage() {
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['lagguard-settings'] }); toast.success('Ayarlar kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
+    const applyQueue = useMutation({
+        mutationFn: () => api.post('/lag-guard/restart-queue/apply').then(r => r.data),
+        onSuccess: (d) => { invalidate(); toast.success(`Kuyruk yazıldı: ${d.applied} config, ${d.errors} hata (etki sonraki restart'ta)`, { duration: 6000 }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Uygulanamadı'),
+    });
+    const applyQueueRestart = useMutation({
+        mutationFn: () => api.post('/lag-guard/restart-queue/apply-restart').then(r => r.data),
+        onSuccess: (d) => { invalidate(); toast.success(`${d.applied} config yazıldı${d.restarted ? ' + sunucu yeniden başlatılıyor' : ''}`, { duration: 6000 }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Uygulanamadı'),
+    });
+    const clearQueue = useMutation({
+        mutationFn: () => api.delete('/lag-guard/restart-queue').then(r => r.data),
+        onSuccess: () => { invalidate(); toast.success('Kuyruk temizlendi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Temizlenemedi'),
+    });
+    const cancelQueueItem = useMutation({
+        mutationFn: (id) => api.delete(`/lag-guard/restart-queue/${id}`).then(r => r.data),
+        onSuccess: () => invalidate(),
+        onError: (e) => toast.error(e.response?.data?.error || 'İptal edilemedi'),
+    });
 
     const lvl = LEVELS[status?.level || 'unknown'];
     const mode = status?.mode || 'off';
@@ -131,6 +157,7 @@ export default function LagGuardPage() {
     const decLog = dec.log || [];
     const history = historyData?.history || [];
     const settings = settingsData?.settings || null;
+    const queue = queueData?.queue || [];
     const filteredHistory = history.filter(h =>
         (histAction === 'all' || h.action === histAction) &&
         (!histSearch || (h.lever_key || '').toLowerCase().includes(histSearch.toLowerCase()))
@@ -223,6 +250,12 @@ export default function LagGuardPage() {
                         padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
                     }}>
                         <t.icon size={14} style={{ color: tab === t.id ? 'var(--accent)' : A.faint }} /> {t.label}
+                        {t.id === 'ayarlar' && queue.length > 0 && (
+                            <span style={{
+                                fontSize: 10, fontFamily: A.mono, fontWeight: 700, color: A.bg,
+                                background: A.warn, borderRadius: 9, padding: '1px 6px', lineHeight: 1.5,
+                            }}>{queue.length}</span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -286,6 +319,12 @@ export default function LagGuardPage() {
                                         <Pill color={l.enabled ? A.ok : A.faint}>{l.enabled ? 'AKTİF' : 'KAPALI'}</Pill>
                                         <Pill color="var(--accent)">{l.apply_method}</Pill>
                                         <Pill color={A.faint}>öncelik {l.priority}</Pill>
+                                        {l.apply_method === 'config_restart' ? <Pill color={A.warn}>restart kuyruğu</Pill> : null}
+                                        {l.effect_samples > 0 && l.effect_score != null ? (
+                                            <Pill color={l.effect_score > 0.2 ? A.ok : l.effect_score < -0.2 ? A.err : A.faint}>
+                                                etki {l.effect_score > 0 ? '−' : '+'}{Math.abs(l.effect_score).toFixed(1)}ms/adım
+                                            </Pill>
+                                        ) : null}
                                         {l.is_builtin ? <Pill color={A.faint}>yerleşik</Pill> : null}
                                     </div>
                                     {l.description ? <p style={{ fontSize: 11, color: A.dim, margin: '6px 0 0' }}>{l.description}</p> : null}
@@ -370,9 +409,55 @@ export default function LagGuardPage() {
 
             {/* AYARLAR */}
             {tab === 'ayarlar' && (
-                settings
-                    ? <SettingsPanel key={JSON.stringify(settings)} initial={settings} onSave={(patch) => saveSettings.mutate(patch)} saving={saveSettings.isPending} />
-                    : <Empty text="Ayarlar yükleniyor…" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {/* Restart-config kuyruğu (Faz 2) */}
+                    <Card title={`Restart-Config Kuyruğu · ${queue.length}`} accent={queue.length ? A.warn : A.faint}
+                        action={queue.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => applyQueue.mutate()} disabled={applyQueue.isPending}
+                                    style={{ ...btnGhost, color: 'var(--accent)' }} title="Config dosyalarına yaz (etki sonraki restart'ta)">
+                                    <I.Check size={12} /> Uygula
+                                </button>
+                                <button onClick={() => { if (confirm('Bekleyen config değişiklikleri yazılıp sunucu YENİDEN BAŞLATILACAK. Emin misin?')) applyQueueRestart.mutate(); }}
+                                    disabled={applyQueueRestart.isPending}
+                                    style={{ ...btnGhost, color: A.warn }} title="Yaz + sunucuyu yeniden başlat">
+                                    <I.Restart size={12} /> Uygula + Restart
+                                </button>
+                                <button onClick={() => { if (confirm('Kuyruktaki tüm bekleyenler iptal edilsin mi?')) clearQueue.mutate(); }}
+                                    style={{ ...btnGhost, color: A.err }}>Temizle</button>
+                            </div>
+                        )}>
+                        <p style={{ fontSize: 11, color: A.faint, margin: '0 0 10px' }}>
+                            <code style={{ fontFamily: A.mono, color: A.warn }}>config_restart</code> kaldıraçları canlı uygulanamaz;
+                            LagGuard istenen değeri buraya yazar. <strong style={{ color: A.dim }}>Uygula</strong> config dosyalarına yazar
+                            (etki sonraki restart'ta), <strong style={{ color: A.dim }}>Uygula + Restart</strong> hemen yeniden başlatır.
+                        </p>
+                        {queue.length === 0
+                            ? <div style={{ color: A.faint, fontSize: 12, padding: '12px 0', textAlign: 'center' }}>Bekleyen değişiklik yok.</div>
+                            : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {queue.map(q => (
+                                        <div key={q.id} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+                                            background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: '8px 12px',
+                                        }}>
+                                            <div style={{ minWidth: 0 }}>
+                                                <span style={{ fontWeight: 600, fontSize: 13 }}>{q.lever_name || q.lever_key}</span>
+                                                <code style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: A.faint, fontFamily: A.mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {q.config_path}:{q.config_key} = {q.target_value}{q.reason ? ` · ${q.reason}` : ''}
+                                                </code>
+                                            </div>
+                                            <button onClick={() => cancelQueueItem.mutate(q.id)} style={{ ...btnGhost, color: A.err, flexShrink: 0 }}>İptal</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                    </Card>
+
+                    {settings
+                        ? <SettingsPanel key={JSON.stringify(settings)} initial={settings} onSave={(patch) => saveSettings.mutate(patch)} saving={saveSettings.isPending} />
+                        : <Empty text="Ayarlar yükleniyor…" />}
+                </div>
             )}
 
             {/* Kaldıraç ekle/düzenle modal */}
