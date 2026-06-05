@@ -5,6 +5,7 @@ const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const minecraftService = require('./minecraftService');
 const terminalService = require('./terminalService');
+const { cleanConsoleLine } = require('../utils/text');
 
 const wss = new WebSocket.Server({ noServer: true });
 
@@ -102,7 +103,9 @@ function handleConsole(ws, serverId, user) {
     // 3) Son 100 satırı gönder
     try {
         const recent = execSync(`tail -n 100 "${logFile}" 2>/dev/null || true`, { encoding: 'utf8' });
-        recent.split('\n').filter(Boolean).forEach(line => {
+        recent.split('\n').forEach(raw => {
+            const line = cleanConsoleLine(raw);
+            if (!line.trim()) return;
             if (ws.readyState === WebSocket.OPEN)
                 ws.send(JSON.stringify({ type: 'log', data: line }));
         });
@@ -121,7 +124,7 @@ function handleConsole(ws, serverId, user) {
             const lines = buffer.split('\n');
             buffer = lines.pop();
             for (const line of lines) {
-                const t = line.trim();
+                const t = cleanConsoleLine(line).trim();
                 if (!t) continue;
                 if (ws.readyState === WebSocket.OPEN)
                     ws.send(JSON.stringify({ type: 'log', data: t }));

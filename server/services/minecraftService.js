@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
+const { cleanConsoleLine } = require('../utils/text');
 
 class MinecraftService extends EventEmitter {
     /**
@@ -143,6 +144,9 @@ class MinecraftService extends EventEmitter {
     // ── Satır analizi (her iki modda ortak) ──────────────────────────────────
 
     _parseLine(line) {
+        // ANSI/terminal kontrol kodlarını + screen prompt artıklarını temizle
+        // (yoksa "[m> [K" gibi çöp regex'leri bozar ve konsola taşar)
+        line = cleanConsoleLine(line);
         const lower = line.toLowerCase();
 
         // Başarılı başlatma
@@ -155,6 +159,8 @@ class MinecraftService extends EventEmitter {
                 this._startedAt = Date.now();
                 this.emit('status', this.status);
                 if (this._useScreen()) this._javaPid = this._findJavaPid();
+                // Yeni başlangıç → TPS komut tespitini sıfırla (modpack/loader değişmiş olabilir)
+                this._resetTpsDetection();
             }
         }
 
@@ -181,6 +187,7 @@ class MinecraftService extends EventEmitter {
             this._feedAutoThrottle(this._lastTps.one);
             // LagGuard event'i — gevşek bağlılık (lagGuard bu event'e abone olur)
             this.emit('tps', { tps: this._lastTps.one, mspt: null, source: 'paper', time: Date.now() });
+            this._markTpsCmdWorking();
         }
         // Forge/NeoForge: "Overall : Mean tick time: XX.X ms. Mean TPS: XX.X"
         const forgeTpsMatch = line.match(/Overall\s*:?\s*Mean tick time:\s*([\d.]+)\s*ms\.?\s*Mean TPS:\s*([\d.]+)/i);
@@ -192,9 +199,37 @@ class MinecraftService extends EventEmitter {
             this._feedAutoThrottle(forgeTps);
             // LagGuard event'i
             this.emit('tps', { tps: forgeTps, mspt: forgeMspt, source: 'forge', time: Date.now() });
+            this._markTpsCmdWorking();
+        }
+        // Vanilla 1.20.3+ /tick query: "Average time per tick: X ms" (mspt → tps türet)
+        const tickQueryMatch = line.match(/Average (?:time per tick|tick time):\s*([\d.]+)\s*ms/i);
+        if (tickQueryMatch) {
+            const mspt = parseFloat(tickQueryMatch[1]);
+            // Sunucu mspt ≤ 50 iken 20 TPS korur; üstünde TPS = 1000/mspt
+            const tps = mspt <= 50 ? 20 : Math.round((1000 / mspt) * 10) / 10;
+            this._lastTps = { one: tps, five: tps, fifteen: tps };
+            this._lastForgeMspt = mspt;
+            this._feedAutoThrottle(tps);
+            this.emit('tps', { tps, mspt, source: 'tickquery', time: Date.now() });
+            this._markTpsCmdWorking();
         }
         // Forge tek boyut satırı: "Dim: minecraft:overworld ... Mean TPS: XX.X"
         // (bunları da kaydet ama _lastTps'yi sadece Overall yazar)
+
+        // TPS komut tespiti: "Unknown or incomplete command" + "<cmd><--[HERE]"
+        // satırından çalışmayan adayı öğren ve bir daha gönderme (konsol spam'ini durdurur)
+        if (this._tpsCmdCandidates && line.includes('<--[HERE]')) {
+            const hereMatch = line.match(/]:\s*(.+?)<--\[HERE\]/) || line.match(/^(.+?)<--\[HERE\]/);
+            if (hereMatch) {
+                const failed = hereMatch[1].trim().toLowerCase();
+                for (const c of this._tpsCmdCandidates) {
+                    if (c === failed || failed.startsWith(c) || c.startsWith(failed)) {
+                        this._tpsCmdDisabled.add(c);
+                        if (this._tpsCmdProbing === c) this._tpsCmdProbing = null;
+                    }
+                }
+            }
+        }
 
         // ── "Can't keep up" lag algılama ──
         const cantKeepUpMatch = line.match(/Can't keep up!.*Running\s+(\d+)ms/i);
@@ -292,9 +327,9 @@ class MinecraftService extends EventEmitter {
                     } catch { /* ignore */ }
                 };
 
-                // Her 30sn: TPS sorgula (tps Vanilla/Paper için, forge tps Forge/NeoForge için)
-                sendSilent('tps');
-                sendSilent('forge tps');
+                // Her 30sn: TPS sorgula — adaptif (çalışan komutu otomatik bulur,
+                // çalışmayanı öğrenir ve bir daha göndermez → konsol spam'i olmaz)
+                this._sendTpsProbe(sendSilent);
 
                 // Her 60sn (2 döngüde bir): oyuncu listesini senkronize et
                 if (loopCount >= 12) {
@@ -565,6 +600,65 @@ class MinecraftService extends EventEmitter {
             const autoThrottle = require('./autoThrottle');
             autoThrottle.feedTps(tps);
         } catch { /* servis henüz yüklenmemiş olabilir */ }
+    }
+
+    // ── Adaptif TPS komut tespiti ────────────────────────────────────────────
+    // Hangi sunucunun hangi TPS komutunu desteklediği bilinmez (Paper/Forge/
+    // NeoForge/Fabric/vanilla 1.21+). Bu yüzden adayları sırayla dener, çalışanı
+    // bulunca sadece onu gönderir, "Unknown command" dönenleri devre dışı bırakır.
+    _tpsCandidateList() {
+        // İsteğe bağlı override: app_settings.lagguard_tpsCommands (virgülle ayrık)
+        try {
+            const row = getDb().prepare("SELECT value FROM app_settings WHERE key = 'lagguard_tpsCommands'").get();
+            if (row && row.value) {
+                const list = row.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+                if (list.length) return list;
+            }
+        } catch { /* ignore */ }
+        // Varsayılan aday listesi (en olası → en az olası)
+        return ['forge tps', 'neoforge tps', 'tick query', 'tps', 'spark tps'];
+    }
+
+    _resetTpsDetection() {
+        this._tpsCmdCandidates = this._tpsCandidateList();
+        this._tpsCmdDisabled = new Set();
+        this._tpsCmdActive = null;
+        this._tpsCmdProbing = null;
+        this._tpsProbeIdx = 0;
+        this._tpsCmdNoneLogged = false;
+    }
+
+    // Çalışan TPS komutu doğrulandığında (parse başarılı) çağrılır
+    _markTpsCmdWorking() {
+        if (this._tpsCmdProbing && !this._tpsCmdActive) {
+            this._tpsCmdActive = this._tpsCmdProbing;
+            this._tpsCmdProbing = null;
+            this.addLog(`[LagGuard] TPS komutu tespit edildi: "${this._tpsCmdActive}"`);
+        }
+    }
+
+    // 30sn'lik döngüde TPS komutu gönderir (adaptif)
+    _sendTpsProbe(sendSilent) {
+        if (!this._tpsCmdCandidates) this._resetTpsDetection();
+
+        // Çalışan komut bulunmuşsa sadece onu gönder
+        if (this._tpsCmdActive) { sendSilent(this._tpsCmdActive); return; }
+
+        // Henüz çalışan komut yok: her döngüde bir adayı dene (round-robin).
+        // Başarısız olan "<--[HERE]" tespitiyle devre dışı kalır; başarılı olan kilitlenir.
+        const avail = this._tpsCmdCandidates.filter(c => !this._tpsCmdDisabled.has(c));
+        if (avail.length === 0) {
+            if (!this._tpsCmdNoneLogged) {
+                this.addLog('[LagGuard] Çalışan TPS komutu bulunamadı (tps/forge tps/tick query yok). ' +
+                    'Lag tespiti yalnızca "Can\'t keep up" ile sürecek. Spark kurarsanız otomatik algılanır.');
+                this._tpsCmdNoneLogged = true;
+            }
+            return;
+        }
+        const cand = avail[this._tpsProbeIdx % avail.length];
+        this._tpsProbeIdx++;
+        this._tpsCmdProbing = cand;
+        sendSilent(cand);
     }
 
     /** Bağlantı/RAM bilgisi önbelleğini geçersiz kıl (durum değişiminde çağrılır). */

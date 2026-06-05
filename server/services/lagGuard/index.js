@@ -62,6 +62,9 @@ class LagGuard {
             ring: live.ring,
             settings: s,
             observableBusy: observable.isBusy(),
+            // Adaptif olarak tespit edilen TPS komutu (şeffaflık için)
+            tpsCommand: this._mc?._tpsCmdActive || null,
+            tpsCommandSearching: !!(this._mc && !this._mc._tpsCmdActive && this._mc.status === 'running'),
         };
     }
 

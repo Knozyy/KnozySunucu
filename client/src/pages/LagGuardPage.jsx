@@ -56,6 +56,14 @@ export default function LagGuardPage() {
                         Sunucu performansını canlı izler. Bu sürüm (Faz 0) yalnızca <strong>gözlem</strong> yapar —
                         otomatik kısıtlama veya ceza henüz uygulanmaz.
                     </p>
+                    <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, marginTop: 6 }}>
+                        TPS kaynağı:{' '}
+                        {status?.tpsCommand
+                            ? <span style={{ color: A.ok }}>/{status.tpsCommand}</span>
+                            : status?.tpsCommandSearching
+                                ? <span style={{ color: A.warn }}>algılanıyor…</span>
+                                : <span style={{ color: A.faint }}>—</span>}
+                    </div>
                 </div>
                 <Pill color="var(--accent)">FAZ 0 · İZLEME</Pill>
             </div>
