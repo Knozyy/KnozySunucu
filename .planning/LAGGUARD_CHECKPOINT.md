@@ -84,9 +84,14 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
   notlar) + "Tara" / "Derin Tara" / "Temizle".
 - Smoke test (sahte forge-tps/entity-list/data-get çıktısı): worst-dim, census, derin
   filtre, UUID çözümü, shadow kaydı, FTB graceful — hepsi geçti.
-- ⚠️ **CANLI DOĞRULAMA GEREKLİ:** `forge tps` per-dim, `forge entity list` ve FTB Chunks
-  dosya formatı paket/sürüm-özgü; parserlar savunmacı ama gerçek ATM10 çıktısıyla
-  kalibre edilmeli. chunk→claim TAM eşlemesi henüz yok (owner UUID listesi var).
+- ⚠️ **CANLI BULGU (kalibre edildi):** ATM10 To the Sky = **VANILLA komut seti** (1.21,
+  `tick query`). `forge tps` / `forge entity list` YOK → "Unknown command" spam'liyordu.
+  Probe vanilla-dostu yapıldı: olmayan komut GÖNDERİLMEZ; loader `mc._tpsCmdActive`'ten
+  tespit edilir. **Vanilla'da** per-boyut TPS ve entity list yok → boyut **oyuncu
+  yoğunluğundan** (`data get entity <n> Dimension`) türetilir, konum (`Pos`) + FTB claim
+  ile zenginleşir. **Forge/NeoForge'da** eski yol (per-dim TPS + entity list) korunur.
+  Tüm `data get` komutları tek pencerede gönderilip isimle eşlenir (hızlı). FTB chunk→claim
+  TAM eşlemesi hâlâ yok (owner UUID listesi var).
 
 ## ⏳ YAPILACAKLAR
 
