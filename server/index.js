@@ -89,6 +89,7 @@ const serverListRoutes = require('./routes/servers');
 const dashboardRoutes = require('./routes/dashboard');
 const pushRoutes = require('./routes/push');
 const autoThrottleRoutes = require('./routes/autoThrottle');
+const lagGuardRoutes = require('./routes/lagGuard');
 const minecraftService = require('./services/minecraftService');
 const serverRegistry = require('./services/serverRegistry');
 
@@ -136,6 +137,16 @@ if (defaultMc) {
     autoThrottle.attach(defaultMc);
 }
 
+// LagGuard — metrik toplama (event yayını minecraftService singleton'ında olduğu
+// için doğrudan ona bağlanıyoruz; gevşek bağlılık)
+try {
+    const lagGuard = require('./services/lagGuard');
+    lagGuard.init();
+    lagGuard.attach(minecraftService);
+} catch (err) {
+    console.warn('[LagGuard] Başlatılamadı:', err.message);
+}
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/system', systemRoutes);
@@ -163,6 +174,7 @@ app.use('/api/servers', serverListRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/auto-throttle', autoThrottleRoutes);
+app.use('/api/lag-guard', lagGuardRoutes);
 
 // Health check — startTime sunucu yeniden başlayınca değişir, frontend bunu algılar
 const SERVER_START_TIME = Date.now();

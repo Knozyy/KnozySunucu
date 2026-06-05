@@ -15,6 +15,7 @@ export const PAGES = [
     { id: 'page-discord',     label: 'Discord',      description: 'Discord entegrasyonu',    path: '/discord',     icon: 'Globe'     },
     { id: 'page-automation',  label: 'Otomasyon',    description: 'Otomasyon kuralları',     path: '/automation',  icon: 'Wrench'    },
     { id: 'page-performance', label: 'Performans',   description: 'CPU / RAM izleme',        path: '/performance', icon: 'Signal'    },
+    { id: 'page-lagguard',    label: 'Lag Koruması', description: 'TPS/MSPT izleme & throttle', path: '/lag-guard', icon: 'Signal'    },
     { id: 'page-servers',     label: 'Sunucular',    description: 'Sunucu listesi',          path: '/servers',     icon: 'Server'    },
 ];
 

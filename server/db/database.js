@@ -227,6 +227,18 @@ function initDatabase() {
       tps_at_time REAL,
       occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- LagGuard — downsample'lı metrik geçmişi (panel grafiği restart sonrası dolu gelsin)
+    CREATE TABLE IF NOT EXISTS lag_samples (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      tps REAL,
+      mspt REAL,
+      players INTEGER DEFAULT 0,
+      cant_keep_up INTEGER DEFAULT 0,
+      server_id INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_lag_samples_ts ON lag_samples(ts);
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle

@@ -179,6 +179,8 @@ class MinecraftService extends EventEmitter {
                 fifteen: parseFloat(tpsMatch[3]),
             };
             this._feedAutoThrottle(this._lastTps.one);
+            // LagGuard event'i — gevşek bağlılık (lagGuard bu event'e abone olur)
+            this.emit('tps', { tps: this._lastTps.one, mspt: null, source: 'paper', time: Date.now() });
         }
         // Forge/NeoForge: "Overall : Mean tick time: XX.X ms. Mean TPS: XX.X"
         const forgeTpsMatch = line.match(/Overall\s*:?\s*Mean tick time:\s*([\d.]+)\s*ms\.?\s*Mean TPS:\s*([\d.]+)/i);
@@ -188,6 +190,8 @@ class MinecraftService extends EventEmitter {
             this._lastTps = { one: forgeTps, five: forgeTps, fifteen: forgeTps };
             this._lastForgeMspt = forgeMspt;
             this._feedAutoThrottle(forgeTps);
+            // LagGuard event'i
+            this.emit('tps', { tps: forgeTps, mspt: forgeMspt, source: 'forge', time: Date.now() });
         }
         // Forge tek boyut satırı: "Dim: minecraft:overworld ... Mean TPS: XX.X"
         // (bunları da kaydet ama _lastTps'yi sadece Overall yazar)

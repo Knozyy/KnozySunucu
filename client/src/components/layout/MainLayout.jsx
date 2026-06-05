@@ -71,6 +71,7 @@ const NAV = [
     { id: 'scheduler', path: '/scheduler', icon: I.Clock,     label: 'Zamanlayıcı' },
     { id: 'backup',    path: '/backup',    icon: I.Archive,   label: 'Yedek' },
     { id: 'discord',   path: '/discord',   icon: I.Chat,      label: 'Discord Bot' },
+    { id: 'lagguard',  path: '/lag-guard', icon: I.Signal,    label: 'Lag Koruması' },
     { id: 'servers',   path: '/servers',   icon: I.Server,    label: 'Sunucular' },
     { id: 'settings',  path: '/settings',  icon: I.Cog,       label: 'Ayarlar' },
 ];
