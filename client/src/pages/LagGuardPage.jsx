@@ -321,6 +321,7 @@ function LeverModal({ lever, onClose, onSave, onBulk, saving }) {
     // ── Config gezgini ──
     const [cfgPath, setCfgPath] = useState(f.config_path || '');
     const [cfgSearch, setCfgSearch] = useState('');
+    const [fileSearch, setFileSearch] = useState('');
     const { data: filesData } = useQuery({
         queryKey: ['lg-cfg-files'],
         queryFn: () => api.get('/lag-guard/config/files').then(r => r.data),
@@ -385,9 +386,12 @@ function LeverModal({ lever, onClose, onSave, onBulk, saving }) {
         onSave(out);
     };
     return (
-        <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
-                <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{f.id ? 'Kaldıracı Düzenle' : 'Yeni Kaldıraç'}</h3>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <h3 style={{ margin: 0, fontSize: 16 }}>{f.id ? 'Kaldıracı Düzenle' : 'Yeni Kaldıraç'}</h3>
+                    <button type="button" onClick={onClose} title="Kapat" style={{ background: 'none', border: 'none', cursor: 'pointer', color: A.faint, padding: 4 }}><I.X size={16} /></button>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <Field label="Ad"><Input value={f.name} onChange={e => set('name', e.target.value)} /></Field>
                     <Field label="Anahtar (key)"><Input value={f.lever_key} onChange={e => set('lever_key', e.target.value)} disabled={!!f.id} /></Field>
@@ -410,10 +414,17 @@ function LeverModal({ lever, onClose, onSave, onBulk, saving }) {
                         <>
                             <div style={{ gridColumn: '1 / -1', background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: 12 }}>
                                 <Cap style={{ display: 'block', marginBottom: 8 }}>Mevcut config'den seç</Cap>
-                                <select value={cfgPath} onChange={e => { setCfgPath(e.target.value); setCfgSearch(''); }} style={selStyle}>
-                                    <option value="">— Config dosyası seç ({files.length}) —</option>
-                                    {files.map(file => <option key={file.path} value={file.path}>{file.path} ({file.format})</option>)}
-                                </select>
+                                <Input value={fileSearch} onChange={e => setFileSearch(e.target.value)} placeholder={`config dosyası ara… (${files.length} dosya, örn: pipez, create, mekanism)`} />
+                                <div style={{ marginTop: 6, maxHeight: 150, overflowY: 'auto', border: `1px solid ${A.border}`, borderRadius: 3 }}>
+                                    {files.filter(x => x.path.toLowerCase().includes(fileSearch.toLowerCase())).slice(0, 200).map(file => (
+                                        <button key={file.path} type="button" onClick={() => { setCfgPath(file.path); setCfgSearch(''); setSel({}); }}
+                                            style={{ display: 'block', width: '100%', textAlign: 'left', background: cfgPath === file.path ? 'rgba(167,139,250,0.14)' : 'transparent', border: 'none', borderBottom: `1px solid ${A.border}`, padding: '6px 10px', cursor: 'pointer', color: cfgPath === file.path ? '#fff' : A.dim, fontFamily: A.mono, fontSize: 11 }}>
+                                            {file.path} <span style={{ color: A.faint }}>({file.format})</span>
+                                        </button>
+                                    ))}
+                                    {files.length === 0 && <div style={{ padding: 10, fontSize: 11, color: A.faint }}>Config dosyası bulunamadı (sunucu yolu / config klasörü?).</div>}
+                                </div>
+                                {cfgPath && <div style={{ marginTop: 6, fontSize: 11, color: A.ok, fontFamily: A.mono }}>Seçili: {cfgPath}</div>}
                                 {cfgPath && (
                                     <>
                                         <div style={{ marginTop: 8 }}>
