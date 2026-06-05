@@ -1,42 +1,74 @@
 /**
  * LagGuard · Orkestratör
  * ──────────────────────
- * Alt modülleri (metrics, observable, … ) bir araya getirir ve aktif Minecraft
- * instance'ına bağlar. Faz 0'da yalnızca metrik toplama + Observable probe aktif;
- * karar/uygulama/atıf/ceza modülleri sonraki fazlarda eklenecek.
+ * Alt modülleri (metrics, observable, levers, decision) bir araya getirir ve
+ * aktif Minecraft instance'ına bağlar.
  *
- * Bağımlılık yönü: minecraftService BU modülü tanımaz. Biz minecraftService'in
- * yaydığı event'lere abone oluruz (gevşek bağlılık).
+ * Faz 0: metrik toplama + Observable probe.
+ * Faz 1: komut/gamerule kaldıraçları + AIMD karar döngüsü (off/dryrun/auto modları).
+ *
+ * Bağımlılık yönü: minecraftService BU modülü tanımaz; biz onun event'lerine
+ * abone oluruz (gevşek bağlılık).
  */
 const { getDb } = require('../../db/database');
 const metrics = require('./metrics');
 const observable = require('./observable');
+const registry = require('./levers/registry');
+const decision = require('./decision');
 
 const DEFAULTS = {
-    // Faz 0 yalnızca eşik/etiket amaçlı; aksiyon için kullanılmıyor.
-    tpsTarget: 19.0,   // bu değerin üzeri "stabil" sayılır
-    tpsWarn: 16.0,     // altı "hafif lag"
-    tpsCritical: 12.0, // altı "ağır lag"
+    // Seviye etiketi (TPS) — görüntüleme amaçlı
+    tpsTarget: 19.0, tpsWarn: 16.0, tpsCritical: 12.0,
+    // Karar eşikleri (MSPT birincil sinyal)
+    msptTarget: 46,        // ≤ bu → stabil (recovery'ye uygun)
+    msptWarn: 52,          // ≥ bu → throttle
+    msptCritical: 65,      // ≥ bu → agresif throttle
+    cantKeepUpCritical: 3, // 5dk'da bu kadar "Can't keep up" → kritik
+    // Zamanlama (saniye)
+    checkInterval: 20,
+    cooldownAfterThrottle: 60,
+    cooldownAfterRecovery: 120,
+    stableForRecovery: 180,
+    // Restart gerektiren kaldıraçlar dahil edilsin mi (0/1)
+    allowRestartLevers: 0,
     observableSeconds: 20,
 };
+
+const MODES = ['off', 'dryrun', 'auto'];
 
 class LagGuard {
     constructor() {
         this._mc = null;
+        this._mode = 'off';
         this._settings = { ...DEFAULTS };
         this._loadSettings();
     }
 
-    /** server/index.js başlangıcında çağrılır. */
     init() {
         this._loadSettings();
+        registry.seedStarter();
+        decision.configure({
+            getMode: () => this._mode,
+            getSettings: () => this._settings,
+            getMc: () => this._mc,
+        });
+        decision.start();
     }
 
-    /** Aktif (default) Minecraft instance'ına bağlan. */
     attach(mcService) {
         this._mc = mcService || null;
         metrics.attach(mcService);
         observable.attach(mcService);
+    }
+
+    // ── Mod ──────────────────────────────────────────────────────────────
+    getMode() { return this._mode; }
+    setMode(mode) {
+        if (!MODES.includes(mode)) throw new Error(`Geçersiz mod: ${mode}`);
+        this._mode = mode;
+        this._saveSetting('lagguard_mode', mode);
+        decision.restart();
+        return this._mode;
     }
 
     // ── Durum ────────────────────────────────────────────────────────────
@@ -44,14 +76,17 @@ class LagGuard {
         const live = metrics.getLive();
         const s = this._settings;
         let level = 'unknown';
-        if (live.tps != null) {
-            if (live.tps >= s.tpsTarget) level = 'stable';
-            else if (live.tps >= s.tpsWarn) level = 'minor';
-            else if (live.tps >= s.tpsCritical) level = 'warn';
-            else level = 'critical';
+        if (live.mspt != null) {
+            if (live.mspt >= s.msptCritical) level = 'critical';
+            else if (live.mspt >= s.msptWarn) level = 'warn';
+            else if (live.mspt <= s.msptTarget) level = 'stable';
+            else level = 'minor';
         }
+        const levers = registry.list();
+        const throttled = levers.filter(l => l.current_value != null && l.current_value < l.default_value).length;
         return {
-            phase: 0,                 // şu an sadece izleme fazındayız
+            phase: 1,
+            mode: this._mode,
             attached: !!this._mc,
             running: this._mc?.status === 'running',
             level,
@@ -62,37 +97,47 @@ class LagGuard {
             ring: live.ring,
             settings: s,
             observableBusy: observable.isBusy(),
-            // Adaptif olarak tespit edilen TPS komutu (şeffaflık için)
             tpsCommand: this._mc?._tpsCmdActive || null,
             tpsCommandSearching: !!(this._mc && !this._mc._tpsCmdActive && this._mc.status === 'running'),
+            leverCount: levers.length,
+            throttledCount: throttled,
+            decision: decision.getState(),
         };
     }
 
-    getMetrics(rangeHours = 6) {
-        return { history: metrics.getHistory(rangeHours) };
-    }
+    getMetrics(rangeHours = 6) { return { history: metrics.getHistory(rangeHours) }; }
 
-    getSettings() {
-        return { ...this._settings };
-    }
+    // ── Kaldıraçlar (passthrough) ────────────────────────────────────────
+    getLevers() { return { levers: registry.list() }; }
+    createLever(data) { return registry.create(data); }
+    updateLever(id, data) { return registry.update(id, data); }
+    deleteLever(id) { return registry.remove(id); }
+    toggleLever(id) { return registry.toggle(id); }
+    getLeverHistory(limit) { return { history: registry.history(limit) }; }
+    seedLevers() { registry.seedStarter(); return registry.list(); }
 
+    /** Tüm kaldıraçları default'a sıfırla (mevcut moda göre uygula veya öner). */
+    resetLevers() { return decision.resetAll(this._mode); }
+
+    // ── Settings ─────────────────────────────────────────────────────────
+    getSettings() { return { ...this._settings }; }
     updateSettings(patch = {}) {
+        let intervalChanged = false;
         for (const [k, v] of Object.entries(patch)) {
             if (k in this._settings) {
                 this._settings[k] = Number(v);
                 this._saveSetting(`lagguard_${k}`, String(this._settings[k]));
+                if (k === 'checkInterval') intervalChanged = true;
             }
         }
+        if (intervalChanged) decision.restart();
         return this.getSettings();
     }
 
-    // ── Observable probe ───────────────────────────────────────────────
-    async runObservable(seconds) {
-        const sec = seconds || this._settings.observableSeconds;
-        return observable.runProfile(sec);
-    }
+    // ── Observable ───────────────────────────────────────────────────────
+    async runObservable(seconds) { return observable.runProfile(seconds || this._settings.observableSeconds); }
 
-    // ── Settings persist (app_settings · lagguard_ öneki) ──────────────
+    // ── Persist (app_settings · lagguard_ öneki) ────────────────────────
     _loadSettings() {
         try {
             const db = getDb();
@@ -100,15 +145,16 @@ class LagGuard {
                 const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(`lagguard_${key}`);
                 if (row) this._settings[key] = Number(row.value);
             }
+            const modeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'lagguard_mode'").get();
+            if (modeRow && MODES.includes(modeRow.value)) this._mode = modeRow.value;
         } catch { /* tablo henüz olmayabilir */ }
     }
 
     _saveSetting(key, value) {
         try {
-            const db = getDb();
-            db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+            getDb().prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
                         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')`)
-              .run(key, value, value);
+                .run(key, String(value), String(value));
         } catch { /* ignore */ }
     }
 }

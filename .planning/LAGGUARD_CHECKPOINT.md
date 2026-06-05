@@ -37,14 +37,17 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
 
 ---
 
-## ⏳ YAPILACAKLAR
+### Faz 1 — Komut/gamerule kaldıraçları + AIMD (TAMAMLANDI ✅, sunucuda test bekliyor)
+- DB: `lag_levers` (generic veri-tabanlı kaldıraç) + `lag_lever_history`
+- `levers/registry.js` — CRUD + başlangıç kütüphanesi: ⭐`random_tick_speed` (gamerule, def 3→min 0), `max_entity_cramming`, `mob_spawning` (acil, kapalı)
+- `levers/appliers.js` — gamerule/command (canlı) + config_reload/config_restart (configParser yeniden kullanıldı, restart toggle-gated)
+- `decision.js` — AIMD: MSPT + Can't keep up birleşik tetikleyici; lag'de sert kıs (kritikte 2×), stabilde tek-adım aç; **sweet-spot tavanı** (lag_ceiling: lag yapan değeri aşma)
+- Modlar: **off / dryrun (öner) / auto** — varsayılan off, dryrun güvenli test
+- Route: mode, levers CRUD, seed, reset, history
+- Panel: mod seçici + Genel/Kaldıraçlar/Log sekmeleri + kaldıraç ekle-düzenle modal + canlı karar logu
+- **Test adımı:** sunucuda mod=dryrun yap, lag'de "öner" loglarını izle; mantık doğruysa auto'ya al.
 
-### Faz 1 — Komut/gamerule kaldıraçları + AIMD (SIRADAKİ)
-- `lag_levers` tablosu (generic, veri-tabanlı): `name, applyMethod(command|gamerule|configReload|configRestart), apply_template, default/min/max/step, priority, enabled, includes_restart`
-- Başlangıç kütüphanesi: ⭐`gamerule randomTickSpeed` (en güçlü canlı kaldıraç), Paper'da view/sim-distance, mob cap
-- `decision.js` — AIMD: MSPT + Can't keep up + TPS birleşik tetikleyici; lag'de sert kıs, stabilde tek-adım aç; per-lever sweet-spot tavanı
-- Güvenlik: **varsayılan "öner/dry-run" modu**, sert alt-sınır, kill-switch, "hepsini default'a sıfırla"
-- **Açık sorular (Faz 1 başında karar):** (a) dry-run ile mi başlayalım? (b) başlangıç kütüphanesini ben mi hazırlayayım?
+## ⏳ YAPILACAKLAR
 
 ### Faz 2 — Profiler-güdümlü hedefleme + restart-config kuyruğu (toggle'lı)
 ### Faz 3 — Atıf (shadow log): **FTB Chunks claim sahibi UUID birincil**, Observable opsiyonel

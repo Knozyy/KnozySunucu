@@ -239,6 +239,46 @@ function initDatabase() {
       server_id INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_lag_samples_ts ON lag_samples(ts);
+
+    -- LagGuard · Kaldıraçlar (generic, veri-tabanlı — moda özel sabit kod yok)
+    CREATE TABLE IF NOT EXISTS lag_levers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lever_key TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      apply_method TEXT NOT NULL DEFAULT 'gamerule', -- gamerule | command | config_reload | config_restart
+      apply_template TEXT DEFAULT '',                -- ör: "gamerule randomTickSpeed {value}"
+      config_path TEXT,                              -- config_* yöntemleri için
+      config_format TEXT DEFAULT 'toml',
+      config_key TEXT,
+      reload_command TEXT,                           -- config_reload için
+      value_type TEXT NOT NULL DEFAULT 'int',        -- int | float
+      default_value REAL NOT NULL,
+      min_value REAL NOT NULL,
+      max_value REAL,
+      step_down REAL NOT NULL DEFAULT 1,
+      step_up REAL NOT NULL DEFAULT 1,
+      current_value REAL,                            -- NULL = default'ta
+      lag_ceiling REAL,                              -- sweet-spot: bu değer lag yapmıştı (recovery üst sınırı)
+      priority INTEGER NOT NULL DEFAULT 50,          -- düşük = önce kısılır
+      enabled INTEGER NOT NULL DEFAULT 1,
+      is_builtin INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS lag_lever_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lever_id INTEGER,
+      lever_key TEXT,
+      action TEXT NOT NULL,        -- throttle | recover | reset | manual
+      mode TEXT,                   -- dryrun | auto
+      old_value REAL,
+      new_value REAL,
+      mspt_at REAL,
+      detail TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_lag_lever_history_ts ON lag_lever_history(created_at);
   `);
 
   // Migration: install_path ve is_active sütunları yoksa ekle
