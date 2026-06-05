@@ -572,6 +572,32 @@ function AttributionCard({ entry }) {
                     {notes.map((n, i) => <div key={i}>· {n}</div>)}
                 </div>
             )}
+
+            {(ev.rawTps || ev.rawEnt) && (
+                <div style={{ marginTop: 10 }}>
+                    <Cap style={{ color: A.warn }}>Ham çıktı (parse edilemedi — kalibrasyon için)</Cap>
+                    {ev.rawTps && <RawBlock title={`${ev.tpsCmd || 'tps'} →`} lines={ev.rawTps} />}
+                    {ev.rawEnt && <RawBlock title={`${ev.entCmd || 'entity list'} →`} lines={ev.rawEnt} />}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function RawBlock({ title, lines }) {
+    const text = (lines || []).join('\n');
+    return (
+        <div style={{ marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, fontFamily: A.mono, color: A.faint }}>{title}</span>
+                <button onClick={() => { try { navigator.clipboard.writeText(text); toast.success('Kopyalandı'); } catch { /* ignore */ } }}
+                    style={{ ...btnGhost, padding: '2px 8px', fontSize: 10 }}>Kopyala</button>
+            </div>
+            <pre style={{
+                margin: '4px 0 0', maxHeight: 160, overflow: 'auto',
+                background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3,
+                padding: 8, fontSize: 10, fontFamily: A.mono, color: A.dim, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+            }}>{text || '(boş)'}</pre>
         </div>
     );
 }

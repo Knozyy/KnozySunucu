@@ -13,41 +13,58 @@
  * veri yoksa o sinyal "—" olur, tarama yine sonuç döndürür.
  */
 const { getDb } = require('../../../db/database');
+const { cleanConsoleLine } = require('../../../utils/text');
 const usercache = require('./usercache');
 const ftbChunks = require('./ftbChunks');
 
-// ── Parserlar (savunmacı) ───────────────────────────────────────────────────
-// "Dim minecraft:overworld (Overworld) : Mean tick time: 12.3 ms. Mean TPS: 20.0"
-// "Dim: minecraft:the_nether ... Mean tick time: 8.1 ms"
-const DIM_RE = /Dim\s*:?\s*([a-z0-9_]+:[a-z0-9_/]+)[^\n]*?Mean tick time:\s*([\d.]+)\s*ms/i;
-// Entity census: "   500: minecraft:item"  veya  "minecraft:item: 500"
-const ENT_RE_A = /^\D*?(\d+)\s*[:x]\s*([a-z0-9_]+:[a-z0-9_/]+)/i;
-const ENT_RE_B = /([a-z0-9_]+:[a-z0-9_/]+)\s*[:x]?\s*(\d+)\s*$/i;
+// ── Parserlar (savunmacı — log prefix/timestamp içinden çalışır) ─────────────
+// Yakalanan satırlar HAM gelir (ör. "[12:34:56] [Server thread/INFO]: ...") +
+// Forge/NeoForge format farkları (iki-nokta opsiyonel, "Dim 0 (ns:id)" vs "Dim ns:id").
+//
+// "Dim 0 (minecraft:overworld): Mean tick time: 3.4 ms. Mean TPS: 20.0"   (eski Forge)
+// "Dim minecraft:overworld (Overworld): Mean tick time: 3.4 ms"           (Forge 1.19+)
+// "Dim minecraft:overworld: Mean tick time 5.1 ms. Mean TPS: 20.000"      (NeoForge, iki-noktasız)
+const DIM_RE = /\bDim\b[^\n]*?([a-z][a-z0-9_.-]*:[a-z0-9_/.-]+)[^\n]*?Mean tick time:?\s*([\d.]+)\s*ms/i;
+// Entity census — sayı/id sırası ve ayraç (":" / "x" / boşluk) değişebilir; timestamp
+// rakamları bozmasın diye id'nin sayıya BİTİŞİK olması şart (anchor yok).
+// "   500: minecraft:item" · "500 minecraft:item" · "minecraft:item: 500" · "1267  ae2:cable"
+const ENT_COUNT_FIRST = /(\d+)\s*(?:[:x]\s*|\s+)([a-z][a-z0-9_]*:[a-z0-9_/]+)/i;
+const ENT_ID_FIRST    = /([a-z][a-z0-9_]*:[a-z0-9_/]+)\s*(?:[:x]\s*|\s+)(\d+)\b/i;
 // "<name> has the following entity data: "minecraft:overworld""
-const PDIM_RE = /has the following entity data:\s*"?([a-z0-9_]+:[a-z0-9_/]+)"?/i;
+const PDIM_RE = /has the following entity data:\s*"?([a-z0-9_]+:[a-z0-9_/.-]+)"?/i;
+
+function clean(lines) { return lines.map(l => cleanConsoleLine(String(l))); }
 
 function parseDims(lines) {
-    const out = [];
+    const byDim = {};
     for (const l of lines) {
         const m = l.match(DIM_RE);
-        if (m) out.push({ dim: m[1], mspt: parseFloat(m[2]) });
+        if (!m) continue;
+        const dim = m[1], mspt = parseFloat(m[2]);
+        if (!byDim[dim] || mspt > byDim[dim]) byDim[dim] = mspt; // tekrar gelirse en kötüsü
     }
-    // Aynı boyut birden çok kez gelirse en kötüsünü tut
-    const byDim = {};
-    for (const d of out) if (!byDim[d.dim] || d.mspt > byDim[d.dim]) byDim[d.dim] = d.mspt;
     return Object.entries(byDim).map(([dim, mspt]) => ({ dim, mspt })).sort((a, b) => b.mspt - a.mspt);
 }
 
 function parseEntities(lines) {
     const counts = {};
     for (const l of lines) {
-        let m = l.match(ENT_RE_A);
+        if (/mean tick time|mean tps/i.test(l)) continue; // tps satırını entity sanma
+        let m = l.match(ENT_COUNT_FIRST);
         if (m) { counts[m[2]] = (counts[m[2]] || 0) + parseInt(m[1]); continue; }
-        m = l.match(ENT_RE_B);
+        m = l.match(ENT_ID_FIRST);
         if (m) counts[m[1]] = (counts[m[1]] || 0) + parseInt(m[2]);
     }
     return Object.entries(counts).map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count).slice(0, 12);
+}
+
+// Kalibrasyon için: parse başarısızsa ham satırların küçük bir örneğini sakla
+function rawSample(lines) {
+    return lines
+        .filter(l => l && !/^\[.*\] \[.*\]: $/.test(l))
+        .slice(-25)
+        .map(l => l.slice(0, 200));
 }
 
 class AttributionProbe {
@@ -92,13 +109,13 @@ class AttributionProbe {
             const tpsCmd = mc._tpsCmdActive && /tps/i.test(mc._tpsCmdActive) ? mc._tpsCmdActive : 'forge tps';
 
             // 1) En kötü boyut
-            const tpsLines = await this._capture(mc, tpsCmd, 3000);
+            const tpsLines = clean(await this._capture(mc, tpsCmd, 3000));
             const dims = parseDims(tpsLines);
             const worst = dims[0] || null;
 
             // 2) Entity census (forge/neoforge)
             const entCmd = /neoforge/i.test(tpsCmd) ? 'neoforge entity list' : 'forge entity list';
-            const entLines = await this._capture(mc, entCmd, 3500);
+            const entLines = clean(await this._capture(mc, entCmd, 3500));
             const entities = parseEntities(entLines);
 
             // 3) Online oyuncular + UUID
@@ -128,13 +145,18 @@ class AttributionProbe {
             const ftb = ftbChunks.status(serverPath);
             if (!ftb.available) notes.push(ftb.note);
 
-            if (!tpsLines.length) notes.push(`TPS komutu ("${tpsCmd}") çıktı vermedi — boyut atıfı yapılamadı.`);
-            if (!entities.length) notes.push(`Entity census ("${entCmd}") parse edilemedi.`);
+            // Kalibrasyon yardımı: parse boş döndüyse ham çıktının örneğini sakla
+            const rawTps = dims.length ? null : rawSample(tpsLines);
+            const rawEnt = entities.length ? null : rawSample(entLines);
+            if (!dims.length) notes.push(`Boyut parse edilemedi ("${tpsCmd}"). Ham çıktı örneği kaydedildi (kalibrasyon için).`);
+            if (!entities.length) notes.push(`Entity census parse edilemedi ("${entCmd}"). Ham çıktı örneği kaydedildi.`);
 
             const evidence = {
                 dims, entities, players: online,
                 suspects, ftb: { available: ftb.available, owners: ftb.owners?.slice(0, 20) || [], note: ftb.note },
                 notes, tpsCmd, entCmd, deep,
+                ...(rawTps ? { rawTps } : {}),
+                ...(rawEnt ? { rawEnt } : {}),
             };
 
             const row = {
