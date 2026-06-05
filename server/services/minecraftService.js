@@ -313,9 +313,9 @@ class MinecraftService extends EventEmitter {
                 this._javaPid = javaPid;
             }
             
-            // Her 30 saniyede bir (5000ms * 6) TPS sorgula + oyuncu listesi senkronize et
+            // Periyodik komutlar (döngü her 5sn çalışır)
             loopCount++;
-            if (loopCount >= 6 && this.status === 'running') {
+            if (this.status === 'running') {
                 const sendSilent = (cmd) => {
                     try {
                         if (this._useScreen()) {
@@ -327,14 +327,13 @@ class MinecraftService extends EventEmitter {
                     } catch { /* ignore */ }
                 };
 
-                // Her 30sn: TPS sorgula — adaptif (çalışan komutu otomatik bulur,
-                // çalışmayanı öğrenir ve bir daha göndermez → konsol spam'i olmaz)
-                this._sendTpsProbe(sendSilent);
+                // Her 30sn (6 döngü): TPS sorgula — adaptif komut tespiti
+                if (loopCount % 6 === 0) this._sendTpsProbe(sendSilent);
 
-                // Her 60sn (2 döngüde bir): oyuncu listesini senkronize et
-                if (loopCount >= 12) {
-                    loopCount = 0;
+                // Her 60sn (12 döngü): oyuncu listesini senkronize et + sayacı sıfırla
+                if (loopCount % 12 === 0) {
                     sendSilent('list');
+                    loopCount = 0;
                 }
             }
         }, 5000);
