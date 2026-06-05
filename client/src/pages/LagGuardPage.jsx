@@ -83,6 +83,15 @@ export default function LagGuardPage() {
         onSuccess: () => { invalidate(); toast.success('Silindi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Silinemedi'),
     });
+    const applyLever = useMutation({
+        mutationFn: (id) => api.post(`/lag-guard/levers/${id}/apply`).then(r => r.data),
+        onSuccess: (d) => {
+            invalidate();
+            if (d.applied) toast.success(`Uygulandı → ${d.detail}`, { duration: 6000 });
+            else toast.error(d.detail || (d.skipped ? 'Atlandı' : 'Uygulanamadı'), { duration: 7000 });
+        },
+        onError: (e) => toast.error(e.response?.data?.error || 'Uygulanamadı'),
+    });
     const saveLever = useMutation({
         mutationFn: (l) => l.id ? api.put(`/lag-guard/levers/${l.id}`, l) : api.post('/lag-guard/levers', l),
         onSuccess: () => { invalidate(); setEditing(null); toast.success('Kaydedildi'); },
@@ -228,6 +237,9 @@ export default function LagGuardPage() {
                         <button onClick={() => seed.mutate()} style={btnGhost}>Başlangıç Kütüphanesini Yükle</button>
                         <button onClick={() => { if (confirm('Tüm kaldıraçları default değerlerine döndür?')) resetAll.mutate(); }} style={{ ...btnGhost, color: A.warn }}><I.Restart size={12} /> Tümünü Sıfırla</button>
                     </div>
+                    <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                        Otomatik uygulama yalnızca <strong style={{ color: A.dim }}>Otomatik</strong> modda + lag anında olur. Bir kaldıracı hemen test etmek için <strong style={{ color: 'var(--accent)' }}>Uygula</strong> butonunu kullan — moddan bağımsız dosyayı/komutu gerçekten uygular ve sonucu/hatayı gösterir.
+                    </p>
 
                     {levers.length === 0 ? <Empty text="Kaldıraç yok. 'Başlangıç Kütüphanesini Yükle' ile başla." /> : levers.map(l => {
                         const cur = l.current_value != null ? l.current_value : l.default_value;
@@ -257,6 +269,7 @@ export default function LagGuardPage() {
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                                     <Toggle value={!!l.enabled} onChange={() => toggleLever.mutate(l.id)} />
+                                    <button onClick={() => applyLever.mutate(l.id)} disabled={applyLever.isPending} style={{ ...btnGhost, color: 'var(--accent)' }} title="relief değerini şimdi gerçekten uygula (test)">Uygula</button>
                                     <button onClick={() => setEditing(l)} style={btnGhost}>Düzenle</button>
                                     <button onClick={() => { if (confirm(`"${l.name}" silinsin mi?`)) deleteLever.mutate(l.id); }} style={{ ...btnGhost, color: A.err }}>Sil</button>
                                 </div>

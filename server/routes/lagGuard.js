@@ -87,6 +87,12 @@ router.post('/levers/:id/toggle', authMiddleware, requireRole('admin'), (req, re
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// Bir kaldıracı şimdi gerçekten uygula (test) — sonuç/hata aynen döner
+router.post('/levers/:id/apply', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json(lagGuard.applyLeverNow(parseInt(req.params.id), req.body?.value)); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 router.post('/levers/bulk', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const n = lagGuard.bulkCreateLevers(req.body?.levers || []);

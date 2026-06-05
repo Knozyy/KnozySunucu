@@ -14,6 +14,7 @@ const { getDb } = require('../../db/database');
 const metrics = require('./metrics');
 const observable = require('./observable');
 const registry = require('./levers/registry');
+const appliers = require('./levers/appliers');
 const decision = require('./decision');
 const configExplorer = require('./configExplorer');
 
@@ -120,6 +121,19 @@ class LagGuard {
 
     /** Tüm kaldıraçları default'a sıfırla (mevcut moda göre uygula veya öner). */
     resetLevers() { return decision.resetAll(this._mode); }
+
+    /** Bir kaldıracı ŞİMDİ gerçekten uygula (test amaçlı, moddan bağımsız).
+     *  value verilmezse relief_value uygulanır. Sonuç/hata aynen döner. */
+    applyLeverNow(id, value) {
+        const lever = registry.get(id);
+        if (!lever) throw new Error('Kaldıraç bulunamadı');
+        const v = (value != null && value !== '') ? Number(value) : Number(lever.relief_value);
+        const old = registry.currentOf(lever);
+        const res = appliers.apply(lever, v, { dryRun: false, mc: this._mc, allowRestart: true });
+        if (res.applied) registry.setCurrent(id, v === lever.default_value ? null : v);
+        registry.logHistory({ lever_id: id, lever_key: lever.lever_key, action: 'manual', mode: this._mode, old_value: old, new_value: v, detail: res.detail });
+        return { ...res, applied_value: v };
+    }
 
     // ── Settings ─────────────────────────────────────────────────────────
     getSettings() { return { ...this._settings }; }
