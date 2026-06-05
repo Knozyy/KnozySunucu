@@ -12,6 +12,7 @@ const metrics = require('./metrics');
 const registry = require('./levers/registry');
 const appliers = require('./levers/appliers');
 const restartQueue = require('./levers/restartQueue');
+const attribution = require('./attribution/probe');
 
 const STATE = { IDLE: 'idle', NORMAL: 'normal', THROTTLING: 'throttling', COOLDOWN: 'cooldown', RECOVERING: 'recovering' };
 
@@ -76,6 +77,11 @@ class Decision {
         else if (avgMspt <= s.msptTarget) severity = 'stable';
         else severity = 'hold';
         this._lastSeverity = severity;
+
+        // Faz 3 · sürekli KRİTİK lag'de seyrek shadow atıf taraması (ceza yok; rate-limit 5dk)
+        if (severity === 'critical') {
+            attribution.maybeAutoScan(mc, mode, avgMspt).catch(() => {});
+        }
 
         // Faz 2 · config_restart kaldıraçları canlı uygulanamaz → restart kuyruğuna
         // (live cooldown'dan bağımsız; idempotent, sadece hedef değiştiğinde yazar)

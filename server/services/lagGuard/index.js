@@ -18,6 +18,7 @@ const appliers = require('./levers/appliers');
 const restartQueue = require('./levers/restartQueue');
 const decision = require('./decision');
 const configExplorer = require('./configExplorer');
+const attribution = require('./attribution/probe');
 
 const DEFAULTS = {
     // Seviye etiketi (TPS) — görüntüleme amaçlı
@@ -105,6 +106,7 @@ class LagGuard {
             leverCount: levers.length,
             throttledCount: throttled,
             restartQueueCount: restartQueue.count(),
+            attributionBusy: attribution.isBusy(),
             decision: decision.getState(),
         };
     }
@@ -175,6 +177,14 @@ class LagGuard {
 
     cancelRestartItem(id) { return restartQueue.cancel(parseInt(id)); }
     clearRestartQueue() { return restartQueue.clear(); }
+
+    // ── Lag Atıf / Shadow Log (Faz 3) ────────────────────────────────────
+    getAttribution(limit = 50) { return { log: attribution.list(limit), busy: attribution.isBusy() }; }
+    runAttribution(deep = false) {
+        const live = metrics.getLive();
+        return attribution.runScan(this._mc, { mode: this._mode, mspt: live.mspt, deep: !!deep });
+    }
+    clearAttribution() { return attribution.clear(); }
 
     // ── Observable ───────────────────────────────────────────────────────
     async runObservable(seconds) { return observable.runProfile(seconds || this._settings.observableSeconds); }

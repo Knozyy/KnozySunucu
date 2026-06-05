@@ -267,6 +267,22 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_lag_lever_history_ts ON lag_lever_history(created_at);
+
+    -- LagGuard · Lag Atıf / Shadow Log (Faz 3)
+    -- Lag anında "kim/ne" sorusuna en iyi-çaba yanıt: en kötü boyut + entity census
+    -- + online oyuncu adayları + (varsa) FTB Chunks claim sahibi. Ceza YOK — sadece kayıt.
+    CREATE TABLE IF NOT EXISTS lag_attribution (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      mode TEXT,                    -- dryrun | auto | manual
+      mspt_at REAL,
+      worst_dim TEXT,               -- en kötü boyut (ör. minecraft:overworld)
+      worst_dim_mspt REAL,
+      suspect_count INTEGER DEFAULT 0,
+      evidence TEXT,                -- JSON: { dims, entities, players, suspects, claims, notes }
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_lag_attribution_ts ON lag_attribution(ts);
   `);
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)
