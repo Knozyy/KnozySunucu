@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Num, Dot, Pill, Input } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Num, Dot, Pill, Input } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
@@ -67,11 +67,11 @@ export default function LoginPage() {
                     <div style={{
                         width: 16, height: 16, border: `2px solid ${A.border}`,
                         borderTopColor: 'var(--accent)', borderRadius: 99,
-                        animation: 'hodo-spin 0.8s linear infinite',
+                        animation: 'hoodoo-spin 0.8s linear infinite',
                     }}/>
                     <span style={{ fontFamily: A.mono, fontSize: 12 }}>Bağlanılıyor...</span>
                 </div>
-                <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+                <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
             </div>
         );
     }
@@ -146,12 +146,12 @@ export default function LoginPage() {
                         <SysRow label="api" status="online" detail="200 OK · 12ms"/>
                         <SysRow label="db" status="online" detail="sqlite · ready"/>
                         <SysRow label="ws" status="online" detail="/ws/console · /ws/terminal"/>
-                        <SysRow label="ver" status="info"   detail="hodo-panel v2.0"/>
+                        <SysRow label="ver" status="info"   detail="hoodoo-panel v2.0"/>
                     </div>
                 </div>
 
                 <div style={{ fontSize: 11, color: A.faint, fontFamily: A.mono, letterSpacing: '0.04em' }}>
-                    © 2026 hodo · knozy.dev
+                    © 2026 HooDoo · knozy.dev
                 </div>
             </div>
 

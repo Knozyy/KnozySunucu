@@ -7,9 +7,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Dot, Pill } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Dot, Pill } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 export default function TerminalPage() {
     const [searchParams] = useSearchParams();

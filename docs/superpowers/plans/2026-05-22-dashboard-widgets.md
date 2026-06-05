@@ -6,7 +6,7 @@
 
 **Architecture:** `react-grid-layout` ile 12 kolonluk grid. Her kart bağımsız widget bileşenine taşınır. `useWidgetLayout` hook'u GET/PUT `/api/dashboard/layout` üzerinden yerleşimi yükler/kaydeder. `app_settings` tablosunda `dashboard_layout_<userId>` key ile JSON saklanır.
 
-**Tech Stack:** React 19, react-grid-layout, @tanstack/react-query, axios (api.js), Hodo design system (A tokens, I icons, Card/KPI/KV/Stat primitifleri), better-sqlite3 (mevcut getDb() pattern)
+**Tech Stack:** React 19, react-grid-layout, @tanstack/react-query, axios (api.js), HooDoo design system (A tokens, I icons, Card/KPI/KV/Stat primitifleri), better-sqlite3 (mevcut getDb() pattern)
 
 ---
 
@@ -314,7 +314,7 @@ git commit -m "feat(dashboard): useWidgetLayout hook eklendi"
 
 ```jsx
 // client/src/components/Dashboard/widgets/CpuKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 export function CpuKpi({ server, series }) {
     const cpu = server?.processStats?.cpuPercent || 0;
@@ -327,7 +327,7 @@ export function CpuKpi({ server, series }) {
 
 ```jsx
 // client/src/components/Dashboard/widgets/RamKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 import { parseRamGB } from '@/utils/formatters';
 
 export function RamKpi({ server, series }) {
@@ -353,7 +353,7 @@ export function RamKpi({ server, series }) {
 // client/src/components/Dashboard/widgets/PlayersKpi.jsx
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 export function PlayersKpi({ server }) {
     const { data } = useQuery({
@@ -376,7 +376,7 @@ export function PlayersKpi({ server }) {
 
 ```jsx
 // client/src/components/Dashboard/widgets/StatusKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 export function StatusKpi({ server }) {
     return (
@@ -393,7 +393,7 @@ export function StatusKpi({ server }) {
 // client/src/components/Dashboard/widgets/UptimeKpi.jsx
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 import { formatUptime } from '@/utils/formatters';
 
 export function UptimeKpi({ server }) {
@@ -415,7 +415,7 @@ export function UptimeKpi({ server }) {
 
 ```jsx
 // client/src/components/Dashboard/widgets/ProfileKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 export function ProfileKpi({ server, installedModpacks }) {
     const activePack = (installedModpacks || []).find(p => p.id === server?.active_modpack_id);
@@ -446,9 +446,9 @@ git commit -m "feat(dashboard): 6 KPI widget bileşeni eklendi"
 
 ```jsx
 // client/src/components/Dashboard/widgets/ResourceChart.jsx
-import { A } from '@/hodo/tokens';
-import { Card, Stat, LegendDot } from '@/hodo/primitives';
-import { DualLine, avg, max } from '@/hodo/charts';
+import { A } from '@/hoodoo/tokens';
+import { Card, Stat, LegendDot } from '@/hoodoo/primitives';
+import { DualLine, avg, max } from '@/hoodoo/charts';
 
 export function ResourceChart({ series }) {
     const cpuVals = (series || []).map(s => s.cpu);
@@ -482,8 +482,8 @@ export function ResourceChart({ series }) {
 
 ```jsx
 // client/src/components/Dashboard/widgets/ServerInfoWidget.jsx
-import { A } from '@/hodo/tokens';
-import { Card, KV } from '@/hodo/primitives';
+import { A } from '@/hoodoo/tokens';
+import { Card, KV } from '@/hoodoo/primitives';
 
 export function ServerInfoWidget({ server }) {
     return (
@@ -527,8 +527,8 @@ git commit -m "feat(dashboard): ResourceChart ve ServerInfoWidget eklendi"
 // client/src/components/Dashboard/widgets/OnlinePlayersWidget.jsx
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hodo/tokens';
-import { Card, Dot } from '@/hodo/primitives';
+import { A } from '@/hoodoo/tokens';
+import { Card, Dot } from '@/hoodoo/primitives';
 
 export function OnlinePlayersWidget({ server }) {
     const { data } = useQuery({
@@ -577,9 +577,9 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A } from '@/hodo/tokens';
-import { Card, Cap, Pill } from '@/hodo/primitives';
-import { UsageBar } from '@/hodo/charts';
+import { A } from '@/hoodoo/tokens';
+import { Card, Cap, Pill } from '@/hoodoo/primitives';
+import { UsageBar } from '@/hoodoo/charts';
 import { parseRamGB } from '@/utils/formatters';
 
 export function ActiveProfileWidget({ server, installedModpacks }) {
@@ -660,9 +660,9 @@ export function ActiveProfileWidget({ server, installedModpacks }) {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Card, Pill } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Card, Pill } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 export function QuickActionsWidget({ server }) {
     const qc = useQueryClient();
@@ -803,7 +803,7 @@ git commit -m "feat(dashboard): widget map ve label listesi eklendi"
 
 ```jsx
 // client/src/components/Dashboard/WidgetWrapper.jsx
-import { A } from '@/hodo/tokens';
+import { A } from '@/hoodoo/tokens';
 
 function DragHandleIcon() {
     return (
@@ -951,9 +951,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnGhost, btnPrimary } from '@/hodo/tokens';
-import { Dot, Pill, Card } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnGhost, btnPrimary } from '@/hoodoo/tokens';
+import { Dot, Pill, Card } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 import { WidgetGrid } from '@/components/Dashboard/WidgetGrid';
 import { useWidgetLayout } from '@/components/Dashboard/useWidgetLayout';
 import { WIDGET_LABELS } from '@/components/Dashboard/widgetMap';
@@ -997,7 +997,7 @@ function ServerTab({ server, active, onClick, index }) {
     const isRunning = server.status === 'running';
     const isStarting = server.status === 'starting';
     return (
-        <button onClick={onClick} className="hodo-navitem"
+        <button onClick={onClick} className="hoodoo-navitem"
             style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '10px 16px', cursor: 'pointer',

@@ -175,7 +175,7 @@ export function LegendDot({ color, label, dashed }) {
 
 export function NavItem({ icon: Icon, label, active, onClick, badge, collapsed }) {
     return (
-        <button onClick={onClick} className="hodo-navitem"
+        <button onClick={onClick} className="hoodoo-navitem"
             style={{
                 display: 'flex', alignItems: 'center', gap: 11,
                 padding: collapsed ? '9px 0' : '8px 12px',

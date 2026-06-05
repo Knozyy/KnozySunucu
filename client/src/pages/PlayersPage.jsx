@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
 
@@ -56,7 +56,7 @@ function Spinner({ size = 16 }) {
             border: `2px solid ${A.border}`,
             borderTopColor: 'var(--accent)',
             borderRadius: '50%',
-            animation: 'hodo-spin 0.8s linear infinite',
+            animation: 'hoodoo-spin 0.8s linear infinite',
         }}/>
     );
 }
@@ -65,7 +65,7 @@ function RefreshIcon({ size = 14, spinning }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            style={spinning ? { animation: 'hodo-spin 0.8s linear infinite' } : undefined}>
+            style={spinning ? { animation: 'hoodoo-spin 0.8s linear infinite' } : undefined}>
             <polyline points="23 4 23 10 17 10"/>
             <polyline points="1 20 1 14 7 14"/>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -192,7 +192,7 @@ export default function PlayersPage() {
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
             fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
 
             {/* ── Başlık ── */}
             <div>

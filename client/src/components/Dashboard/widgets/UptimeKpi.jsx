@@ -1,5 +1,5 @@
 // client/src/components/Dashboard/widgets/UptimeKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 const MONTHS = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
 

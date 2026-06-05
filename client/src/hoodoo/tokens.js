@@ -1,4 +1,4 @@
-// Hodo design tokens — koyu kömür gri, mor aksan, yüksek yoğunluk
+// HooDoo design tokens — koyu kömür gri, mor aksan, yüksek yoğunluk
 // Variant A "Console" palette
 
 export const A = {

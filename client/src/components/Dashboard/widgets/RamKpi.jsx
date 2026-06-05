@@ -1,5 +1,5 @@
 // client/src/components/Dashboard/widgets/RamKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
 

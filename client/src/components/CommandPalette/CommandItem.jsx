@@ -1,7 +1,7 @@
 // client/src/components/CommandPalette/CommandItem.jsx
-import { I } from '@/hodo/icons';
-import { A } from '@/hodo/tokens';
-import { Cap } from '@/hodo/primitives';
+import { I } from '@/hoodoo/icons';
+import { A } from '@/hoodoo/tokens';
+import { Cap } from '@/hoodoo/primitives';
 
 export function CommandItem({ item, selected, onSelect, onMouseEnter }) {
     const Icon = I[item.icon];

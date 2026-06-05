@@ -1,5 +1,5 @@
 // client/src/components/Dashboard/widgets/PlayersKpi.jsx
-import { KPI } from '@/hodo/primitives';
+import { KPI } from '@/hoodoo/primitives';
 
 export function PlayersKpi({ server }) {
     const count = server?.playerCount ?? 0;

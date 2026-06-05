@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Dot, Pill, Input } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
 import { useAuth } from '@/context/AuthContext';
 
@@ -36,15 +36,15 @@ function Spinner({ size = 14 }) {
             <div style={{
                 width: size, height: size,
                 border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
-                borderRadius: 99, animation: 'hodo-spin 0.8s linear infinite',
+                borderRadius: 99, animation: 'hoodoo-spin 0.8s linear infinite',
             }}/>
-            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
         </>
     );
 }
 
-// ── Hodo Modal ─────────────────────────────────────────────────────────────
-function HodoModal({ children, onClose, maxWidth = 520 }) {
+// ── HooDoo Modal ───────────────────────────────────────────────────────────
+function HooDooModal({ children, onClose, maxWidth = 520 }) {
     return (
         <div style={{
             position: 'fixed', inset: 0, zIndex: 60,
@@ -63,7 +63,7 @@ function HodoModal({ children, onClose, maxWidth = 520 }) {
     );
 }
 
-function HodoModalHeader({ title, onClose }) {
+function HooDooModalHeader({ title, onClose }) {
     return (
         <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -77,7 +77,7 @@ function HodoModalHeader({ title, onClose }) {
     );
 }
 
-// ── Hodo table ─────────────────────────────────────────────────────────────
+// ── HooDoo table ───────────────────────────────────────────────────────────
 const tblStyle = {
     width: '100%', borderCollapse: 'collapse',
     fontFamily: A.sans, fontSize: 12,
@@ -797,8 +797,8 @@ function PanelUsersPanel() {
             </div>
 
             {modal && (
-                <HodoModal onClose={() => setModal(false)} maxWidth={460}>
-                    <HodoModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
+                <HooDooModal onClose={() => setModal(false)} maxWidth={460}>
+                    <HooDooModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
                     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0, overflowY: 'auto' }}>
                         <div>
                             <Cap style={{ display: 'block', marginBottom: 6 }}>Kullanıcı Adı</Cap>
@@ -851,7 +851,7 @@ function PanelUsersPanel() {
                             OLUŞTUR
                         </button>
                     </div>
-                </HodoModal>
+                </HooDooModal>
             )}
         </div>
     );
@@ -1003,8 +1003,8 @@ function CategoryModal({ initial, onClose, onSaved }) {
     };
 
     return (
-        <HodoModal onClose={onClose} maxWidth={520}>
-            <HodoModalHeader title={initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'} onClose={onClose}/>
+        <HooDooModal onClose={onClose} maxWidth={520}>
+            <HooDooModalHeader title={initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'} onClose={onClose}/>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                     <Cap style={{ display: 'block', marginBottom: 6 }}>Kategori Adı</Cap>
@@ -1059,7 +1059,7 @@ function CategoryModal({ initial, onClose, onSaved }) {
                     {initial ? 'GÜNCELLE' : 'OLUŞTUR'}
                 </button>
             </div>
-        </HodoModal>
+        </HooDooModal>
     );
 }
 

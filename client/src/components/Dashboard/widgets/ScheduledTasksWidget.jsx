@@ -1,8 +1,8 @@
 // client/src/components/Dashboard/widgets/ScheduledTasksWidget.jsx
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hodo/tokens';
-import { Card } from '@/hodo/primitives';
+import { A } from '@/hoodoo/tokens';
+import { Card } from '@/hoodoo/primitives';
 
 const MONTHS = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
 

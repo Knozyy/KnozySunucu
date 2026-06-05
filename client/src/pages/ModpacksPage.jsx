@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import { formatNumber, formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Dot, Pill } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Dot, Pill } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 function formatSize(bytes) {
     if (!bytes) return '';
@@ -20,7 +20,7 @@ function formatFileDate(dateStr) {
     return new Date(dateStr).toLocaleDateString('tr-TR');
 }
 
-// ── Hodo modal kabuk bileşeni ─────────────────────────────────────────────
+// ── HooDoo modal kabuk bileşeni ───────────────────────────────────────────
 function Modal({ children, onClose, maxWidth = 560 }) {
     return (
         <div style={{
@@ -62,9 +62,9 @@ function Spinner({ size = 14, color = 'var(--accent)' }) {
             <div style={{
                 width: size, height: size,
                 border: `2px solid ${A.border}`, borderTopColor: color,
-                borderRadius: 99, animation: 'hodo-spin 0.8s linear infinite',
+                borderRadius: 99, animation: 'hoodoo-spin 0.8s linear infinite',
             }}/>
-            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
         </>
     );
 }

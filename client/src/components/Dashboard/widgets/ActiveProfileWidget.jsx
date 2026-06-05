@@ -3,9 +3,9 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A } from '@/hodo/tokens';
-import { Card, Cap, Pill } from '@/hodo/primitives';
-import { UsageBar } from '@/hodo/charts';
+import { A } from '@/hoodoo/tokens';
+import { Card, Cap, Pill } from '@/hoodoo/primitives';
+import { UsageBar } from '@/hoodoo/charts';
 
 function fmtBytes(b) {
     if (!b || b < 1) return '—';

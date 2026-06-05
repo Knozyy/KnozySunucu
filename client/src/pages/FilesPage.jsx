@@ -7,9 +7,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import { A, btnPrimary, btnGhost } from '@/hodo/tokens';
-import { Cap, Input } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
+import { Cap, Input } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 function formatSize(bytes, isDirectory) {
     if (isDirectory) return '-';
@@ -278,7 +278,7 @@ export default function FilesPage() {
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
             fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hodo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
 
             {/* ── Modaller ── */}
             {editingFile && (
@@ -408,7 +408,7 @@ export default function FilesPage() {
                                 <div style={{
                                     width: 20, height: 20, margin: '0 auto 10px',
                                     border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
-                                    borderRadius: '50%', animation: 'hodo-spin 0.8s linear infinite',
+                                    borderRadius: '50%', animation: 'hoodoo-spin 0.8s linear infinite',
                                 }}/>
                                 <p style={{ fontSize: 12, color: A.faint, margin: 0, fontFamily: A.mono }}>
                                     Config dosyaları yükleniyor...
@@ -512,7 +512,7 @@ export default function FilesPage() {
                                 <div style={{
                                     width: 20, height: 20, margin: '0 auto 10px',
                                     border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
-                                    borderRadius: '50%', animation: 'hodo-spin 0.8s linear infinite',
+                                    borderRadius: '50%', animation: 'hoodoo-spin 0.8s linear infinite',
                                 }}/>
                                 <p style={{ fontSize: 12, color: A.faint, margin: 0, fontFamily: A.mono }}>
                                     Yükleniyor...

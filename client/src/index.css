@@ -2,20 +2,20 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── Hodo design tokens ─────────────────────────────────────────────── */
+/* ─── HooDoo design tokens ───────────────────────────────────────────── */
 :root {
   --accent: #a78bfa;
   --accent-rgb: 167, 139, 250;
-  --hodo-bg: #0a0b0d;
-  --hodo-panel: #101216;
-  --hodo-border: #1f2228;
-  --hodo-text: #e8eaed;
-  --hodo-dim: #9aa0a6;
-  --hodo-faint: #5f6368;
+  --hoodoo-bg: #0a0b0d;
+  --hoodoo-panel: #101216;
+  --hoodoo-border: #1f2228;
+  --hoodoo-text: #e8eaed;
+  --hoodoo-dim: #9aa0a6;
+  --hoodoo-faint: #5f6368;
 }
 
-/* Hodo sidebar nav hover */
-.hodo-navitem:hover {
+/* HooDoo sidebar nav hover */
+.hoodoo-navitem:hover {
   background: rgba(167,139,250,0.04) !important;
   color: #fff !important;
 }

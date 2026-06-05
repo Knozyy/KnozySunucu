@@ -2,9 +2,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hodo/tokens';
-import { Card } from '@/hodo/primitives';
-import { I } from '@/hodo/icons';
+import { A } from '@/hoodoo/tokens';
+import { Card } from '@/hoodoo/primitives';
+import { I } from '@/hoodoo/icons';
 
 const ROLE_COLOR = {
     ADMIN:  A.err,
