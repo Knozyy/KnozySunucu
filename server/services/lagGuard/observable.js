@@ -29,6 +29,26 @@ class ObservableProbe {
         return !!this._pending;
     }
 
+    /** Sonuç URL'sinden profil id'sini çıkar: ".../p/8Vs5u" → "8Vs5u". */
+    extractId(url) {
+        const m = String(url || '').match(/\/p\/([A-Za-z0-9_-]+)/);
+        return m ? m[1] : null;
+    }
+
+    /**
+     * Observable makine-okunur veri endpoint'i: /v1/get/<id> → düz JSON
+     * { data: { entities:{dim:[…]}, blocks:{dim:[…]}, ticks }, diagnostics:{duration,modLoader,…} }
+     * Her entity/block: { position:{x,y,z}, type, rate (ns/tick), ticks }.
+     */
+    async fetchProfile(id) {
+        if (!id) throw new Error('Observable id yok');
+        if (typeof fetch !== 'function') throw new Error('global fetch yok (Node 18+ gerekli)');
+        const url = `https://observable.tas.sh/v1/get/${id}`;
+        const r = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'KnozyPanel-LagGuard' } });
+        if (!r.ok) throw new Error(`Observable veri HTTP ${r.status}`);
+        return r.json();
+    }
+
     /**
      * Profili çalıştır ve sonuç URL'sini yakalamaya çalış.
      * @param {number} seconds — profil süresi

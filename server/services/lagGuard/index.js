@@ -178,11 +178,14 @@ class LagGuard {
     cancelRestartItem(id) { return restartQueue.cancel(parseInt(id)); }
     clearRestartQueue() { return restartQueue.clear(); }
 
-    // ── Lag Atıf / Shadow Log (Faz 3) ────────────────────────────────────
+    // ── Lag Atıf / Shadow Log (Faz 3, Observable tabanlı) ────────────────
     getAttribution(limit = 50) { return { log: attribution.list(limit), busy: attribution.isBusy() }; }
-    runAttribution(deep = false) {
+    /** Observable taraması başlat (fire-and-forget; ~25sn sürer, panel poll'lar). */
+    runAttribution() {
+        if (attribution.isBusy()) return { started: false, busy: true, note: 'Zaten çalışıyor' };
         const live = metrics.getLive();
-        return attribution.runScan(this._mc, { mode: this._mode, mspt: live.mspt, deep: !!deep });
+        attribution.runScan(this._mc, { mode: this._mode, mspt: live.mspt }).catch(() => {});
+        return { started: true, busy: true };
     }
     clearAttribution() { return attribution.clear(); }
 

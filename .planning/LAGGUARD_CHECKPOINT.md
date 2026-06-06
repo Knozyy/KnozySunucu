@@ -95,12 +95,22 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
   formatı farklıysa `cat world/ftbchunks/*.snbt` örneğiyle kalibre edilecek.
 - **Panel sadeleştirildi** (kullanıcı isteği): boyut dağılımı/UUID/boyut-etiketi/vanilla
   notları KALDIRILDI. Tek tablo: Oyuncu · **TPS payı** · Konum · **FTB sahibi**.
-- **TPS PAYI = Observable** (karar): koordinat bazlı tick maliyeti için Observable profil
-  verisi kullanılacak (spark sampler'dır, koordinat vermez → uygun değil; Observable
-  tile-entity'leri konuma göre profilliyor). Observable diske dosya YAZMIYOR (find ile
-  doğrulandı) → veri observable.tas.sh'de. **BEKLEYEN:** gerçek `observable run` sonuç
-  URL'si → veri endpoint'i çözülüp koordinat+ms → FTB sahibi başına TPS %'si doldurulacak.
-  Şimdilik suspects.tpsPct/estMs = null (panelde "—").
+- **TPS PAYI = Observable (ÇÖZÜLDÜ ✅):** Observable SPA'sının veri endpoint'i tersine
+  mühendislikle bulundu → **`https://observable.tas.sh/v1/get/<id>`** düz JSON döner:
+  `{ data:{ entities:{dim:[…]}, blocks:{dim:[…]}, ticks }, diagnostics:{duration,modLoader,…} }`
+  her entity/block = `{ position:{x,y,z}, type, rate (ns/tick) }`.
+  - Akış: `observable run N` → URL (.../p/<id>) → `extractId` → `/v1/get/<id>` fetch →
+    `attributeProfile`: her hotspot'un koordinatı → `ftbChunks.ownerAt` → **sahip başına
+    ms/tick + %** + en pahalı koordinatlar (sahip etiketli) + en pahalı türler.
+  - `observable.js`: extractId + fetchProfile (Node global fetch). `probe.js`: tamamen
+    Observable tabanlı; eski oyuncu-census/forge/scoreboard yaklaşımları KALDIRILDI.
+  - Tarama ~25sn (20sn profil + veri) → rota fire-and-forget, panel poll'lar.
+  - Panel: sahip başına TPS payı (bar+%/ms) + en pahalı koordinatlar + türler + Observable linki.
+  - Otomatik: kritik lag'de 10dk'da bir (profil overhead'i var).
+  - Test: gerçek `8Vs5u` verisiyle doğrulandı (toplam 28.6ms/tick, item %21.9); sentetik
+    atıf testi (sahip %80/claimsiz %20, top hotspot/tür, extractId) geçti.
+  - ⚠️ FTB claim okuyucu sentetik formatla test edildi; gerçek ATM10 SNBT farklıysa
+    sahipler "claimsiz" görünür → `cat world/ftbchunks/*.snbt` örneğiyle kalibre edilecek.
 
 ## ⏳ YAPILACAKLAR
 

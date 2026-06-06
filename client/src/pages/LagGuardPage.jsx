@@ -151,15 +151,17 @@ export default function LagGuardPage() {
         onError: (e) => toast.error(e.response?.data?.error || 'İptal edilemedi'),
     });
     const runScan = useMutation({
-        mutationFn: (deep) => api.post('/lag-guard/attribution/scan', { deep }).then(r => r.data),
-        onMutate: (deep) => toast.loading(deep ? 'Derin tarama…' : 'Atıf taraması…', { id: 'attr' }),
+        mutationFn: () => api.post('/lag-guard/attribution/scan').then(r => r.data),
         onSuccess: (d) => {
-            toast.dismiss('attr');
-            qc.invalidateQueries({ queryKey: ['lagguard-attribution'] });
-            if (!d.ok) toast.error(d.note || 'Tarama yapılamadı');
-            else toast.success(`Tarama bitti — ${d.worst ? `en kötü: ${d.worst.dim} (${d.worst.mspt?.toFixed(0)}ms)` : 'boyut yok'}, ${d.suspectCount} aday`, { duration: 6000 });
+            if (d.started) {
+                toast.success('Observable profili çalışıyor (~25sn)… bitince listeye düşer', { duration: 8000 });
+                // Sonuç ~25sn sonra gelir; birkaç kez yenile
+                [8000, 16000, 24000, 30000].forEach(ms => setTimeout(() => qc.invalidateQueries({ queryKey: ['lagguard-attribution'] }), ms));
+            } else {
+                toast(d.note || 'Zaten çalışıyor');
+            }
         },
-        onError: (e) => { toast.dismiss('attr'); toast.error(e.response?.data?.error || 'Tarama yapılamadı'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Tarama başlatılamadı'),
     });
     const clearAttr = useMutation({
         mutationFn: () => api.delete('/lag-guard/attribution').then(r => r.data),
@@ -435,15 +437,18 @@ export default function LagGuardPage() {
                     <Card title="Lag Atıf — Shadow Log"
                         action={
                             <div style={{ display: 'flex', gap: 6 }}>
-                                <button onClick={() => runScan.mutate(false)} disabled={runScan.isPending || !status?.running}
-                                    style={{ ...btnGhost, color: 'var(--accent)', opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}>Tara</button>
+                                <button onClick={() => runScan.mutate()} disabled={runScan.isPending || status?.attributionBusy || !status?.running}
+                                    style={{ ...btnGhost, color: 'var(--accent)', opacity: (runScan.isPending || status?.attributionBusy || !status?.running) ? 0.5 : 1 }}
+                                    title="Observable profili çalıştırıp lag'i sahiplere dağıtır (~25sn)">
+                                    {status?.attributionBusy ? 'Profilleniyor…' : 'Tara (Observable)'}
+                                </button>
                                 {attrLog.length > 0 && <button onClick={() => { if (confirm('Tüm shadow log silinsin mi?')) clearAttr.mutate(); }} style={{ ...btnGhost, color: A.err }}>Temizle</button>}
                             </div>
                         }>
                         <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                            Lag anında her oyuncunun konumu + durduğu chunk'ın <strong style={{ color: A.dim }}>FTB claim sahibi</strong> çıkarılır.
-                            <strong style={{ color: A.dim }}> TPS payı</strong> (kim ne kadar lag yapıyor) Observable profil verisi bağlanınca dolacak.
-                            <strong style={{ color: A.warn }}> Ceza uygulanmaz</strong> — yalnızca kayıt. Kritik lag'de 5dk'da bir otomatik.
+                            <strong style={{ color: A.dim }}>Observable</strong> profili çalıştırılır; her laggy entity/block'un koordinatı + maliyeti (ms/tick)
+                            <strong style={{ color: A.dim }}> FTB Chunks claim sahibine</strong> dağıtılır → <strong style={{ color: A.dim }}>sahip başına TPS payı</strong>.
+                            <strong style={{ color: A.warn }}> Ceza uygulanmaz</strong> — yalnızca kayıt. Kritik lag'de 10dk'da bir otomatik.
                         </p>
                     </Card>
 
@@ -518,68 +523,79 @@ function Empty({ text = 'Veri bekleniyor…' }) {
 
 function AttributionCard({ entry }) {
     const ev = entry.evidence || {};
-    const suspects = ev.suspects || [];
-    const errNotes = (ev.notes || []).filter(n => /hata|alınamadı|parse|kayıt/i.test(n));
+    const owners = ev.owners || [];
+    const top = ev.top || [];
+    const types = ev.types || [];
+    const errNotes = (ev.notes || []).filter(Boolean);
     const modeColor = entry.mode === 'auto' ? A.ok : entry.mode === 'manual' ? 'var(--accent)' : A.warn;
+    const failed = ev.ok === false;
     return (
         <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>{new Date(entry.ts).toLocaleString('tr-TR')}</span>
                 <Pill color={modeColor}>{entry.mode}</Pill>
                 {entry.mspt_at != null ? <Pill color={A.faint}>MSPT {Math.round(entry.mspt_at)}</Pill> : null}
-                <Pill color={suspects.length ? 'var(--accent)' : A.faint}>{entry.suspect_count} oyuncu</Pill>
+                {!failed && ev.totalMs != null ? <Pill color={ev.totalMs > 25 ? A.err : A.warn}>profil {ev.totalMs}ms/tick</Pill> : null}
+                {!failed ? <Pill color={owners.length ? 'var(--accent)' : A.faint}>{owners.length} sahip</Pill> : <Pill color={A.err}>başarısız</Pill>}
                 {ev.ftb?.parsed ? <Pill color={A.ok}>FTB {ev.ftb.parsed} claim</Pill> : null}
+                {ev.url ? <a href={ev.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontFamily: A.mono, color: 'var(--accent)' }}>↗ Observable</a> : null}
             </div>
 
-            {suspects.length > 0 && (
-                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column' }}>
-                    {/* başlık */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr 1.3fr 1.3fr', gap: 10, padding: '0 0 6px', borderBottom: `1px solid ${A.border}` }}>
-                        <Cap>Oyuncu</Cap><Cap>TPS payı</Cap><Cap>Konum</Cap><Cap>FTB sahibi</Cap>
+            {/* Sahip başına TPS payı */}
+            {owners.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                    <Cap>Sahip başına TPS payı</Cap>
+                    <div style={{ marginTop: 4 }}>
+                        {owners.slice(0, 12).map((o, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 3fr 0.9fr', gap: 10, alignItems: 'center', padding: '5px 0', borderBottom: i !== Math.min(owners.length, 12) - 1 ? `1px solid ${A.border}` : 'none' }}>
+                                <span style={{ fontWeight: 600, fontSize: 13, color: /claimsiz/.test(o.owner) ? A.faint : A.text }}>{o.owner}</span>
+                                <div style={{ height: 6, background: A.bg, borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{ width: `${Math.min(100, o.pct)}%`, height: '100%', background: o.pct > 25 ? A.err : o.pct > 10 ? A.warn : 'var(--accent)' }} />
+                                </div>
+                                <span style={{ fontFamily: A.mono, fontSize: 12, textAlign: 'right', color: o.pct > 25 ? A.err : A.text }}>%{o.pct} · {o.ms}ms</span>
+                            </div>
+                        ))}
                     </div>
-                    {suspects.map((s, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr 1.3fr 1.3fr', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: i !== suspects.length - 1 ? `1px solid ${A.border}` : 'none' }}>
-                            <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
-                            <span style={{ fontFamily: A.mono, fontSize: 12, color: s.tpsPct != null ? (s.tpsPct > 20 ? A.err : A.text) : A.faint }}>
-                                {s.tpsPct != null ? `%${s.tpsPct}${s.estMs != null ? ` · ${s.estMs}ms` : ''}` : '—'}
+                </div>
+            )}
+
+            {/* En pahalı koordinatlar */}
+            {top.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                    <Cap>En pahalı koordinatlar</Cap>
+                    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {top.slice(0, 8).map((h, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, flexWrap: 'wrap' }}>
+                                <span style={{ fontFamily: A.mono, color: h.ms > 0.5 ? A.err : A.text, minWidth: 64 }}>{h.ms}ms</span>
+                                <span style={{ color: A.faint }}>{h.kind}</span>
+                                <span style={{ color: A.dim }}>{h.type}</span>
+                                <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{h.dim?.replace('minecraft:', '')} {h.pos?.join(' ')}</code>
+                                {h.owner ? <span style={{ color: 'var(--accent)', fontSize: 11 }}>→ {h.owner}</span> : <span style={{ color: A.faint, fontSize: 10 }}>→ claimsiz</span>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* En pahalı türler */}
+            {types.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                    <Cap>En pahalı türler</Cap>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        {types.slice(0, 8).map((t, i) => (
+                            <span key={i} style={{ fontSize: 11, fontFamily: A.mono, color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '2px 6px' }}>
+                                {t.type.replace('minecraft:', '')} <strong style={{ color: t.pct > 15 ? A.err : A.text }}>%{t.pct}</strong>
                             </span>
-                            <code style={{ fontSize: 11, color: A.dim, fontFamily: A.mono }}>{s.pos ? s.pos.join(' ') : '—'}</code>
-                            <span style={{ fontSize: 12, color: s.ftbOwner ? A.text : A.faint }}>{s.ftbOwner || '—'}</span>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             )}
 
             {errNotes.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: 11, color: A.faint, fontFamily: A.mono }}>
+                <div style={{ marginTop: 10, fontSize: 11, color: failed ? A.err : A.faint, fontFamily: A.mono }}>
                     {errNotes.map((n, i) => <div key={i}>· {n}</div>)}
                 </div>
             )}
-
-            {ev.rawData && (
-                <div style={{ marginTop: 10 }}>
-                    <Cap style={{ color: A.warn }}>Ham çıktı (parse edilemedi — kalibrasyon için)</Cap>
-                    <RawBlock title="data get entity →" lines={ev.rawData} />
-                </div>
-            )}
-        </div>
-    );
-}
-
-function RawBlock({ title, lines }) {
-    const text = (lines || []).join('\n');
-    return (
-        <div style={{ marginTop: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 10, fontFamily: A.mono, color: A.faint }}>{title}</span>
-                <button onClick={() => { try { navigator.clipboard.writeText(text); toast.success('Kopyalandı'); } catch { /* ignore */ } }}
-                    style={{ ...btnGhost, padding: '2px 8px', fontSize: 10 }}>Kopyala</button>
-            </div>
-            <pre style={{
-                margin: '4px 0 0', maxHeight: 160, overflow: 'auto',
-                background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3,
-                padding: 8, fontSize: 10, fontFamily: A.mono, color: A.dim, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-            }}>{text || '(boş)'}</pre>
         </div>
     );
 }
