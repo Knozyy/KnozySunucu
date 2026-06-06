@@ -7,25 +7,11 @@ import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
 import { I } from '@/hoodoo/icons';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
 import { useAuth } from '@/context/AuthContext';
+import { ASSIGNABLE, PERMISSIONS, PAGE_BY_KEY } from '@/config/pages';
 
-// ── Tüm izin verilebilir sayfalar ────────────────────────────────────────
-const ALL_PAGES = [
-    { key: 'dashboard',   label: 'Ana Panel',    emoji: '🏠' },
-    { key: 'console',     label: 'Konsol',       emoji: '💻' },
-    { key: 'terminal',    label: 'Terminal',      emoji: '⌨️' },
-    { key: 'players',     label: 'Oyuncular',    emoji: '👥' },
-    { key: 'worlds',      label: 'Dünyalar',     emoji: '🌍' },
-    { key: 'files',       label: 'Dosyalar',     emoji: '📁' },
-    { key: 'modpacks',    label: 'Modpackler',   emoji: '📦' },
-    { key: 'mods',        label: 'Modlar',       emoji: '🧩' },
-    { key: 'logs',        label: 'Loglar',       emoji: '📋' },
-    { key: 'performance', label: 'Performans',   emoji: '📊' },
-    { key: 'scheduler',   label: 'Görevler',     emoji: '⏰' },
-    { key: 'automation',  label: 'Otomasyon',    emoji: '🤖' },
-    { key: 'backup',      label: 'Yedekleme',    emoji: '💾' },
-    { key: 'discord',     label: 'Discord Bot',  emoji: '🎮' },
-    { key: 'server',      label: 'Sunucu Bilgi', emoji: '🖥️' },
-];
+// İzin verilebilir sayfalar + eylem izinleri TEK KAYNAK'tan (config/pages.js) gelir.
+// Yeni sayfa eklersen orada bir satır → burada otomatik çıkar (elle eklemek yok).
+const ALL_PAGES = ASSIGNABLE;
 
 const PRESET_COLORS = ['#a78bfa', '#4ade80', '#fbbf24', '#f87171', '#60a5fa', '#8b5cf6', '#ec4899', '#14b8a6'];
 
@@ -937,7 +923,7 @@ function CategoriesPanel() {
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                     {pages.length === 0 ? (
                                         <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>Hiçbir sayfa seçilmedi</span>
-                                    ) : ALL_PAGES.filter(p => pages.includes(p.key)).map(p => (
+                                    ) : pages.map(k => PAGE_BY_KEY[k]).filter(Boolean).map(p => (
                                         <span key={p.key} style={{
                                             display: 'inline-flex', alignItems: 'center', gap: 4,
                                             fontFamily: A.mono, fontSize: 10,
@@ -1026,30 +1012,47 @@ function CategoryModal({ initial, onClose, onSaved }) {
                         />
                     </div>
                 </div>
-                <div>
-                    <Cap style={{ display: 'block', marginBottom: 8 }}>
-                        Erişilebilir Sayfalar ({pages.length}/{ALL_PAGES.length})
-                    </Cap>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                        {ALL_PAGES.map(page => {
-                            const sel = pages.includes(page.key);
-                            return (
-                                <button key={page.key} onClick={() => togglePage(page.key)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 6,
-                                        padding: '6px 8px', borderRadius: 2, cursor: 'pointer',
-                                        border: `1px solid ${sel ? color + '66' : A.border}`,
-                                        background: sel ? color + '22' : 'transparent',
-                                        color: sel ? color : A.faint, fontSize: 11,
-                                        fontFamily: A.sans, textAlign: 'left',
-                                    }}>
-                                    {sel ? <I.Check size={10} style={{ flexShrink: 0 }}/> : <span style={{ fontSize: 12 }}>{page.emoji}</span>}
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.label}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
+                {(() => {
+                    const GrantBtn = (page) => {
+                        const sel = pages.includes(page.key);
+                        return (
+                            <button key={page.key} onClick={() => togglePage(page.key)} title={page.desc || ''}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 8px', borderRadius: 2, cursor: 'pointer',
+                                    border: `1px solid ${sel ? color + '66' : A.border}`,
+                                    background: sel ? color + '22' : 'transparent',
+                                    color: sel ? color : A.faint, fontSize: 11,
+                                    fontFamily: A.sans, textAlign: 'left',
+                                }}>
+                                {sel ? <I.Check size={10} style={{ flexShrink: 0 }}/> : <span style={{ fontSize: 12 }}>{page.emoji}</span>}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.label}</span>
+                            </button>
+                        );
+                    };
+                    return (
+                        <>
+                            <div>
+                                <Cap style={{ display: 'block', marginBottom: 8 }}>
+                                    Erişilebilir Sayfalar ({pages.filter(k => ALL_PAGES.some(p => p.key === k)).length}/{ALL_PAGES.length})
+                                </Cap>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                                    {ALL_PAGES.map(GrantBtn)}
+                                </div>
+                            </div>
+                            <div>
+                                <Cap style={{ display: 'block', margin: '14px 0 8px' }}>Ek Yetkiler</Cap>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+                                    {PERMISSIONS.map(GrantBtn)}
+                                </div>
+                                <p style={{ fontSize: 10.5, color: A.faint, margin: '6px 0 0' }}>
+                                    <strong style={{ color: A.dim }}>Konsol Komut Yazma</strong>: işaretli kategorideki kullanıcılar konsola komut gönderebilir
+                                    (admin olmadan). Ayrıca Konsol sayfası erişimi de gerekir.
+                                </p>
+                            </div>
+                        </>
+                    );
+                })()}
             </div>
             <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
                 <button onClick={onClose} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>

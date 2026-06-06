@@ -18,6 +18,21 @@ function verifyToken(req) {
     catch { return null; }
 }
 
+// Konsola komut gönderebilir mi? admin VEYA kategorisinde 'console_command' izni.
+function canSendCommand(user) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    try {
+        const { getDb } = require('../db/database');
+        const db = getDb();
+        const u = db.prepare('SELECT category_id FROM users WHERE id = ?').get(user.id);
+        if (!u || !u.category_id) return false;
+        const cat = db.prepare('SELECT pages FROM permission_categories WHERE id = ?').get(u.category_id);
+        const pages = cat ? JSON.parse(cat.pages || '[]') : [];
+        return Array.isArray(pages) && pages.includes('console_command');
+    } catch { return false; }
+}
+
 // ─── Sunucu instance'ından gerçek screen/log yollarını çöz ────────────────
 // Birincil singleton constructor'da `knozy-mc` (numarasız) olarak kilitleniyor;
 // id'ye göre tahmin yürütmek yerine instance'ın kendi _screenName/_logFile'ını kullan.
@@ -163,15 +178,15 @@ function handleConsole(ws, serverId, user) {
         }
     } catch { /* ignore */ }
 
-    // 7) Komut alma — sadece admin konsola komut gönderebilir
+    // 7) Komut alma — admin VEYA 'console_command' izni olan kullanıcı
     ws.on('message', (message) => {
         try {
             const parsed = JSON.parse(message.toString());
             if (parsed.type !== 'command' || !parsed.data) return;
-            // Yetki denetimi: admin olmayan kullanıcılar komut çalıştıramaz
-            if (!user || user.role !== 'admin') {
+            // Yetki denetimi: komut izni yoksa engelle
+            if (!canSendCommand(user)) {
                 if (ws.readyState === WebSocket.OPEN)
-                    ws.send(JSON.stringify({ type: 'log', data: '[Sistem] Komut göndermek için admin yetkisi gerekli.' }));
+                    ws.send(JSON.stringify({ type: 'log', data: '[Sistem] Konsola komut gönderme yetkiniz yok.' }));
                 return;
             }
             const cmd = parsed.data.trim();

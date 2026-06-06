@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
@@ -7,6 +7,7 @@ import api from '@/services/api';
 import { A, btnGhost } from '@/hoodoo/tokens';
 import { Cap, Dot, NavItem, TickStat } from '@/hoodoo/primitives';
 import { I } from '@/hoodoo/icons';
+import { PAGES } from '@/config/pages';
 
 // ── Panel yeniden başlama banner'ı ──────────────────────────────────────
 function useUpdateBanner() {
@@ -58,30 +59,20 @@ function usePrimaryServer() {
         processStats: { cpuPercent: 0, memoryMB: 0 }, tps: null, maxRamGB: 4 };
 }
 
-// ── Nav haritası ────────────────────────────────────────────────────────
-const NAV = [
-    { id: 'overview',  path: '/',          icon: I.Dashboard, label: 'Dashboard' },
-    { id: 'console',   path: '/console',   icon: I.Console,   label: 'Konsol', badge: 'LIVE' },
-    { id: 'terminal',  path: '/terminal',  icon: I.Terminal,  label: 'Terminal' },
-    { id: 'worlds',    path: '/worlds',    icon: I.World,     label: 'Dünyalar' },
-    { id: 'files',     path: '/files',     icon: I.Folder,    label: 'Dosyalar' },
-    { id: 'modpacks',  path: '/modpacks',  icon: I.Cube,      label: 'Modpackler' },
-    { id: 'mods',      path: '/mods',      icon: I.Stack,     label: 'Modlar' },
-    { id: 'players',   path: '/players',   icon: I.Users,     label: 'Oyuncular' },
-    { id: 'scheduler', path: '/scheduler', icon: I.Clock,     label: 'Zamanlayıcı' },
-    { id: 'backup',    path: '/backup',    icon: I.Archive,   label: 'Yedek' },
-    { id: 'discord',   path: '/discord',   icon: I.Chat,      label: 'Discord Bot' },
-    { id: 'lagguard',  path: '/lag-guard', icon: I.Signal,    label: 'Lag Koruması' },
-    { id: 'servers',   path: '/servers',   icon: I.Server,    label: 'Sunucular' },
-    { id: 'settings',  path: '/settings',  icon: I.Cog,       label: 'Ayarlar' },
-];
+// Nav + erişim, tek kaynaktan (config/pages.js) gelir.
+// Bir sayfa görünür mü? → always: herkes · adminOnly: yalnız admin · diğer: canAccess(key)
+function pageVisible(page, user, canAccess) {
+    if (page.always) return true;
+    if (page.adminOnly) return user?.role === 'admin';
+    return canAccess(page.key);
+}
 
 export default function MainLayout() {
     const showBanner = useUpdateBanner();
     const navigate = useNavigate();
     const location = useLocation();
     const qc = useQueryClient();
-    const { user, logout } = useAuth();
+    const { user, logout, canAccess } = useAuth();
     const server = usePrimaryServer();
     const clock = useClock();
     const [collapsed, setCollapsed] = useState(false);
@@ -117,9 +108,14 @@ export default function MainLayout() {
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
 
-    const currentLabel = NAV.find(n =>
+    // Görünür sayfalar (izne göre) + mevcut rota erişim denetimi
+    const visiblePages = PAGES.filter(p => pageVisible(p, user, canAccess));
+    const currentPage = PAGES.find(n =>
         n.path === '/' ? location.pathname === '/' : location.pathname.startsWith(n.path)
-    )?.label || 'Panel';
+    );
+    const currentLabel = currentPage?.label || 'Panel';
+    // İzinsiz bir rotaya doğrudan URL ile gelinirse ana panele yönlendir
+    const accessDenied = currentPage && !pageVisible(currentPage, user, canAccess);
 
     return (
         <div style={{
@@ -238,8 +234,8 @@ export default function MainLayout() {
                     display: 'flex', flexDirection: 'column', gap: 1,
                     overflowY: 'auto',
                 }}>
-                    {NAV.map(n => (
-                        <NavItem key={n.id}
+                    {visiblePages.map(n => (
+                        <NavItem key={n.key}
                             icon={n.icon}
                             label={n.label}
                             badge={n.badge}
@@ -399,9 +395,9 @@ export default function MainLayout() {
                     </div>
                 </div>
 
-                {/* Page content */}
+                {/* Page content — izinsiz rotada ana panele yönlendir */}
                 <main style={{ flex: 1, padding: 16, minWidth: 0, overflow: 'visible' }}>
-                    <Outlet/>
+                    {accessDenied ? <Navigate to="/" replace /> : <Outlet/>}
                 </main>
             </div>
         </div>

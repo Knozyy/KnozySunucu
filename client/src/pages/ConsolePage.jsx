@@ -29,7 +29,9 @@ function logLevel(line) {
 
 // ── Ana sayfa ───────────────────────────────────────────────────────────
 export default function ConsolePage() {
-    const { token } = useAuth();
+    const { token, user, canAccess } = useAuth();
+    // Konsola komut yazma izni: admin VEYA kategoride 'console_command'
+    const canCommand = user?.role === 'admin' || canAccess('console_command');
     const [selectedServerId, setSelectedServerId] = useState(null);
 
     const { data: serversData } = useQuery({
@@ -83,7 +85,7 @@ export default function ConsolePage() {
     // ── komut gönderme ──────────────────────────────────────────────────
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!command.trim()) return;
+        if (!command.trim() || !canCommand) return;
         sendCommand(command.trim());
         setCommandHistory(prev => [command.trim(), ...prev.slice(0, 49)]);
         setCommand('');
@@ -401,24 +403,26 @@ export default function ConsolePage() {
                             value={command}
                             onChange={e => setCommand(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={canSend
-                                ? 'Komut gir... (↑↓ geçmiş)'
-                                : 'Sunucu çalışmıyor'}
-                            disabled={!canSend}
+                            placeholder={!canCommand
+                                ? 'Konsola komut yazma yetkiniz yok'
+                                : canSend
+                                    ? 'Komut gir... (↑↓ geçmiş)'
+                                    : 'Sunucu çalışmıyor'}
+                            disabled={!canSend || !canCommand}
                             style={{
                                 flex: 1, background: 'transparent', border: 'none',
                                 outline: 'none', fontFamily: A.mono, fontSize: 12,
                                 color: A.text, padding: '11px 0',
-                                opacity: canSend ? 1 : 0.4,
+                                opacity: (canSend && canCommand) ? 1 : 0.4,
                             }}
                         />
                         <button type="submit"
-                            disabled={!command.trim() || !canSend}
+                            disabled={!command.trim() || !canSend || !canCommand}
                             style={{
                                 ...btnPrimary, borderRadius: 0, padding: '10px 16px',
                                 fontSize: 11, flexShrink: 0, letterSpacing: '0.08em',
-                                opacity: (!command.trim() || !canSend) ? 0.4 : 1,
-                                cursor: (!command.trim() || !canSend) ? 'not-allowed' : 'pointer',
+                                opacity: (!command.trim() || !canSend || !canCommand) ? 0.4 : 1,
+                                cursor: (!command.trim() || !canSend || !canCommand) ? 'not-allowed' : 'pointer',
                                 display: 'flex', alignItems: 'center', gap: 6,
                             }}>
                             <I.Send size={12}/> GÖNDER
