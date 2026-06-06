@@ -84,14 +84,23 @@ Modüler `server/services/lagGuard/` altyapısı kuruldu (yalnızca izleme, aksi
   notlar) + "Tara" / "Derin Tara" / "Temizle".
 - Smoke test (sahte forge-tps/entity-list/data-get çıktısı): worst-dim, census, derin
   filtre, UUID çözümü, shadow kaydı, FTB graceful — hepsi geçti.
-- ⚠️ **CANLI BULGU (kalibre edildi):** ATM10 To the Sky = **VANILLA komut seti** (1.21,
-  `tick query`). `forge tps` / `forge entity list` YOK → "Unknown command" spam'liyordu.
-  Probe vanilla-dostu yapıldı: olmayan komut GÖNDERİLMEZ; loader `mc._tpsCmdActive`'ten
-  tespit edilir. **Vanilla'da** per-boyut TPS ve entity list yok → boyut **oyuncu
-  yoğunluğundan** (`data get entity <n> Dimension`) türetilir, konum (`Pos`) + FTB claim
-  ile zenginleşir. **Forge/NeoForge'da** eski yol (per-dim TPS + entity list) korunur.
-  Tüm `data get` komutları tek pencerede gönderilip isimle eşlenir (hızlı). FTB chunk→claim
-  TAM eşlemesi hâlâ yok (owner UUID listesi var).
+- ⚠️ **CANLI BULGU:** ATM10 To the Sky = **VANILLA komut seti** (1.21, `tick query`).
+  `forge tps`/`forge entity list` YOK (spam'liyordu) → kaldırıldı. Probe artık sadece
+  `data get entity <n> Dimension|Pos` (vanilla) gönderir, tek pencerede isimle eşler.
+- **FTB Chunks reader yazıldı** (`attribution/ftbChunks.js`): `world/ftbchunks/<takım>.snbt`
+  claim'lerini BLOK-kapsamlı parse eder (entry sızması yok, per-entry + grouped-by-dim
+  düzeni, çoklu alan-adı fallback), `world/ftbteams/` + usercache ile sahip ismini çözer.
+  `ownerAt(serverPath, dim, blockX, blockZ)` → koordinatın claim sahibi. Sentetik SNBT
+  testi (solo/party/boyut-duyarlı/null) geçti. **Canlı doğrulama:** gerçek ATM10 SNBT
+  formatı farklıysa `cat world/ftbchunks/*.snbt` örneğiyle kalibre edilecek.
+- **Panel sadeleştirildi** (kullanıcı isteği): boyut dağılımı/UUID/boyut-etiketi/vanilla
+  notları KALDIRILDI. Tek tablo: Oyuncu · **TPS payı** · Konum · **FTB sahibi**.
+- **TPS PAYI = Observable** (karar): koordinat bazlı tick maliyeti için Observable profil
+  verisi kullanılacak (spark sampler'dır, koordinat vermez → uygun değil; Observable
+  tile-entity'leri konuma göre profilliyor). Observable diske dosya YAZMIYOR (find ile
+  doğrulandı) → veri observable.tas.sh'de. **BEKLEYEN:** gerçek `observable run` sonuç
+  URL'si → veri endpoint'i çözülüp koordinat+ms → FTB sahibi başına TPS %'si doldurulacak.
+  Şimdilik suspects.tpsPct/estMs = null (panelde "—").
 
 ## ⏳ YAPILACAKLAR
 

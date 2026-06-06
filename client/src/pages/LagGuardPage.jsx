@@ -436,16 +436,13 @@ export default function LagGuardPage() {
                         action={
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <button onClick={() => runScan.mutate(false)} disabled={runScan.isPending || !status?.running}
-                                    style={{ ...btnGhost, opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}>Tara</button>
-                                <button onClick={() => runScan.mutate(true)} disabled={runScan.isPending || !status?.running}
-                                    style={{ ...btnGhost, color: 'var(--accent)', opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}
-                                    title="Her oyuncunun boyutunu sorgular — daha kesin ama yavaş">Derin Tara</button>
+                                    style={{ ...btnGhost, color: 'var(--accent)', opacity: (runScan.isPending || !status?.running) ? 0.5 : 1 }}>Tara</button>
                                 {attrLog.length > 0 && <button onClick={() => { if (confirm('Tüm shadow log silinsin mi?')) clearAttr.mutate(); }} style={{ ...btnGhost, color: A.err }}>Temizle</button>}
                             </div>
                         }>
                         <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                            Lag anında <strong style={{ color: A.dim }}>kim/ne</strong> sorusuna en iyi-çaba yanıt. <strong style={{ color: A.dim }}>Forge/NeoForge</strong>'da:
-                            en kötü boyut + entity yığını. <strong style={{ color: A.dim }}>Vanilla</strong>'da (tick query): boyut, oyuncu yoğunluğundan; konum (<code style={{ fontFamily: A.mono }}>data get entity</code>) + FTB claim ile.
+                            Lag anında her oyuncunun konumu + durduğu chunk'ın <strong style={{ color: A.dim }}>FTB claim sahibi</strong> çıkarılır.
+                            <strong style={{ color: A.dim }}> TPS payı</strong> (kim ne kadar lag yapıyor) Observable profil verisi bağlanınca dolacak.
                             <strong style={{ color: A.warn }}> Ceza uygulanmaz</strong> — yalnızca kayıt. Kritik lag'de 5dk'da bir otomatik.
                         </p>
                     </Card>
@@ -522,82 +519,47 @@ function Empty({ text = 'Veri bekleniyor…' }) {
 function AttributionCard({ entry }) {
     const ev = entry.evidence || {};
     const suspects = ev.suspects || [];
-    const entities = ev.entities || [];
-    const notes = ev.notes || [];
-    const dimDist = ev.dimDist || [];
+    const errNotes = (ev.notes || []).filter(n => /hata|alınamadı|parse|kayıt/i.test(n));
     const modeColor = entry.mode === 'auto' ? A.ok : entry.mode === 'manual' ? 'var(--accent)' : A.warn;
-    const worstPlayers = dimDist.find(dd => dd.dim === entry.worst_dim)?.players;
     return (
         <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>{new Date(entry.ts).toLocaleString('tr-TR')}</span>
                 <Pill color={modeColor}>{entry.mode}</Pill>
-                {entry.worst_dim
-                    ? <Pill color={A.warn}>
-                        {ev.worstFrom === 'oyuncu-yogunlugu' ? 'en yoğun' : 'en kötü'}: {entry.worst_dim.replace('minecraft:', '')}
-                        {entry.worst_dim_mspt != null ? ` · ${Math.round(entry.worst_dim_mspt)}ms` : worstPlayers != null ? ` · ${worstPlayers} oyuncu` : ''}
-                      </Pill>
-                    : <Pill color={A.faint}>boyut yok</Pill>}
                 {entry.mspt_at != null ? <Pill color={A.faint}>MSPT {Math.round(entry.mspt_at)}</Pill> : null}
-                <Pill color={suspects.length ? 'var(--accent)' : A.faint}>{entry.suspect_count} aday</Pill>
-                {ev.deep ? <Pill color={A.ok}>derin</Pill> : null}
-                {ev.isForge === false ? <Pill color={A.faint}>vanilla</Pill> : null}
+                <Pill color={suspects.length ? 'var(--accent)' : A.faint}>{entry.suspect_count} oyuncu</Pill>
+                {ev.ftb?.parsed ? <Pill color={A.ok}>FTB {ev.ftb.parsed} claim</Pill> : null}
             </div>
 
-            {dimDist.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                    <Cap>Boyut dağılımı (online)</Cap>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                        {dimDist.map((dd, i) => (
-                            <span key={i} style={{ fontSize: 11, fontFamily: A.mono, color: dd.dim === entry.worst_dim ? A.warn : A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '2px 6px' }}>
-                                {dd.dim.replace('minecraft:', '')} <strong>{dd.players}</strong>
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-
             {suspects.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                    <Cap>Adaylar</Cap>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                        {suspects.map((s, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 600 }}>{s.name}</span>
-                                {s.dimension ? <span style={{ fontFamily: A.mono, fontSize: 11, color: A.dim }}>{s.dimension.replace('minecraft:', '')}</span> : null}
-                                {s.pos ? <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{s.pos.join(' ')}</code> : null}
-                                <span style={{ fontSize: 11, color: A.faint }}>· {s.reason}</span>
-                                {s.uuid ? <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{s.uuid.slice(0, 8)}…</code> : <span style={{ fontSize: 10, color: A.faint }}>(UUID yok)</span>}
-                            </div>
-                        ))}
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column' }}>
+                    {/* başlık */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr 1.3fr 1.3fr', gap: 10, padding: '0 0 6px', borderBottom: `1px solid ${A.border}` }}>
+                        <Cap>Oyuncu</Cap><Cap>TPS payı</Cap><Cap>Konum</Cap><Cap>FTB sahibi</Cap>
                     </div>
-                </div>
-            )}
-
-            {entities.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                    <Cap>Entity yığını (top)</Cap>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                        {entities.slice(0, 8).map((e, i) => (
-                            <span key={i} style={{ fontSize: 11, fontFamily: A.mono, color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '2px 6px' }}>
-                                {e.type.replace('minecraft:', '')} <strong style={{ color: e.count > 1000 ? A.err : A.text }}>{e.count}</strong>
+                    {suspects.map((s, i) => (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr 1.3fr 1.3fr', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: i !== suspects.length - 1 ? `1px solid ${A.border}` : 'none' }}>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+                            <span style={{ fontFamily: A.mono, fontSize: 12, color: s.tpsPct != null ? (s.tpsPct > 20 ? A.err : A.text) : A.faint }}>
+                                {s.tpsPct != null ? `%${s.tpsPct}${s.estMs != null ? ` · ${s.estMs}ms` : ''}` : '—'}
                             </span>
-                        ))}
-                    </div>
+                            <code style={{ fontSize: 11, color: A.dim, fontFamily: A.mono }}>{s.pos ? s.pos.join(' ') : '—'}</code>
+                            <span style={{ fontSize: 12, color: s.ftbOwner ? A.text : A.faint }}>{s.ftbOwner || '—'}</span>
+                        </div>
+                    ))}
                 </div>
             )}
 
-            {notes.length > 0 && (
+            {errNotes.length > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11, color: A.faint, fontFamily: A.mono }}>
-                    {notes.map((n, i) => <div key={i}>· {n}</div>)}
+                    {errNotes.map((n, i) => <div key={i}>· {n}</div>)}
                 </div>
             )}
 
-            {(ev.rawTps || ev.rawEnt) && (
+            {ev.rawData && (
                 <div style={{ marginTop: 10 }}>
                     <Cap style={{ color: A.warn }}>Ham çıktı (parse edilemedi — kalibrasyon için)</Cap>
-                    {ev.rawTps && <RawBlock title={`${ev.tpsCmd || 'tps'} →`} lines={ev.rawTps} />}
-                    {ev.rawEnt && <RawBlock title={`${ev.entCmd || 'entity list'} →`} lines={ev.rawEnt} />}
+                    <RawBlock title="data get entity →" lines={ev.rawData} />
                 </div>
             )}
         </div>
