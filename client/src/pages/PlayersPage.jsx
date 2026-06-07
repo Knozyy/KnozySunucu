@@ -733,7 +733,6 @@ function PlayerProfileModal({ username, onClose }) {
 
     const tabs = [
         { id: 'overview',  label: 'GENEL' },
-        { id: 'inventory', label: 'ENVANTER' },
         { id: 'sessions',  label: 'OTURUMLAR' },
         { id: 'manage',    label: 'YÖNETİM' },
     ];
@@ -805,8 +804,6 @@ function PlayerProfileModal({ username, onClose }) {
                         </div>
                     ) : tab === 'overview' ? (
                         <ProfileOverview profile={profile}/>
-                    ) : tab === 'inventory' ? (
-                        <ProfileInventory username={username}/>
                     ) : tab === 'sessions' ? (
                         <ProfileSessions sessions={profile?.sessions || []}/>
                     ) : (
@@ -1006,136 +1003,6 @@ function ProfileNotes({ notes, note, setNote, onAdd, onDelete, adding }) {
                 ))
             )}
         </div>
-    );
-}
-
-// ── Envanter sekmesi ──────────────────────────────────────────────────────────
-
-function ProfileInventory({ username }) {
-    const qc = useQueryClient();
-    const [refreshing, setRefreshing] = useState(false);
-    const { data, isLoading } = useQuery({
-        queryKey: ['player-inventory', username],
-        queryFn: () => apiClient.get(`/players/profile/${encodeURIComponent(username)}/inventory`).then(r => r.data),
-    });
-
-    // Canlı yenile: sunucuya save-all flush ettirip güncel playerdata'yı çeker
-    const refresh = async () => {
-        setRefreshing(true);
-        try {
-            const fresh = await apiClient.get(`/players/profile/${encodeURIComponent(username)}/inventory?live=1`).then(r => r.data);
-            qc.setQueryData(['player-inventory', username], fresh);
-            toast.success('Veriler canlı güncellendi');
-        } catch (e) {
-            toast.error(e.response?.data?.error || 'Güncellenemedi');
-        } finally { setRefreshing(false); }
-    };
-
-    const refreshBtn = (
-        <button onClick={refresh} disabled={refreshing} title="Oyuncunun anlık verilerini çek (save-all)" style={{
-            ...btnGhost, padding: '4px 10px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 6,
-            opacity: refreshing ? 0.5 : 1, cursor: refreshing ? 'default' : 'pointer',
-        }}>
-            {refreshing ? <Spinner size={11}/> : <I.Restart size={12}/>} YENİLE
-        </button>
-    );
-
-    if (isLoading) return <div style={{ textAlign: 'center', padding: 32 }}><Spinner size={20}/></div>;
-
-    if (!data?.found) return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{refreshBtn}</div>
-            <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
-                Envanter verisi yok ({data?.reason === 'uuid_yok' ? 'oyuncu hiç girmemiş' : 'henüz diske kaydedilmemiş — YENİLE deneyin'})
-            </div>
-        </div>
-    );
-
-    const hotbar = (data.inventory || []).filter(i => i.slot >= 0 && i.slot <= 8);
-    const main = (data.inventory || []).filter(i => i.slot >= 9 && i.slot <= 35);
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Durum çubuğu + canlı yenile */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ flex: 1, display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: A.mono, fontSize: 11, color: A.dim }}>
-                    <span>❤ {data.health != null ? data.health.toFixed(1) : '—'}</span>
-                    <span>🍗 {data.foodLevel ?? '—'}</span>
-                    <span>XP {data.xpLevel ?? '—'}</span>
-                    <span>{(data.dimension || '').replace('minecraft:', '') || '—'}</span>
-                    {data.pos && <span>{Math.round(data.pos.x)}, {Math.round(data.pos.y)}, {Math.round(data.pos.z)}</span>}
-                </div>
-                {refreshBtn}
-            </div>
-            <Cap>Zırh & El</Cap>
-            <InvGrid items={[data.armor?.head, data.armor?.chest, data.armor?.legs, data.armor?.feet, data.offhand]} cols={5}/>
-            <Cap>Hotbar</Cap>
-            <InvGrid items={fillSlots(hotbar, 0, 8)} cols={9}/>
-            <Cap>Envanter</Cap>
-            <InvGrid items={fillSlots(main, 9, 35)} cols={9}/>
-        </div>
-    );
-}
-
-// slot aralığını boş hücrelerle doldur (görsel ızgara için)
-function fillSlots(items, from, to) {
-    const map = new Map(items.map(i => [i.slot, i]));
-    const out = [];
-    for (let s = from; s <= to; s++) out.push(map.get(s) || null);
-    return out;
-}
-
-function InvGrid({ items, cols }) {
-    return (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 4 }}>
-            {items.map((it, i) => <InvSlot key={i} item={it}/>)}
-        </div>
-    );
-}
-
-function InvSlot({ item }) {
-    if (!item || item.id === 'minecraft:air') {
-        return <div style={{ aspectRatio: '1', background: A.bgDeeper, border: `1px solid ${A.border}`, borderRadius: 3 }}/>;
-    }
-    const shortName = item.id.split(':').pop().replace(/_/g, ' ');
-    const title = [
-        item.customName || shortName,
-        ...item.enchants.map(e => `${e.id.split(':').pop()} ${e.lvl}`),
-        item.maxDamage ? `Dayanıklılık: ${Math.round(100 * (1 - (item.damage || 0) / item.maxDamage))}%` : null,
-    ].filter(Boolean).join('\n');
-    return (
-        <div title={title} style={{
-            position: 'relative', aspectRatio: '1', background: A.bgDeeper,
-            border: `1px solid ${item.enchants.length ? 'var(--accent)' : A.border}`,
-            borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 2, overflow: 'hidden',
-        }}>
-            <ItemIcon id={item.id} fallback={shortName}/>
-            {item.count > 1 && (
-                <span style={{ position: 'absolute', bottom: 1, right: 2, fontFamily: A.mono, fontSize: 9, fontWeight: 700, color: A.text, textShadow: '0 1px 2px #000' }}>
-                    {item.count}
-                </span>
-            )}
-        </div>
-    );
-}
-
-// Item dokusu — backend'den PNG çeker; bulunamazsa item adına düşer
-function ItemIcon({ id, fallback }) {
-    const [failed, setFailed] = useState(false);
-    if (failed) {
-        return (
-            <span style={{ fontFamily: A.mono, fontSize: 7, color: A.dim, textAlign: 'center', lineHeight: 1.1, wordBreak: 'break-word' }}>
-                {fallback}
-            </span>
-        );
-    }
-    return (
-        <img
-            src={`/api/players/item-texture/${encodeURIComponent(id)}`}
-            alt={fallback}
-            onError={() => setFailed(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', imageRendering: 'pixelated' }}
-        />
     );
 }
 

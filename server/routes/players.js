@@ -8,8 +8,7 @@ const { getDb } = require('../db/database');
 const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
 const playerProfile = require('../services/playerProfile');
-const { readPlayerData } = require('../services/playerData');
-const itemTextures = require('../services/itemTextures');
+// Not: envanter/doku (playerData, itemTextures) sistemi RAM tasarrufu için devre dışı.
 
 const router = express.Router();
 
@@ -399,52 +398,14 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/players/profile/:username/inventory — playerdata NBT (envanter)
-// ?live=1 → oyuncu online ise save-all flush ile diske yazdırıp güncel veriyi okur
+// GET /api/players/profile/:username/inventory - DEAKTİF (RAM tasarrufu amacıyla kapatıldı)
 router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
-    try {
-        const username = req.params.username;
-        const inst = serverRegistry.getDefault();
-        const serverPath = inst?.getServerPath() || '';
-        const isOnline = inst?.players?.includes(username) || false;
-
-        // Canlı yenileme: playerdata.dat sunucu kaydederken yazılır; online oyuncunun
-        // anlık verisi diskte olmayabilir → save-all flush ile zorla, sonra oku.
-        const live = req.query.live === '1' || req.query.live === 'true';
-        if (live && isOnline) {
-            try {
-                inst.sendCommand('save-all flush');
-                await new Promise(r => setTimeout(r, 900));
-            } catch { /* komut gönderilemezse mevcut diski oku */ }
-        }
-
-        // UUID çöz
-        let uuid = null;
-        const cacheFile = path.join(serverPath, 'usercache.json');
-        if (fs.existsSync(cacheFile)) {
-            const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
-            uuid = cache.find(e => e.name?.toLowerCase() === username.toLowerCase())?.uuid || null;
-        }
-        if (!uuid) return res.json({ found: false, reason: 'uuid_yok' });
-        const data = await readPlayerData(serverPath, uuid);
-        if (!data) return res.json({ found: false, reason: 'playerdata_yok' });
-        res.json({ found: true, online: isOnline, savedAt: Date.now(), ...data });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ found: false, reason: 'envanter_sistemi_kapatildi' });
 });
 
-// GET /api/players/item-texture/:id — item dokusu (cache'li PNG, lazy çözüm).
-// Public: <img> Authorization header gönderemez; jenerik oyun görseli (hassas değil),
-// id sanitize edildiği için path-traversal yok.
+// GET /api/players/item-texture/:id - DEAKTİF (RAM tasarrufu amacıyla kapatıldı)
 router.get('/item-texture/:id', async (req, res) => {
-    try {
-        const inst = serverRegistry.getDefault();
-        const serverPath = inst?.getServerPath() || '';
-        const file = await itemTextures.getItemTexturePath(serverPath, req.params.id);
-        if (!file) return res.status(404).end();
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.setHeader('Content-Type', 'image/png');
-        fs.createReadStream(file).pipe(res);
-    } catch { res.status(404).end(); }
+    res.status(404).end();
 });
 
 // ── Oyuncu notları (DB global) ────────────────────────────────────────────────

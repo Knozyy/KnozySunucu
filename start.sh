@@ -10,7 +10,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 if command -v pm2 &> /dev/null; then
-    pm2 start index.js --name knozy-sunucu --env production 2>/dev/null || pm2 restart knozy-sunucu
+    pm2 start index.js --name knozy-sunucu --env production --max-memory-restart 500M --no-pmx 2>/dev/null || pm2 restart knozy-sunucu
     echo -e "${GREEN}${BOLD}✓ KnozySunucu başlatıldı (PM2)${NC}"
     echo "  Loglar: pm2 logs knozy-sunucu"
 else

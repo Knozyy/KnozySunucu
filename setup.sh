@@ -115,8 +115,12 @@ fi
 
 pm2 delete knozy-sunucu 2>/dev/null || true
 
+# 3001 portunda artık (eski/çakışan) süreç varsa temizle
+fuser -k 3001/tcp 2>/dev/null || true
+
 cd "$SCRIPT_DIR/server"
-pm2 start index.js --name knozy-sunucu --env production --max-memory-restart 512M
+# --max-memory-restart 500M: RAM sınırı · --no-pmx: AXM/izleme log spam'ini kapatır
+pm2 start index.js --name knozy-sunucu --env production --max-memory-restart 500M --no-pmx
 pm2 save --force
 pm2 startup systemd -u $(whoami) --hp $HOME 2>/dev/null || true
 cd "$SCRIPT_DIR"
