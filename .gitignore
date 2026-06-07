@@ -8,4 +8,5 @@ server/db/*.db
 server/db/*.db-shm
 server/db/*.db-wal
 server/public/
+server/cache/
 sunucular/
