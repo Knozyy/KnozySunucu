@@ -9,6 +9,7 @@ const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
 const playerProfile = require('../services/playerProfile');
 const { readPlayerData } = require('../services/playerData');
+const itemTextures = require('../services/itemTextures');
 
 const router = express.Router();
 
@@ -429,6 +430,19 @@ router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
         if (!data) return res.json({ found: false, reason: 'playerdata_yok' });
         res.json({ found: true, online: isOnline, savedAt: Date.now(), ...data });
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/players/item-texture/:id — item dokusu (cache'li PNG, lazy çözüm)
+router.get('/item-texture/:id', authMiddleware, async (req, res) => {
+    try {
+        const inst = serverRegistry.getDefault();
+        const serverPath = inst?.getServerPath() || '';
+        const file = await itemTextures.getItemTexturePath(serverPath, req.params.id);
+        if (!file) return res.status(404).end();
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Content-Type', 'image/png');
+        fs.createReadStream(file).pipe(res);
+    } catch { res.status(404).end(); }
 });
 
 // ── Oyuncu notları (DB global) ────────────────────────────────────────────────
