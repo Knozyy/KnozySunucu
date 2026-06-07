@@ -74,8 +74,12 @@ class Metrics {
         this._cantKeepUpTimes = this._cantKeepUpTimes.filter(t => t > cutoff);
     }
 
+    _isRunning() { return this._mc?.status === 'running'; }
+
     // ── DB snapshot ─────────────────────────────────────────────────────
     _snapshot() {
+        // Sunucu çalışmıyorsa bayat değeri tekrar tekrar yazma (geçmiş grafiğini bozar)
+        if (!this._isRunning()) return;
         if (this._lastTps == null) return; // henüz veri yok
         try {
             const db = getDb();
@@ -103,6 +107,8 @@ class Metrics {
 
     /** Canlı durum — panelin sık (2-3sn) sorgulayacağı hafif veri. */
     getLive() {
+        // Sunucu kapalıysa bayat TPS/MSPT döndürme (panel + Discord "—" / bilinmiyor göstersin)
+        if (!this._isRunning()) { this._lastTps = null; this._lastMspt = null; }
         return {
             tps: this._lastTps,
             mspt: this._lastMspt,

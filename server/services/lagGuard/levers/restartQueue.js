@@ -104,10 +104,18 @@ const restartQueue = {
             try {
                 if (!q.config_path || !q.config_key) throw new Error('config_path/key eksik');
                 const filePath = path.isAbsolute(q.config_path) ? q.config_path : path.join(serverPath, q.config_path);
-                ConfigParser.setValue(filePath, q.config_format || 'toml', q.config_key, fmt(q.target_value, q.value_type));
+                const fmtName = q.config_format || 'toml';
+                const target = fmt(q.target_value, q.value_type);
+                ConfigParser.setValue(filePath, fmtName, q.config_key, target);
+                // Yazma doğrulaması: tekrar oku, gerçekten değişti mi? (sessiz "applied" olmasın)
+                let after;
+                try { after = ConfigParser.getValue(ConfigParser.read(filePath, fmtName).data, q.config_key); } catch { /* ignore */ }
+                if (after == null || Number(after) !== Number(target)) {
+                    throw new Error(`yazıldı ama doğrulanamadı (${filePath} · ${q.config_key}=${after})`);
+                }
                 markApplied.run(q.id);
                 applied++;
-                details.push({ id: q.id, lever: q.lever_name, ok: true, detail: `${q.config_key} = ${fmt(q.target_value, q.value_type)}` });
+                details.push({ id: q.id, lever: q.lever_name, ok: true, detail: `${filePath} · ${q.config_key} = ${target}` });
             } catch (e) {
                 errors++;
                 details.push({ id: q.id, lever: q.lever_name, ok: false, detail: e.message });
