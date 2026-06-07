@@ -11,7 +11,8 @@ const TEX_DIR = path.join(CACHE_ROOT, 'item-textures');
 let _modIndex = null;       // Map<modid, jarPath>
 let _vanillaAssets = null;  // assets dir yolu | null
 let _ready = null;
-const _zipCache = new Map(); // jarPath → AdmZip (jar'ı tekrar tekrar açma)
+const _zipCache = new Map(); // jarPath → AdmZip (LRU: en fazla ZIP_CACHE_MAX jar bellekte)
+const ZIP_CACHE_MAX = 6;     // her AdmZip tüm jar'ı RAM'de tutar; sınırsız cache RAM'i şişirir
 
 async function _init(serverPath) {
   if (_ready) return _ready;
@@ -28,10 +29,21 @@ function warmUp(serverPath) {
   _init(serverPath).catch(() => { /* sessizce geç */ });
 }
 
-// Jar'ı bir kez açıp bellekte tut
+// Jar'ı aç ve LRU cache'te tut (en fazla ZIP_CACHE_MAX; eskiyi at → RAM kontrollü)
 function _getZip(jarPath) {
   let zip = _zipCache.get(jarPath);
-  if (!zip) { zip = new AdmZip(jarPath); _zipCache.set(jarPath, zip); }
+  if (zip) {
+    // LRU dokunuşu: en sona taşı (en yeni kullanılan)
+    _zipCache.delete(jarPath);
+    _zipCache.set(jarPath, zip);
+    return zip;
+  }
+  zip = new AdmZip(jarPath);
+  _zipCache.set(jarPath, zip);
+  // Sınır aşıldıysa en eski jar'ı düşür (GC belleği geri alır)
+  while (_zipCache.size > ZIP_CACHE_MAX) {
+    _zipCache.delete(_zipCache.keys().next().value);
+  }
   return zip;
 }
 
