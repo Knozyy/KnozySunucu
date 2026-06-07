@@ -367,10 +367,9 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
         // Online kontrolü
         const isOnline = inst?.players?.includes(username) || false;
 
-        // 360 genişletmeleri: ban geçmişi, alt-hesap, günlük oynama
+        // 360 genişletmeleri: ban geçmişi, günlük oynama
         const isAdmin = req.user?.role === 'admin';
         const banHistory = playerProfile.getBanHistory(db, username);
-        let altAccounts = playerProfile.findAltAccounts(db, username);
         const playtimeDaily = playerProfile.getPlaytimeDaily(db, username);
 
         // IP → konum (yalnız admin; cache'li, başarısızlıkta sessizce atlar)
@@ -381,13 +380,7 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
                     'SELECT ip_address FROM player_sessions WHERE username = ? AND ip_address IS NOT NULL ORDER BY joined_at DESC LIMIT 1'
                 ).get(username)?.ip_address;
                 if (lastIp) location = geoip.formatLocation(await geoip.lookup(db, lastIp));
-                // Alt-hesapların konumlarını da çöz
-                for (const a of altAccounts) {
-                    a.location = a.ip ? geoip.formatLocation(await geoip.lookup(db, a.ip)) : null;
-                }
             } catch { /* konum çözülemezse profil yine de döner */ }
-        } else {
-            altAccounts = altAccounts.map(a => ({ ...a, ip: null, location: null })); // ham IP/konum yalnız admin
         }
 
         res.json({
@@ -402,18 +395,30 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
             sessions,
             mcStats,
             banHistory,
-            altAccounts,
             playtimeDaily,
         });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/players/profile/:username/inventory — playerdata NBT (envanter+ender)
+// GET /api/players/profile/:username/inventory — playerdata NBT (envanter)
+// ?live=1 → oyuncu online ise save-all flush ile diske yazdırıp güncel veriyi okur
 router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
     try {
         const username = req.params.username;
         const inst = serverRegistry.getDefault();
         const serverPath = inst?.getServerPath() || '';
+        const isOnline = inst?.players?.includes(username) || false;
+
+        // Canlı yenileme: playerdata.dat sunucu kaydederken yazılır; online oyuncunun
+        // anlık verisi diskte olmayabilir → save-all flush ile zorla, sonra oku.
+        const live = req.query.live === '1' || req.query.live === 'true';
+        if (live && isOnline) {
+            try {
+                inst.sendCommand('save-all flush');
+                await new Promise(r => setTimeout(r, 900));
+            } catch { /* komut gönderilemezse mevcut diski oku */ }
+        }
+
         // UUID çöz
         let uuid = null;
         const cacheFile = path.join(serverPath, 'usercache.json');
@@ -424,7 +429,7 @@ router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
         if (!uuid) return res.json({ found: false, reason: 'uuid_yok' });
         const data = await readPlayerData(serverPath, uuid);
         if (!data) return res.json({ found: false, reason: 'playerdata_yok' });
-        res.json({ found: true, ...data });
+        res.json({ found: true, online: isOnline, savedAt: Date.now(), ...data });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

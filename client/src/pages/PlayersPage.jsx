@@ -1012,27 +1012,59 @@ function ProfileNotes({ notes, note, setNote, onAdd, onDelete, adding }) {
 // ── Envanter sekmesi ──────────────────────────────────────────────────────────
 
 function ProfileInventory({ username }) {
+    const qc = useQueryClient();
+    const [refreshing, setRefreshing] = useState(false);
     const { data, isLoading } = useQuery({
         queryKey: ['player-inventory', username],
         queryFn: () => apiClient.get(`/players/profile/${encodeURIComponent(username)}/inventory`).then(r => r.data),
     });
+
+    // Canlı yenile: sunucuya save-all flush ettirip güncel playerdata'yı çeker
+    const refresh = async () => {
+        setRefreshing(true);
+        try {
+            const fresh = await apiClient.get(`/players/profile/${encodeURIComponent(username)}/inventory?live=1`).then(r => r.data);
+            qc.setQueryData(['player-inventory', username], fresh);
+            toast.success('Veriler canlı güncellendi');
+        } catch (e) {
+            toast.error(e.response?.data?.error || 'Güncellenemedi');
+        } finally { setRefreshing(false); }
+    };
+
+    const refreshBtn = (
+        <button onClick={refresh} disabled={refreshing} title="Oyuncunun anlık verilerini çek (save-all)" style={{
+            ...btnGhost, padding: '4px 10px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 6,
+            opacity: refreshing ? 0.5 : 1, cursor: refreshing ? 'default' : 'pointer',
+        }}>
+            {refreshing ? <Spinner size={11}/> : <I.Restart size={12}/>} YENİLE
+        </button>
+    );
+
     if (isLoading) return <div style={{ textAlign: 'center', padding: 32 }}><Spinner size={20}/></div>;
+
     if (!data?.found) return (
-        <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
-            Envanter verisi yok ({data?.reason === 'uuid_yok' ? 'oyuncu hiç girmemiş' : 'playerdata bulunamadı'})
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{refreshBtn}</div>
+            <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                Envanter verisi yok ({data?.reason === 'uuid_yok' ? 'oyuncu hiç girmemiş' : 'henüz diske kaydedilmemiş — YENİLE deneyin'})
+            </div>
         </div>
     );
+
     const hotbar = (data.inventory || []).filter(i => i.slot >= 0 && i.slot <= 8);
     const main = (data.inventory || []).filter(i => i.slot >= 9 && i.slot <= 35);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Durum çubuğu */}
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: A.mono, fontSize: 11, color: A.dim }}>
-                <span>❤ {data.health != null ? data.health.toFixed(1) : '—'}</span>
-                <span>🍗 {data.foodLevel ?? '—'}</span>
-                <span>XP {data.xpLevel ?? '—'}</span>
-                <span>{(data.dimension || '').replace('minecraft:', '') || '—'}</span>
-                {data.pos && <span>{Math.round(data.pos.x)}, {Math.round(data.pos.y)}, {Math.round(data.pos.z)}</span>}
+            {/* Durum çubuğu + canlı yenile */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: A.mono, fontSize: 11, color: A.dim }}>
+                    <span>❤ {data.health != null ? data.health.toFixed(1) : '—'}</span>
+                    <span>🍗 {data.foodLevel ?? '—'}</span>
+                    <span>XP {data.xpLevel ?? '—'}</span>
+                    <span>{(data.dimension || '').replace('minecraft:', '') || '—'}</span>
+                    {data.pos && <span>{Math.round(data.pos.x)}, {Math.round(data.pos.y)}, {Math.round(data.pos.z)}</span>}
+                </div>
+                {refreshBtn}
             </div>
             <Cap>Zırh & El</Cap>
             <InvGrid items={[data.armor?.head, data.armor?.chest, data.armor?.legs, data.armor?.feet, data.offhand]} cols={5}/>
@@ -1094,34 +1126,21 @@ function InvSlot({ item }) {
 
 function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding }) {
     const bans = profile?.banHistory || [];
-    const alts = profile?.altAccounts || [];
     const actionColor = { ban: A.err, 'ban-ip': A.err, unban: A.ok, 'unban-ip': A.ok };
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {profile?.location && (
-                <div>
-                    <Cap>Son Bağlantı Konumu</Cap>
+            <div>
+                <Cap>Son Bağlantı Konumu</Cap>
+                {profile?.location ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
                         <span style={{ fontSize: 13 }}>📍</span>
                         <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{profile.location}</span>
                     </div>
-                </div>
-            )}
-            <div>
-                <Cap>Alt Hesaplar (aynı IP)</Cap>
-                {alts.length === 0 ? (
+                ) : (
                     <p style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, margin: '6px 0' }}>
-                        Eşleşme yok (IP takibi bu güncellemeden itibaren çalışır)
+                        Konum yok — IP yalnız oyuncu bu güncellemeden sonra yeniden bağlanınca yakalanır.
                     </p>
-                ) : alts.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{a.username}</span>
-                            {a.location && <span style={{ fontFamily: A.mono, fontSize: 9, color: A.faint }}>📍 {a.location}</span>}
-                        </div>
-                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>{a.ip || '••• gizli'}</span>
-                    </div>
-                ))}
+                )}
             </div>
             <div>
                 <Cap>Ban Geçmişi</Cap>

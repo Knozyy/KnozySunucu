@@ -255,11 +255,18 @@ class MinecraftService extends EventEmitter {
         }
 
         // Giriş IP'sini yakala ("joined the game" satırından önce gelir) — bellekte stash'le.
-        // Alt-hesap tespiti için player_sessions'a yazılır (ileriye dönük).
+        // Konum/alt-hesap için player_sessions'a yazılır (ileriye dönük).
         const login = parseLoginIp(line);
         if (login) {
             if (!this._pendingIp) this._pendingIp = {};
             this._pendingIp[login.username] = login.ip;
+            // Sıralama farklı geldiyse veya oturum zaten açıksa IP'yi hemen doldur
+            try {
+                const db = getDb();
+                db.prepare(
+                    'UPDATE player_sessions SET ip_address = ? WHERE username = ? AND ip_address IS NULL AND left_at IS NULL'
+                ).run(login.ip, login.username);
+            } catch { /* ignore */ }
         }
 
         // Oyuncu giriş/çıkış — chat ile taklit edilmesin diye log önekine (]:)
