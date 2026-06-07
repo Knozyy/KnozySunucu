@@ -26,12 +26,6 @@ function fmtDate(ts) {
     });
 }
 
-// Ülke kodu (TR) → bayrak emoji (🇹🇷). Geçersizse 🌍.
-function flagEmoji(cc) {
-    if (!cc || cc.length !== 2) return '🌍';
-    return cc.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
-}
-
 function timeAgo(ts) {
     if (!ts) return '—';
     const diff = Date.now() - ts;
@@ -1140,7 +1134,11 @@ function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding 
                 <Cap>Bağlantı (Ülke / ISP)</Cap>
                 {geo ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 15 }}>{flagEmoji(geo.countryCode)}</span>
+                        {geo.countryCode && (
+                            <span style={{ fontFamily: A.mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.05em', color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '1px 5px' }}>
+                                {geo.countryCode}
+                            </span>
+                        )}
                         <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{geo.country || '—'}</span>
                         {geo.isp && <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>· {geo.isp}</span>}
                         {geo.isProxy && <Pill color={A.warn} bg="rgba(251,191,36,0.1)">VPN / PROXY</Pill>}
