@@ -988,8 +988,6 @@ function ProfileInventory({ username }) {
             <InvGrid items={fillSlots(hotbar, 0, 8)} cols={9}/>
             <Cap>Envanter</Cap>
             <InvGrid items={fillSlots(main, 9, 35)} cols={9}/>
-            <Cap>Ender Chest</Cap>
-            <InvGrid items={fillSlots(data.enderItems || [], 0, 26)} cols={9}/>
         </div>
     );
 }
