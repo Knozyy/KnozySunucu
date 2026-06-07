@@ -283,17 +283,6 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_lag_attribution_ts ON lag_attribution(ts);
-
-    CREATE TABLE IF NOT EXISTS ip_geo (
-      ip TEXT PRIMARY KEY,
-      country TEXT,
-      country_code TEXT,
-      city TEXT,
-      region TEXT,
-      isp TEXT,
-      is_proxy INTEGER DEFAULT 0,
-      lookedup_at INTEGER
-    );
   `);
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)
@@ -314,14 +303,6 @@ function initDatabase() {
     const psc = database.prepare("PRAGMA table_info(player_sessions)").all().map(c => c.name);
     if (!psc.includes('ip_address')) {
       database.exec('ALTER TABLE player_sessions ADD COLUMN ip_address TEXT');
-    }
-  } catch (e) { /* tablo henüz yoksa sorun değil */ }
-
-  // Migration: ip_geo.is_proxy (VPN/proxy bayrağı)
-  try {
-    const igc = database.prepare("PRAGMA table_info(ip_geo)").all().map(c => c.name);
-    if (!igc.includes('is_proxy')) {
-      database.exec('ALTER TABLE ip_geo ADD COLUMN is_proxy INTEGER DEFAULT 0');
     }
   } catch (e) { /* tablo henüz yoksa sorun değil */ }
 

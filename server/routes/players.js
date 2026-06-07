@@ -9,7 +9,6 @@ const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
 const playerProfile = require('../services/playerProfile');
 const { readPlayerData } = require('../services/playerData');
-const geoip = require('../services/geoip');
 
 const router = express.Router();
 
@@ -372,18 +371,14 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
         const banHistory = playerProfile.getBanHistory(db, username);
         const playtimeDaily = playerProfile.getPlaytimeDaily(db, username);
 
-        // IP → bağlantı bilgisi (ülke/ISP/proxy — yalnız admin; cache'li, şehir güvenilmez olduğu için gösterilmez)
-        let geo = null;
+        // Son bağlantı IP'si (yalnız admin)
+        let ip = null;
         if (isAdmin) {
             try {
-                const lastIp = db.prepare(
+                ip = db.prepare(
                     'SELECT ip_address FROM player_sessions WHERE username = ? AND ip_address IS NOT NULL ORDER BY joined_at DESC LIMIT 1'
-                ).get(username)?.ip_address;
-                if (lastIp) {
-                    const g = await geoip.lookup(db, lastIp);
-                    if (g) geo = { country: g.country, countryCode: g.countryCode, isp: g.isp, isProxy: g.isProxy };
-                }
-            } catch { /* çözülemezse profil yine de döner */ }
+                ).get(username)?.ip_address || null;
+            } catch { /* yoksa null */ }
         }
 
         res.json({
@@ -394,7 +389,7 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
             totalSeconds:  sessionStats?.total_seconds || 0,
             firstSeen:     sessionStats?.first_seen || null,
             lastSeen:      sessionStats?.last_seen || null,
-            geo,
+            ip,
             sessions,
             mcStats,
             banHistory,

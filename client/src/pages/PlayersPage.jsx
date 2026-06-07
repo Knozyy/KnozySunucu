@@ -1126,26 +1126,19 @@ function InvSlot({ item }) {
 
 function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding }) {
     const bans = profile?.banHistory || [];
-    const geo = profile?.geo;
+    const ip = profile?.ip;
     const actionColor = { ban: A.err, 'ban-ip': A.err, unban: A.ok, 'unban-ip': A.ok };
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-                <Cap>Bağlantı (Ülke / ISP)</Cap>
-                {geo ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4, flexWrap: 'wrap' }}>
-                        {geo.countryCode && (
-                            <span style={{ fontFamily: A.mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.05em', color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '1px 5px' }}>
-                                {geo.countryCode}
-                            </span>
-                        )}
-                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{geo.country || '—'}</span>
-                        {geo.isp && <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>· {geo.isp}</span>}
-                        {geo.isProxy && <Pill color={A.warn} bg="rgba(251,191,36,0.1)">VPN / PROXY</Pill>}
+                <Cap>Son IP</Cap>
+                {ip ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
+                        <span style={{ fontFamily: A.mono, fontSize: 12, color: A.text }}>{ip}</span>
                     </div>
                 ) : (
                     <p style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, margin: '6px 0' }}>
-                        Konum yok — IP yalnız oyuncu bu güncellemeden sonra yeniden bağlanınca yakalanır.
+                        IP yok — oyuncu bu güncellemeden sonra yeniden bağlanınca yakalanır.
                     </p>
                 )}
             </div>
