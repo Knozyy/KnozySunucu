@@ -36,14 +36,15 @@ async function _fetchProvider(ip) {
           city: j.cityName || null,
           region: j.regionName || null,
           isp: j.asnOrganization || null,
+          isProxy: !!j.isProxy,
         };
       }
     }
   } catch { /* yedeğe geç */ }
 
-  // 2) ip-api.com — HTTP yedek (free tier HTTPS desteklemez)
+  // 2) ip-api.com — HTTP yedek (free tier HTTPS desteklemez; proxy/hosting alanları ücretsiz)
   try {
-    const r = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}`, {
+    const r = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,countryCode,regionName,city,isp,proxy,hosting`, {
       signal: AbortSignal.timeout(4000),
     });
     const j = await r.json();
@@ -54,6 +55,7 @@ async function _fetchProvider(ip) {
         city: j.city || null,
         region: j.regionName || null,
         isp: j.isp || null,
+        isProxy: !!(j.proxy || j.hosting),
       };
     }
   } catch { /* ignore */ }
@@ -73,6 +75,7 @@ async function lookup(db, ip, fetchProvider = _fetchProvider) {
       return {
         country: cached.country, countryCode: cached.country_code,
         city: cached.city, region: cached.region, isp: cached.isp,
+        isProxy: !!cached.is_proxy,
       };
     }
   } catch { /* tablo yoksa devam */ }
@@ -80,10 +83,10 @@ async function lookup(db, ip, fetchProvider = _fetchProvider) {
   const geo = await fetchProvider(ip);
   if (!geo) return null;
   try {
-    db.prepare('INSERT OR REPLACE INTO ip_geo (ip, country, country_code, city, region, isp, lookedup_at) VALUES (?,?,?,?,?,?,?)')
-      .run(ip, geo.country, geo.countryCode, geo.city, geo.region, geo.isp, Date.now());
+    db.prepare('INSERT OR REPLACE INTO ip_geo (ip, country, country_code, city, region, isp, is_proxy, lookedup_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(ip, geo.country, geo.countryCode, geo.city, geo.region, geo.isp, geo.isProxy ? 1 : 0, Date.now());
   } catch { /* yazılamadıysa sorun değil */ }
-  return geo;
+  return { ...geo, isProxy: !!geo.isProxy };
 }
 
 /** "Şehir, Ülke" biçimi. */

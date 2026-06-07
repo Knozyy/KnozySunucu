@@ -291,6 +291,7 @@ function initDatabase() {
       city TEXT,
       region TEXT,
       isp TEXT,
+      is_proxy INTEGER DEFAULT 0,
       lookedup_at INTEGER
     );
   `);
@@ -308,11 +309,19 @@ function initDatabase() {
     database.exec(`UPDATE lag_levers SET step = COALESCE(step_down, 1) WHERE step IS NULL`);
   } catch (e) { /* tablo henüz yoksa sorun değil */ }
 
-  // Migration: player_sessions.ip_address (Oyuncu 360 — alt-hesap tespiti, ileriye dönük)
+  // Migration: player_sessions.ip_address (Oyuncu 360 — konum/alt-hesap, ileriye dönük)
   try {
     const psc = database.prepare("PRAGMA table_info(player_sessions)").all().map(c => c.name);
     if (!psc.includes('ip_address')) {
       database.exec('ALTER TABLE player_sessions ADD COLUMN ip_address TEXT');
+    }
+  } catch (e) { /* tablo henüz yoksa sorun değil */ }
+
+  // Migration: ip_geo.is_proxy (VPN/proxy bayrağı)
+  try {
+    const igc = database.prepare("PRAGMA table_info(ip_geo)").all().map(c => c.name);
+    if (!igc.includes('is_proxy')) {
+      database.exec('ALTER TABLE ip_geo ADD COLUMN is_proxy INTEGER DEFAULT 0');
     }
   } catch (e) { /* tablo henüz yoksa sorun değil */ }
 

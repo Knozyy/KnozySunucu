@@ -372,15 +372,18 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
         const banHistory = playerProfile.getBanHistory(db, username);
         const playtimeDaily = playerProfile.getPlaytimeDaily(db, username);
 
-        // IP → konum (yalnız admin; cache'li, başarısızlıkta sessizce atlar)
-        let location = null;
+        // IP → bağlantı bilgisi (ülke/ISP/proxy — yalnız admin; cache'li, şehir güvenilmez olduğu için gösterilmez)
+        let geo = null;
         if (isAdmin) {
             try {
                 const lastIp = db.prepare(
                     'SELECT ip_address FROM player_sessions WHERE username = ? AND ip_address IS NOT NULL ORDER BY joined_at DESC LIMIT 1'
                 ).get(username)?.ip_address;
-                if (lastIp) location = geoip.formatLocation(await geoip.lookup(db, lastIp));
-            } catch { /* konum çözülemezse profil yine de döner */ }
+                if (lastIp) {
+                    const g = await geoip.lookup(db, lastIp);
+                    if (g) geo = { country: g.country, countryCode: g.countryCode, isp: g.isp, isProxy: g.isProxy };
+                }
+            } catch { /* çözülemezse profil yine de döner */ }
         }
 
         res.json({
@@ -391,7 +394,7 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
             totalSeconds:  sessionStats?.total_seconds || 0,
             firstSeen:     sessionStats?.first_seen || null,
             lastSeen:      sessionStats?.last_seen || null,
-            location,
+            geo,
             sessions,
             mcStats,
             banHistory,

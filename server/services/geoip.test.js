@@ -5,7 +5,7 @@ const { isPrivateIp, lookup, formatLocation } = require('./geoip');
 
 function makeDb() {
   const db = new Database(':memory:');
-  db.exec(`CREATE TABLE ip_geo (ip TEXT PRIMARY KEY, country TEXT, country_code TEXT, city TEXT, region TEXT, isp TEXT, lookedup_at INTEGER);`);
+  db.exec(`CREATE TABLE ip_geo (ip TEXT PRIMARY KEY, country TEXT, country_code TEXT, city TEXT, region TEXT, isp TEXT, is_proxy INTEGER DEFAULT 0, lookedup_at INTEGER);`);
   return db;
 }
 
@@ -29,12 +29,13 @@ test('lookup private IP icin fetch cagirmadan null doner', async () => {
 
 test('lookup yeni IP icin saglayiciyi cagirir ve cache e yazar', async () => {
   const db = makeDb();
-  const fake = async () => ({ country: 'Turkey', countryCode: 'TR', city: 'Istanbul', region: 'Istanbul', isp: 'Turk Telekom' });
+  const fake = async () => ({ country: 'Turkey', countryCode: 'TR', city: 'Istanbul', region: 'Istanbul', isp: 'Turk Telekom', isProxy: true });
   const r = await lookup(db, '88.1.2.3', fake);
   assert.strictEqual(r.country, 'Turkey');
-  assert.strictEqual(r.city, 'Istanbul');
+  assert.strictEqual(r.isProxy, true);
   const row = db.prepare('SELECT * FROM ip_geo WHERE ip = ?').get('88.1.2.3');
   assert.strictEqual(row.country_code, 'TR');
+  assert.strictEqual(row.is_proxy, 1);
 });
 
 test('lookup cache varsa saglayiciyi tekrar cagirmaz', async () => {
