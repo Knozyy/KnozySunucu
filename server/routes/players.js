@@ -7,6 +7,8 @@ const PlayerManager = require('../services/playerManager');
 const { getDb } = require('../db/database');
 const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
+const playerProfile = require('../services/playerProfile');
+const { readPlayerData } = require('../services/playerData');
 
 const router = express.Router();
 
@@ -331,6 +333,7 @@ router.get('/profile/:username', authMiddleware, (req, res) => {
         const inst = serverRegistry.getDefault();
         const serverPath = inst?.getServerPath() || '';
         let mcStats = {};
+        let resolvedUuid = null;
 
         try {
             // usercache.json'dan UUID bul
@@ -339,6 +342,7 @@ router.get('/profile/:username', authMiddleware, (req, res) => {
                 const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
                 const entry = cache.find(e => e.name?.toLowerCase() === username.toLowerCase());
                 if (entry?.uuid) {
+                    resolvedUuid = entry.uuid;
                     const statsFile = path.join(serverPath, 'world', 'stats', `${entry.uuid}.json`);
                     if (fs.existsSync(statsFile)) {
                         const raw = JSON.parse(fs.readFileSync(statsFile, 'utf-8'));
@@ -362,16 +366,47 @@ router.get('/profile/:username', authMiddleware, (req, res) => {
         // Online kontrolü
         const isOnline = inst?.players?.includes(username) || false;
 
+        // 360 genişletmeleri: ban geçmişi, alt-hesap, günlük oynama
+        const isAdmin = req.user?.role === 'admin';
+        const banHistory = playerProfile.getBanHistory(db, username);
+        let altAccounts = playerProfile.findAltAccounts(db, username);
+        if (!isAdmin) altAccounts = altAccounts.map(a => ({ ...a, ip: null })); // ham IP yalnız admin
+        const playtimeDaily = playerProfile.getPlaytimeDaily(db, username);
+
         res.json({
             username,
             isOnline,
+            uuid: resolvedUuid,
             sessionCount:  sessionStats?.session_count || 0,
             totalSeconds:  sessionStats?.total_seconds || 0,
             firstSeen:     sessionStats?.first_seen || null,
             lastSeen:      sessionStats?.last_seen || null,
             sessions,
             mcStats,
+            banHistory,
+            altAccounts,
+            playtimeDaily,
         });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/players/profile/:username/inventory — playerdata NBT (envanter+ender)
+router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
+    try {
+        const username = req.params.username;
+        const inst = serverRegistry.getDefault();
+        const serverPath = inst?.getServerPath() || '';
+        // UUID çöz
+        let uuid = null;
+        const cacheFile = path.join(serverPath, 'usercache.json');
+        if (fs.existsSync(cacheFile)) {
+            const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+            uuid = cache.find(e => e.name?.toLowerCase() === username.toLowerCase())?.uuid || null;
+        }
+        if (!uuid) return res.json({ found: false, reason: 'uuid_yok' });
+        const data = await readPlayerData(serverPath, uuid);
+        if (!data) return res.json({ found: false, reason: 'playerdata_yok' });
+        res.json({ found: true, ...data });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
