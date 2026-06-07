@@ -50,28 +50,13 @@ function walk(dir, base, depth, out) {
     }
 }
 
-// Dünya klasörü adı (server.properties · level-name), varsayılan "world"
-function levelName(serverPath) {
-    try {
-        const p = path.join(serverPath, 'server.properties');
-        if (fs.existsSync(p)) {
-            const m = fs.readFileSync(p, 'utf-8').match(/^level-name\s*=\s*(.*)$/m);
-            if (m && m[1].trim()) return m[1].trim();
-        }
-    } catch { /* ignore */ }
-    return 'world';
-}
-
 const explorer = {
-    /** config/ + <world>/serverconfig/ (Forge/NeoForge server config'leri) + server.properties. */
+    /** Paketin config/ klasörü (+ kök server.properties). world/serverconfig KULLANILMAZ. */
     listFiles(serverPath) {
         if (!serverPath || !fs.existsSync(serverPath)) return [];
         const out = [];
         const configDir = path.join(serverPath, 'config');
         if (fs.existsSync(configDir)) walk(configDir, serverPath, 0, out);
-        // Forge/NeoForge SERVER config'leri dünya klasörünün altındadır (asıl çalışan kopya)
-        const sc = path.join(serverPath, levelName(serverPath), 'serverconfig');
-        if (fs.existsSync(sc)) walk(sc, serverPath, 0, out);
         // Kök seviyesindeki yaygın dosyalar
         for (const f of ['server.properties']) {
             if (fs.existsSync(path.join(serverPath, f))) out.push({ path: f, format: 'properties' });
