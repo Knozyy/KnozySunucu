@@ -4,6 +4,7 @@ const path = require('path');
 const EventEmitter = require('events');
 const { getDb } = require('../db/database');
 const { cleanConsoleLine } = require('../utils/text');
+const { parseLoginIp } = require('../utils/logParse');
 
 class MinecraftService extends EventEmitter {
     /**
@@ -253,6 +254,14 @@ class MinecraftService extends EventEmitter {
             this.emit('lag', { behindMs, time: Date.now() });
         }
 
+        // Giriş IP'sini yakala ("joined the game" satırından önce gelir) — bellekte stash'le.
+        // Alt-hesap tespiti için player_sessions'a yazılır (ileriye dönük).
+        const login = parseLoginIp(line);
+        if (login) {
+            if (!this._pendingIp) this._pendingIp = {};
+            this._pendingIp[login.username] = login.ip;
+        }
+
         // Oyuncu giriş/çıkış — chat ile taklit edilmesin diye log önekine (]:)
         // sabitlendi ve geçerli MC nick uzunluğuyla (1-16) sınırlandı. Sohbet
         // satırı "]: <Nick> ... joined the game" biçiminde olduğundan ]: ile nick
@@ -263,7 +272,10 @@ class MinecraftService extends EventEmitter {
             this.emit('players', this.players);
             try {
                 const db = getDb();
-                db.prepare('INSERT INTO player_sessions (username, joined_at) VALUES (?, ?)').run(joinMatch[1], Date.now());
+                const ip = this._pendingIp?.[joinMatch[1]] || null;
+                db.prepare('INSERT INTO player_sessions (username, joined_at, ip_address) VALUES (?, ?, ?)')
+                    .run(joinMatch[1], Date.now(), ip);
+                if (this._pendingIp) delete this._pendingIp[joinMatch[1]];
             } catch { /* ignore */ }
         }
         const leaveMatch = line.match(/\]:\s+(\w{1,16}) left the game/);

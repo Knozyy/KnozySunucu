@@ -298,6 +298,14 @@ function initDatabase() {
     database.exec(`UPDATE lag_levers SET step = COALESCE(step_down, 1) WHERE step IS NULL`);
   } catch (e) { /* tablo henüz yoksa sorun değil */ }
 
+  // Migration: player_sessions.ip_address (Oyuncu 360 — alt-hesap tespiti, ileriye dönük)
+  try {
+    const psc = database.prepare("PRAGMA table_info(player_sessions)").all().map(c => c.name);
+    if (!psc.includes('ip_address')) {
+      database.exec('ALTER TABLE player_sessions ADD COLUMN ip_address TEXT');
+    }
+  } catch (e) { /* tablo henüz yoksa sorun değil */ }
+
   // Migration: install_path ve is_active sütunları yoksa ekle
   try {
     const cols = database.prepare("PRAGMA table_info(installed_modpacks)").all();
