@@ -11,6 +11,7 @@ const TEX_DIR = path.join(CACHE_ROOT, 'item-textures');
 let _modIndex = null;       // Map<modid, jarPath>
 let _vanillaAssets = null;  // assets dir yolu | null
 let _ready = null;
+const _zipCache = new Map(); // jarPath → AdmZip (jar'ı tekrar tekrar açma)
 
 async function _init(serverPath) {
   if (_ready) return _ready;
@@ -21,7 +22,20 @@ async function _init(serverPath) {
   return _ready;
 }
 
-// Belirli ns için model okuyucu (jar veya vanilla dir)
+/** Sunucu açılışında çağrılır: vanilla jar'ı arka planda önceden indirir (ilk açılış beklemesini önler). */
+function warmUp(serverPath) {
+  if (!serverPath) return;
+  _init(serverPath).catch(() => { /* sessizce geç */ });
+}
+
+// Jar'ı bir kez açıp bellekte tut
+function _getZip(jarPath) {
+  let zip = _zipCache.get(jarPath);
+  if (!zip) { zip = new AdmZip(jarPath); _zipCache.set(jarPath, zip); }
+  return zip;
+}
+
+// Belirli ns için model okuyucu (vanilla dir veya cache'li jar)
 function _readerFor(ns) {
   if (ns === 'minecraft' && _vanillaAssets) {
     return (n, p) => {
@@ -33,7 +47,7 @@ function _readerFor(ns) {
   }
   const jar = _modIndex?.get(ns);
   if (!jar) return () => null;
-  const zip = new AdmZip(jar);
+  const zip = _getZip(jar);
   return (n, p) => {
     const entry = zip.getEntry(`assets/${n}/models/${p}.json`);
     if (!entry) return null;
@@ -48,11 +62,11 @@ function _readTextureBytes(ns, assetPath) {
   }
   const jar = _modIndex?.get(ns);
   if (!jar) return null;
-  const entry = new AdmZip(jar).getEntry(assetPath);
+  const entry = _getZip(jar).getEntry(assetPath);
   return entry ? entry.getData() : null;
 }
 
-/** itemId ("modid:name") → cache'li PNG yolu | null. */
+/** itemId ("modid:name") → cache'li PNG yolu | null. Çözülen PNG diske yazılır, tekrar çözülmez. */
 async function getItemTexturePath(serverPath, itemId) {
   await _init(serverPath);
   const [ns, name] = itemId.includes(':') ? itemId.split(':') : ['minecraft', itemId];
@@ -71,4 +85,4 @@ async function getItemTexturePath(serverPath, itemId) {
   return cached;
 }
 
-module.exports = { getItemTexturePath };
+module.exports = { getItemTexturePath, warmUp };

@@ -197,4 +197,12 @@ setupWebSockets(server);
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Sunucu Paneli] Port ${PORT} uzerinde calisiyor`);
+
+    // Item dokuları için vanilla jar'ı arka planda önceden indir (ilk envanter açılışı beklemesin)
+    try {
+        const itemTextures = require('./services/itemTextures');
+        const inst = serverRegistry.getDefault();
+        const sp = inst?.getServerPath?.() || process.env.MINECRAFT_SERVER_PATH;
+        if (sp) itemTextures.warmUp(sp);
+    } catch { /* ısınma başarısızsa lazy çözüm yine çalışır */ }
 });
