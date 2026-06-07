@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
 import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
 import { I } from '@/hoodoo/icons';
+import { AreaChart } from '@/hoodoo/charts';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
 
@@ -615,9 +616,10 @@ function PlayerNotesPanel({ onPlayerClick }) {
 
             {searched && (
                 <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{
+                    <div onClick={() => onPlayerClick?.(searched)} title="Tam profili aç" style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '12px 16px', borderBottom: `1px solid ${A.border}`,
+                        cursor: onPlayerClick ? 'pointer' : 'default',
                     }}>
                         <PlayerHead username={searched} size={28}/>
                         <span style={{ fontSize: 13, fontWeight: 500, color: A.text }}>{searched}</span>
@@ -731,9 +733,10 @@ function PlayerProfileModal({ username, onClose }) {
     };
 
     const tabs = [
-        { id: 'overview', label: 'GENEL' },
-        { id: 'sessions', label: 'OTURUMLAR' },
-        { id: 'notes',    label: 'NOTLAR' },
+        { id: 'overview',  label: 'GENEL' },
+        { id: 'inventory', label: 'ENVANTER' },
+        { id: 'sessions',  label: 'OTURUMLAR' },
+        { id: 'manage',    label: 'YÖNETİM' },
     ];
 
     return (
@@ -803,10 +806,13 @@ function PlayerProfileModal({ username, onClose }) {
                         </div>
                     ) : tab === 'overview' ? (
                         <ProfileOverview profile={profile}/>
+                    ) : tab === 'inventory' ? (
+                        <ProfileInventory username={username}/>
                     ) : tab === 'sessions' ? (
                         <ProfileSessions sessions={profile?.sessions || []}/>
                     ) : (
-                        <ProfileNotes
+                        <ProfileManage
+                            profile={profile}
                             notes={notes} note={note} setNote={setNote}
                             onAdd={() => addNote.mutate()} onDelete={id => delNote.mutate(id)}
                             adding={addNote.isPending}
@@ -821,6 +827,9 @@ function PlayerProfileModal({ username, onClose }) {
 function ProfileOverview({ profile }) {
     if (!profile) return null;
     const mc = profile.mcStats || {};
+    const daily = Array.isArray(profile.playtimeDaily) ? profile.playtimeDaily : [];
+    const playMinutes = daily.map(d => Math.round((d.seconds || 0) / 60));
+    const playMax = Math.max(...playMinutes, 1);
 
     const stat = (label, value) => (
         <div style={{
@@ -842,6 +851,14 @@ function ProfileOverview({ profile }) {
                 {stat('İlk Görülme', profile.firstSeen ? new Date(profile.firstSeen).toLocaleDateString('tr-TR') : '—')}
                 {stat('Son Görülme', profile.lastSeen ? new Date(profile.lastSeen).toLocaleDateString('tr-TR') : '—')}
             </div>
+
+            {/* Günlük oynama grafiği — en az 2 gün veri varsa */}
+            {playMinutes.length > 1 && (
+                <>
+                    <Cap>Günlük Oynama (dakika)</Cap>
+                    <AreaChart values={playMinutes} height={70} max={playMax} gridY={3}/>
+                </>
+            )}
 
             {/* MC stats — yalnızca varsa */}
             {Object.keys(mc).length > 0 && (
@@ -936,6 +953,130 @@ function ProfileNotes({ notes, note, setNote, onAdd, onDelete, adding }) {
                     </div>
                 ))
             )}
+        </div>
+    );
+}
+
+// ── Envanter sekmesi ──────────────────────────────────────────────────────────
+
+function ProfileInventory({ username }) {
+    const { data, isLoading } = useQuery({
+        queryKey: ['player-inventory', username],
+        queryFn: () => apiClient.get(`/players/profile/${encodeURIComponent(username)}/inventory`).then(r => r.data),
+    });
+    if (isLoading) return <div style={{ textAlign: 'center', padding: 32 }}><Spinner size={20}/></div>;
+    if (!data?.found) return (
+        <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+            Envanter verisi yok ({data?.reason === 'uuid_yok' ? 'oyuncu hiç girmemiş' : 'playerdata bulunamadı'})
+        </div>
+    );
+    const hotbar = (data.inventory || []).filter(i => i.slot >= 0 && i.slot <= 8);
+    const main = (data.inventory || []).filter(i => i.slot >= 9 && i.slot <= 35);
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Durum çubuğu */}
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: A.mono, fontSize: 11, color: A.dim }}>
+                <span>❤ {data.health != null ? data.health.toFixed(1) : '—'}</span>
+                <span>🍗 {data.foodLevel ?? '—'}</span>
+                <span>XP {data.xpLevel ?? '—'}</span>
+                <span>{(data.dimension || '').replace('minecraft:', '') || '—'}</span>
+                {data.pos && <span>{Math.round(data.pos.x)}, {Math.round(data.pos.y)}, {Math.round(data.pos.z)}</span>}
+            </div>
+            <Cap>Zırh & El</Cap>
+            <InvGrid items={[data.armor?.head, data.armor?.chest, data.armor?.legs, data.armor?.feet, data.offhand]} cols={5}/>
+            <Cap>Hotbar</Cap>
+            <InvGrid items={fillSlots(hotbar, 0, 8)} cols={9}/>
+            <Cap>Envanter</Cap>
+            <InvGrid items={fillSlots(main, 9, 35)} cols={9}/>
+            <Cap>Ender Chest</Cap>
+            <InvGrid items={fillSlots(data.enderItems || [], 0, 26)} cols={9}/>
+        </div>
+    );
+}
+
+// slot aralığını boş hücrelerle doldur (görsel ızgara için)
+function fillSlots(items, from, to) {
+    const map = new Map(items.map(i => [i.slot, i]));
+    const out = [];
+    for (let s = from; s <= to; s++) out.push(map.get(s) || null);
+    return out;
+}
+
+function InvGrid({ items, cols }) {
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 4 }}>
+            {items.map((it, i) => <InvSlot key={i} item={it}/>)}
+        </div>
+    );
+}
+
+function InvSlot({ item }) {
+    if (!item || item.id === 'minecraft:air') {
+        return <div style={{ aspectRatio: '1', background: A.bgDeeper, border: `1px solid ${A.border}`, borderRadius: 3 }}/>;
+    }
+    const shortName = item.id.split(':').pop().replace(/_/g, ' ');
+    const title = [
+        item.customName || shortName,
+        ...item.enchants.map(e => `${e.id.split(':').pop()} ${e.lvl}`),
+        item.maxDamage ? `Dayanıklılık: ${Math.round(100 * (1 - (item.damage || 0) / item.maxDamage))}%` : null,
+    ].filter(Boolean).join('\n');
+    return (
+        <div title={title} style={{
+            position: 'relative', aspectRatio: '1', background: A.bgDeeper,
+            border: `1px solid ${item.enchants.length ? 'var(--accent)' : A.border}`,
+            borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 2, overflow: 'hidden',
+        }}>
+            {/* Faz 2'de buraya <img src=/players/item-texture/:id> gelecek */}
+            <span style={{ fontFamily: A.mono, fontSize: 7, color: A.dim, textAlign: 'center', lineHeight: 1.1, wordBreak: 'break-word' }}>
+                {shortName}
+            </span>
+            {item.count > 1 && (
+                <span style={{ position: 'absolute', bottom: 1, right: 2, fontFamily: A.mono, fontSize: 9, fontWeight: 700, color: A.text, textShadow: '0 1px 2px #000' }}>
+                    {item.count}
+                </span>
+            )}
+        </div>
+    );
+}
+
+// ── Yönetim sekmesi (ban geçmişi + alt-hesap + notlar) ─────────────────────────
+
+function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding }) {
+    const bans = profile?.banHistory || [];
+    const alts = profile?.altAccounts || [];
+    const actionColor = { ban: A.err, 'ban-ip': A.err, unban: A.ok, 'unban-ip': A.ok };
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+                <Cap>Alt Hesaplar (aynı IP)</Cap>
+                {alts.length === 0 ? (
+                    <p style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, margin: '6px 0' }}>
+                        Eşleşme yok (IP takibi bu güncellemeden itibaren çalışır)
+                    </p>
+                ) : alts.map((a, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{a.username}</span>
+                        <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>{a.ip || '••• gizli'}</span>
+                    </div>
+                ))}
+            </div>
+            <div>
+                <Cap>Ban Geçmişi</Cap>
+                {bans.length === 0 ? (
+                    <p style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, margin: '6px 0' }}>Kayıt yok</p>
+                ) : bans.map(b => (
+                    <div key={b.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
+                        <Pill color={actionColor[b.action] || A.dim}>{b.action}</Pill>
+                        <span style={{ flex: 1, fontSize: 11, color: A.text }}>{b.reason || '—'}</span>
+                        <span style={{ fontFamily: A.mono, fontSize: 9, color: A.faint }}>{new Date(b.created_at).toLocaleDateString('tr-TR')}</span>
+                    </div>
+                ))}
+            </div>
+            <div>
+                <Cap>Notlar</Cap>
+                <ProfileNotes notes={notes} note={note} setNote={setNote} onAdd={onAdd} onDelete={onDelete} adding={adding}/>
+            </div>
         </div>
     );
 }
