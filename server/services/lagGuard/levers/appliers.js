@@ -53,15 +53,31 @@ function apply(lever, value, { dryRun = true, mc = null, allowRestart = false } 
         try {
             const ConfigParser = require('../../configParser');
             const serverPath = mc?.getServerPath ? mc.getServerPath() : '';
+            const fmtName = lever.config_format || 'toml';
             const filePath = path.isAbsolute(lever.config_path)
                 ? lever.config_path
                 : path.join(serverPath, lever.config_path);
-            ConfigParser.setValue(filePath, lever.config_format || 'toml', lever.config_key, v);
+
+            // Yazmadan önceki değer
+            let before;
+            try { before = ConfigParser.getValue(ConfigParser.read(filePath, fmtName).data, lever.config_key); } catch { /* ignore */ }
+
+            ConfigParser.setValue(filePath, fmtName, lever.config_key, v);
+
+            // Yazdıktan sonra TEKRAR OKU ve gerçekten değişti mi doğrula
+            let after;
+            try { after = ConfigParser.getValue(ConfigParser.read(filePath, fmtName).data, lever.config_key); } catch { /* ignore */ }
+            const verified = after != null && Number(after) === Number(v);
+
             if (method === 'config_reload' && lever.reload_command) {
                 try { mc.sendCommand(lever.reload_command); } catch { /* ignore */ }
             }
             const note = method === 'config_restart' ? ' (sonraki restart\'ta etkin)' : '';
-            return { ok: true, applied: true, detail: `${lever.config_key} = ${v}${note}` };
+
+            if (!verified) {
+                return { ok: false, applied: false, detail: `YAZILDI AMA DOĞRULANAMADI → ${filePath} · ${lever.config_key}: ${before} → beklenen ${v}, dosyada ${after}` };
+            }
+            return { ok: true, applied: true, detail: `${filePath} · ${lever.config_key}: ${before} → ${v}${note}` };
         } catch (e) {
             return { ok: false, applied: false, detail: `config hatası: ${e.message}` };
         }
