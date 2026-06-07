@@ -1109,16 +1109,33 @@ function InvSlot({ item }) {
             borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: 2, overflow: 'hidden',
         }}>
-            {/* Faz 2'de buraya <img src=/players/item-texture/:id> gelecek */}
-            <span style={{ fontFamily: A.mono, fontSize: 7, color: A.dim, textAlign: 'center', lineHeight: 1.1, wordBreak: 'break-word' }}>
-                {shortName}
-            </span>
+            <ItemIcon id={item.id} fallback={shortName}/>
             {item.count > 1 && (
                 <span style={{ position: 'absolute', bottom: 1, right: 2, fontFamily: A.mono, fontSize: 9, fontWeight: 700, color: A.text, textShadow: '0 1px 2px #000' }}>
                     {item.count}
                 </span>
             )}
         </div>
+    );
+}
+
+// Item dokusu — backend'den PNG çeker; bulunamazsa item adına düşer
+function ItemIcon({ id, fallback }) {
+    const [failed, setFailed] = useState(false);
+    if (failed) {
+        return (
+            <span style={{ fontFamily: A.mono, fontSize: 7, color: A.dim, textAlign: 'center', lineHeight: 1.1, wordBreak: 'break-word' }}>
+                {fallback}
+            </span>
+        );
+    }
+    return (
+        <img
+            src={`/api/players/item-texture/${encodeURIComponent(id)}`}
+            alt={fallback}
+            onError={() => setFailed(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', imageRendering: 'pixelated' }}
+        />
     );
 }
 

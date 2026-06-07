@@ -432,8 +432,10 @@ router.get('/profile/:username/inventory', authMiddleware, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/players/item-texture/:id — item dokusu (cache'li PNG, lazy çözüm)
-router.get('/item-texture/:id', authMiddleware, async (req, res) => {
+// GET /api/players/item-texture/:id — item dokusu (cache'li PNG, lazy çözüm).
+// Public: <img> Authorization header gönderemez; jenerik oyun görseli (hassas değil),
+// id sanitize edildiği için path-traversal yok.
+router.get('/item-texture/:id', async (req, res) => {
     try {
         const inst = serverRegistry.getDefault();
         const serverPath = inst?.getServerPath() || '';
