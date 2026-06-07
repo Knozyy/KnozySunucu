@@ -5,7 +5,6 @@ import toast from 'react-hot-toast';
 import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
 import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
 import { I } from '@/hoodoo/icons';
-import { AreaChart } from '@/hoodoo/charts';
 
 const api = (url) => apiClient.get(url).then(r => r.data);
 
@@ -828,8 +827,6 @@ function ProfileOverview({ profile }) {
     if (!profile) return null;
     const mc = profile.mcStats || {};
     const daily = Array.isArray(profile.playtimeDaily) ? profile.playtimeDaily : [];
-    const playMinutes = daily.map(d => Math.round((d.seconds || 0) / 60));
-    const playMax = Math.max(...playMinutes, 1);
 
     const stat = (label, value) => (
         <div style={{
@@ -853,10 +850,10 @@ function ProfileOverview({ profile }) {
             </div>
 
             {/* Günlük oynama grafiği — en az 2 gün veri varsa */}
-            {playMinutes.length > 1 && (
+            {daily.length > 1 && (
                 <>
                     <Cap>Günlük Oynama (dakika)</Cap>
-                    <AreaChart values={playMinutes} height={70} max={playMax} gridY={3}/>
+                    <PlaytimeChart daily={daily}/>
                 </>
             )}
 
@@ -880,6 +877,60 @@ function ProfileOverview({ profile }) {
                     MC istatistikleri bulunamadı (sunucu yolu veya UUID eksik olabilir)
                 </div>
             )}
+        </div>
+    );
+}
+
+// Günlük oynama — noktalarda dakika değeri + tarih + özet (kendi SVG'si)
+function PlaytimeChart({ daily }) {
+    const minutes = daily.map(d => Math.round((d.seconds || 0) / 60));
+    const n = minutes.length;
+    const peak = Math.max(...minutes, 1);
+    const total = minutes.reduce((a, b) => a + b, 0);
+    const avg = Math.round(total / n);
+
+    const W = 580, H = 100, padX = 22, padTop = 18, padBot = 16;
+    const plotH = H - padTop - padBot;
+    const stepX = (W - padX * 2) / Math.max(1, n - 1);
+    const pts = minutes.map((v, i) => ({
+        x: padX + i * stepX,
+        y: padTop + plotH - (v / peak) * plotH,
+        v,
+        date: daily[i].date,
+    }));
+    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const baseY = padTop + plotH;
+    const area = pts.length
+        ? `${line} L${pts[n - 1].x.toFixed(1)},${baseY} L${pts[0].x.toFixed(1)},${baseY} Z` : '';
+    const showVal = n <= 16;   // çok nokta varsa değer etiketini gizle
+    const showDate = n <= 10;  // çok nokta varsa tarihi gizle
+    const dm = (iso) => { const p = (iso || '').split('-'); return p.length === 3 ? `${p[2]}.${p[1]}` : ''; };
+
+    return (
+        <div>
+            <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+                <line x1={padX} x2={W - padX} y1={baseY} y2={baseY} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>
+                <path d={area} fill="rgba(167,139,250,0.12)"/>
+                <path d={line} fill="none" stroke="#a78bfa" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+                {pts.map((p, i) => (
+                    <g key={i}>
+                        <circle cx={p.x} cy={p.y} r="2.2" fill="#a78bfa"/>
+                        {showVal && (
+                            <text x={p.x} y={p.y - 6} textAnchor="middle" fontSize="9"
+                                fill={A.text} fontFamily="ui-monospace, JetBrains Mono, monospace">{p.v}</text>
+                        )}
+                        {showDate && (
+                            <text x={p.x} y={H - 4} textAnchor="middle" fontSize="7.5"
+                                fill="rgba(255,255,255,0.4)" fontFamily="ui-monospace, JetBrains Mono, monospace">{dm(p.date)}</text>
+                        )}
+                    </g>
+                ))}
+            </svg>
+            <div style={{ display: 'flex', gap: 16, marginTop: 4, fontFamily: A.mono, fontSize: 10, color: A.dim }}>
+                <span>Tepe <b style={{ color: A.text }}>{peak} dk</b></span>
+                <span>Ortalama <b style={{ color: A.text }}>{avg} dk</b></span>
+                <span>Toplam <b style={{ color: A.text }}>{fmtDuration(total * 60)}</b></span>
+            </div>
         </div>
     );
 }
