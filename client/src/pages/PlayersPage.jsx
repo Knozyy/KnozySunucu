@@ -852,7 +852,7 @@ function ProfileOverview({ profile }) {
             {/* Günlük oynama grafiği — en az 2 gün veri varsa */}
             {daily.length > 1 && (
                 <>
-                    <Cap>Günlük Oynama (dakika)</Cap>
+                    <Cap>Günlük Oynama (saat)</Cap>
                     <PlaytimeChart daily={daily}/>
                 </>
             )}
@@ -883,16 +883,17 @@ function ProfileOverview({ profile }) {
 
 // Günlük oynama — noktalarda dakika değeri + tarih + özet (kendi SVG'si)
 function PlaytimeChart({ daily }) {
-    const minutes = daily.map(d => Math.round((d.seconds || 0) / 60));
-    const n = minutes.length;
-    const peak = Math.max(...minutes, 1);
-    const total = minutes.reduce((a, b) => a + b, 0);
-    const avg = Math.round(total / n);
+    const hours = daily.map(d => (d.seconds || 0) / 3600);
+    const n = hours.length;
+    const peak = Math.max(...hours, 0.1);
+    const totalSec = daily.reduce((a, d) => a + (d.seconds || 0), 0);
+    const avgH = (totalSec / 3600) / n;
+    const fmtH = (h) => (h >= 10 ? String(Math.round(h)) : h.toFixed(1));
 
     const W = 580, H = 100, padX = 22, padTop = 18, padBot = 16;
     const plotH = H - padTop - padBot;
     const stepX = (W - padX * 2) / Math.max(1, n - 1);
-    const pts = minutes.map((v, i) => ({
+    const pts = hours.map((v, i) => ({
         x: padX + i * stepX,
         y: padTop + plotH - (v / peak) * plotH,
         v,
@@ -917,7 +918,7 @@ function PlaytimeChart({ daily }) {
                         <circle cx={p.x} cy={p.y} r="2.2" fill="#a78bfa"/>
                         {showVal && (
                             <text x={p.x} y={p.y - 6} textAnchor="middle" fontSize="9"
-                                fill={A.text} fontFamily="ui-monospace, JetBrains Mono, monospace">{p.v}</text>
+                                fill={A.text} fontFamily="ui-monospace, JetBrains Mono, monospace">{fmtH(p.v)}</text>
                         )}
                         {showDate && (
                             <text x={p.x} y={H - 4} textAnchor="middle" fontSize="7.5"
@@ -927,9 +928,9 @@ function PlaytimeChart({ daily }) {
                 ))}
             </svg>
             <div style={{ display: 'flex', gap: 16, marginTop: 4, fontFamily: A.mono, fontSize: 10, color: A.dim }}>
-                <span>Tepe <b style={{ color: A.text }}>{peak} dk</b></span>
-                <span>Ortalama <b style={{ color: A.text }}>{avg} dk</b></span>
-                <span>Toplam <b style={{ color: A.text }}>{fmtDuration(total * 60)}</b></span>
+                <span>Tepe <b style={{ color: A.text }}>{fmtH(peak)} sa</b></span>
+                <span>Ortalama <b style={{ color: A.text }}>{fmtH(avgH)} sa</b></span>
+                <span>Toplam <b style={{ color: A.text }}>{fmtDuration(totalSec)}</b></span>
             </div>
         </div>
     );
