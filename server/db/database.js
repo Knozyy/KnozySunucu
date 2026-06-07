@@ -283,6 +283,16 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_lag_attribution_ts ON lag_attribution(ts);
+
+    CREATE TABLE IF NOT EXISTS ip_geo (
+      ip TEXT PRIMARY KEY,
+      country TEXT,
+      country_code TEXT,
+      city TEXT,
+      region TEXT,
+      isp TEXT,
+      lookedup_at INTEGER
+    );
   `);
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)

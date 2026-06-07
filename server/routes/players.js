@@ -9,6 +9,7 @@ const serverRegistry = require('../services/serverRegistry');
 const { logAudit } = require('../services/auditService');
 const playerProfile = require('../services/playerProfile');
 const { readPlayerData } = require('../services/playerData');
+const geoip = require('../services/geoip');
 
 const router = express.Router();
 
@@ -310,7 +311,7 @@ router.post('/sessions/sync-online', authMiddleware, requireRole('admin'), (req,
 });
 
 // GET /api/players/profile/:username — oyuncu profili (DB + MC stats JSON)
-router.get('/profile/:username', authMiddleware, (req, res) => {
+router.get('/profile/:username', authMiddleware, async (req, res) => {
     try {
         const username = req.params.username;
         const db = getDb();
@@ -370,8 +371,24 @@ router.get('/profile/:username', authMiddleware, (req, res) => {
         const isAdmin = req.user?.role === 'admin';
         const banHistory = playerProfile.getBanHistory(db, username);
         let altAccounts = playerProfile.findAltAccounts(db, username);
-        if (!isAdmin) altAccounts = altAccounts.map(a => ({ ...a, ip: null })); // ham IP yalnız admin
         const playtimeDaily = playerProfile.getPlaytimeDaily(db, username);
+
+        // IP → konum (yalnız admin; cache'li, başarısızlıkta sessizce atlar)
+        let location = null;
+        if (isAdmin) {
+            try {
+                const lastIp = db.prepare(
+                    'SELECT ip_address FROM player_sessions WHERE username = ? AND ip_address IS NOT NULL ORDER BY joined_at DESC LIMIT 1'
+                ).get(username)?.ip_address;
+                if (lastIp) location = geoip.formatLocation(await geoip.lookup(db, lastIp));
+                // Alt-hesapların konumlarını da çöz
+                for (const a of altAccounts) {
+                    a.location = a.ip ? geoip.formatLocation(await geoip.lookup(db, a.ip)) : null;
+                }
+            } catch { /* konum çözülemezse profil yine de döner */ }
+        } else {
+            altAccounts = altAccounts.map(a => ({ ...a, ip: null, location: null })); // ham IP/konum yalnız admin
+        }
 
         res.json({
             username,
@@ -381,6 +398,7 @@ router.get('/profile/:username', authMiddleware, (req, res) => {
             totalSeconds:  sessionStats?.total_seconds || 0,
             firstSeen:     sessionStats?.first_seen || null,
             lastSeen:      sessionStats?.last_seen || null,
+            location,
             sessions,
             mcStats,
             banHistory,

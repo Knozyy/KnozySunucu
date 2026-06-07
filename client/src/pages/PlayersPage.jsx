@@ -1098,6 +1098,15 @@ function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding 
     const actionColor = { ban: A.err, 'ban-ip': A.err, unban: A.ok, 'unban-ip': A.ok };
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {profile?.location && (
+                <div>
+                    <Cap>Son Bağlantı Konumu</Cap>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
+                        <span style={{ fontSize: 13 }}>📍</span>
+                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{profile.location}</span>
+                    </div>
+                </div>
+            )}
             <div>
                 <Cap>Alt Hesaplar (aynı IP)</Cap>
                 {alts.length === 0 ? (
@@ -1105,8 +1114,11 @@ function ProfileManage({ profile, notes, note, setNote, onAdd, onDelete, adding 
                         Eşleşme yok (IP takibi bu güncellemeden itibaren çalışır)
                     </p>
                 ) : alts.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
-                        <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{a.username}</span>
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: A.bgDeeper, borderRadius: 3, marginTop: 4 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontFamily: A.mono, fontSize: 11, color: A.text }}>{a.username}</span>
+                            {a.location && <span style={{ fontFamily: A.mono, fontSize: 9, color: A.faint }}>📍 {a.location}</span>}
+                        </div>
                         <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faint }}>{a.ip || '••• gizli'}</span>
                     </div>
                 ))}
