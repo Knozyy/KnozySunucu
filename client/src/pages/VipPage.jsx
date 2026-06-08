@@ -9,6 +9,40 @@ import { I } from '@/hoodoo/icons';
 const selStyle = { background: A.bg, border: `1px solid ${A.border}`, color: A.text, fontSize: 12, padding: '7px 10px', borderRadius: 3, width: '100%', outline: 'none' };
 const EMPTY_PKG = { name: '', color: '#f1c40f', discord_role_id: '', discord_guild_id: '', duration_days: 30, grant_commands: '', revoke_commands: '', enabled: true };
 
+// Hazır perk kataloğu — seçilince grant/revoke komutlarını otomatik üretir ({nick} oyuncu adı)
+const PERK_CATALOG = [
+    {
+        id: 'ftb_rank', label: 'FTB Ranks rütbesi', fields: [{ key: 'rank', ph: 'vip' }],
+        build: v => ({ grant: [`ftbranks add {nick} ${v.rank}`], revoke: [`ftbranks remove {nick} ${v.rank}`] }),
+        note: 'FTB Ranks. Renkli chat / home / claim gibi perkler rütbenin config/ftbranks/ranks.snbt tanımında olmalı.',
+    },
+    {
+        id: 'lp_group', label: 'LuckPerms grubu', fields: [{ key: 'group', ph: 'vip' }],
+        build: v => ({ grant: [`lp user {nick} parent add ${v.group}`], revoke: [`lp user {nick} parent remove ${v.group}`] }),
+        note: 'LuckPerms gerekir.',
+    },
+    {
+        id: 'lp_prefix', label: 'Renkli isim / prefix (LuckPerms)', fields: [{ key: 'prefix', ph: '&b[VIP] ' }, { key: 'prio', ph: '100' }],
+        build: v => ({ grant: [`lp user {nick} meta addprefix ${v.prio || 100} "${v.prefix}"`], revoke: [`lp user {nick} meta removeprefix ${v.prio || 100} "${v.prefix}"`] }),
+        note: 'LuckPerms gerekir. Renk kodu: &b mavi, &6 altın, &a yeşil…',
+    },
+    {
+        id: 'lp_perm', label: 'LuckPerms izni', fields: [{ key: 'node', ph: 'ftbessentials.home.count.5' }],
+        build: v => ({ grant: [`lp user {nick} permission set ${v.node} true`], revoke: [`lp user {nick} permission unset ${v.node}`] }),
+        note: 'LuckPerms gerekir. Ör. fazladan ev/komut izni.',
+    },
+    {
+        id: 'broadcast', label: 'Duyuru mesajı (verince)', fields: [{ key: 'msg', ph: '{nick} VIP oldu!' }],
+        build: v => ({ grant: [`say ${v.msg}`], revoke: [] }),
+        note: 'Yalnızca verme anında bir kez çalışır.',
+    },
+    {
+        id: 'custom', label: 'Özel komut', fields: [{ key: 'grant', ph: 'verme komutu' }, { key: 'revoke', ph: 'bitiş komutu (ops.)' }],
+        build: v => ({ grant: v.grant ? [v.grant] : [], revoke: v.revoke ? [v.revoke] : [] }),
+        note: '{nick} ve {discord} yer tutucularını kullanabilirsin.',
+    },
+];
+
 function fmtExpiry(sec) {
     if (!sec) return 'Süresiz';
     const left = sec - Math.floor(Date.now() / 1000);
@@ -249,6 +283,22 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
         enabled: !!guildId,
     });
     const roles = rolesData?.roles || [];
+
+    const [perkType, setPerkType] = useState('ftb_rank');
+    const [perkVals, setPerkVals] = useState({});
+    const perkDef = PERK_CATALOG.find(p => p.id === perkType);
+    const addPerk = () => {
+        if (!perkDef) return;
+        const { grant, revoke } = perkDef.build(perkVals);
+        if (!grant.length && !revoke.length) return;
+        setF(p => ({
+            ...p,
+            grant_commands: [p.grant_commands, ...grant].filter(Boolean).join('\n'),
+            revoke_commands: [p.revoke_commands, ...revoke].filter(Boolean).join('\n'),
+        }));
+        setPerkVals({});
+    };
+
     return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
@@ -272,6 +322,25 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
                             {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                     </div>
+                    {/* Hazır perk kataloğu — seçilince komutları otomatik üretir */}
+                    <div style={{ gridColumn: '1 / -1', background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: 10 }}>
+                        <Cap style={{ display: 'block', marginBottom: 6 }}>Hazır perk ekle (komutları otomatik üretir)</Cap>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                            <div style={{ minWidth: 200 }}>
+                                <select value={perkType} onChange={e => { setPerkType(e.target.value); setPerkVals({}); }} style={selStyle}>
+                                    {PERK_CATALOG.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                                </select>
+                            </div>
+                            {(perkDef?.fields || []).map(fl => (
+                                <div key={fl.key} style={{ flex: 1, minWidth: 110 }}>
+                                    <Input value={perkVals[fl.key] || ''} onChange={e => setPerkVals(v => ({ ...v, [fl.key]: e.target.value }))} placeholder={fl.ph} />
+                                </div>
+                            ))}
+                            <button type="button" onClick={addPerk} style={{ ...btnPrimary, padding: '7px 12px' }}>+ Ekle</button>
+                        </div>
+                        {perkDef?.note && <div style={{ fontSize: 10, color: A.faint, marginTop: 6 }}>{perkDef.note}</div>}
+                    </div>
+
                     <div style={{ gridColumn: '1 / -1' }}>
                         <Cap style={{ display: 'block', marginBottom: 4 }}>Verme komutları (her satır bir MC komutu · {'{nick}'} {'{discord}'} yer tutucu)</Cap>
                         <textarea value={f.grant_commands} onChange={e => set('grant_commands', e.target.value)} rows={3} placeholder={'lp user {nick} parent add vip\nbroadcast {nick} VIP oldu!'} style={{ ...selStyle, fontFamily: A.mono, resize: 'vertical' }} />
