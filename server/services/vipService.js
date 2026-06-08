@@ -7,7 +7,18 @@
  *
  * Süreli Roller sisteminden BAĞIMSIZ (kendi tabloları: vip_packages/vip_grants/vip_log).
  */
+const fs = require('fs');
+const path = require('path');
 const { getDb } = require('../db/database');
+const ranksFile = require('./vip/ranksFile');
+
+// Panelden yönetilen FTB Ranks kademeleri (eksik blok oluşturulurken meta) — VipPage presetleriyle eşleşir.
+const TIER_META = {
+    vip:      { name: 'VIP',  power: 50 },
+    vip_plus: { name: 'VIP+', power: 60 },
+    mvp:      { name: 'MVP',  power: 70 },
+};
+const VIP_TIERS = Object.keys(TIER_META);
 
 function db() { return getDb(); }
 function now() { return Math.floor(Date.now() / 1000); }
@@ -132,6 +143,71 @@ class VipService {
     // ── Uygulama yardımcıları ───────────────────────────────────────────────
     _mcInstance() { try { return require('./serverRegistry').getDefault(); } catch { return null; } }
     _mcRunning() { const i = this._mcInstance(); return !!(i && i.status === 'running'); }
+    _serverPath() { const i = this._mcInstance(); try { return i?.getServerPath ? i.getServerPath() : null; } catch { return null; } }
+    _ranksPath() { const sp = this._serverPath(); return sp ? path.join(sp, 'config', 'ftbranks', 'ranks.snbt') : null; }
+
+    // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
+    /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
+    readTierPerks() {
+        const p = this._ranksPath();
+        const found = !!(p && fs.existsSync(p));
+        let raw = '';
+        if (found) { try { raw = fs.readFileSync(p, 'utf-8'); } catch { /* ignore */ } }
+        const tiers = VIP_TIERS.map(rank => {
+            const meta = TIER_META[rank];
+            const r = found ? ranksFile.readPerks(raw, rank) : { exists: false, name: null, power: null, perks: null };
+            return { rank, label: meta.name, defaultPower: meta.power, exists: r.exists, name: r.name, power: r.power, perks: r.perks };
+        });
+        return { fileFound: found, path: p, serverRunning: this._mcRunning(), tiers };
+    }
+
+    /** Bir kademenin perklerini ranks.snbt'ye yaz: yedek + yazma-doğrulama + (açıksa) reload. */
+    saveTierPerks(rank, perks) {
+        if (!VIP_TIERS.includes(rank)) throw new Error('Geçersiz kademe: ' + rank);
+        if (!perks || typeof perks !== 'object') throw new Error('perks gerekli');
+        const p = this._ranksPath();
+        if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
+        if (!fs.existsSync(p)) throw new Error(`ranks.snbt bulunamadı: ${p} — sunucuda FTB Ranks kurulu/çalışmış olmalı.`);
+
+        const raw = fs.readFileSync(p, 'utf-8');
+        const next = ranksFile.writePerks(raw, rank, perks, TIER_META[rank]);
+
+        try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
+        fs.writeFileSync(p, next, 'utf-8');
+
+        // Yazma doğrulaması — geri oku, istenen değerler gerçekten yazıldı mı?
+        const after = ranksFile.readPerks(fs.readFileSync(p, 'utf-8'), rank).perks;
+        const bad = this._verifyPerks(after, perks);
+        if (bad) {
+            try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ }
+            throw new Error(`Yazma doğrulanamadı (${bad}) — değişiklik geri alındı.`);
+        }
+
+        let reloaded = false;
+        if (this._mcRunning()) {
+            try { this._mcInstance().sendCommand('ftbranks reload'); reloaded = true; } catch { /* ignore */ }
+        }
+        return { ok: true, reloaded, path: p };
+    }
+
+    // İstenen perkler dosyadan geri okunan değerlerle eşleşiyor mu? Uymuyorsa ilk uyumsuz alanın adı.
+    _verifyPerks(after, want) {
+        for (const f of Object.keys(want)) {
+            const def = ranksFile.MANAGED[f];
+            if (!def) continue;
+            const w = want[f];
+            if (def.type === 'bool') { if (Boolean(after[f]) !== Boolean(w)) return f; }
+            else if (def.type === 'int') {
+                const ok = w != null && w !== '' && Number.isFinite(Number(w));
+                if (ok) { if (Number(after[f]) !== Number(w)) return f; }
+                else if (after[f] != null) return f;
+            } else {
+                if (w) { if (after[f] !== String(w)) return f; }
+                else if (after[f] != null) return f;
+            }
+        }
+        return null;
+    }
 
     async _applyGrant(pkg, { userId, mcNick }) {
         const parts = [];

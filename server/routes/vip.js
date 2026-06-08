@@ -63,6 +63,15 @@ router.post('/grants/:id/revoke', authMiddleware, requireRole('admin'), async (r
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Kademe perkleri (ranks.snbt — FTB Ranks) ──
+router.get('/ranks-perks', authMiddleware, (req, res) => {
+    try { res.json(vipService.readTierPerks()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/ranks-perks/:rank', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json({ message: 'Perkler kaydedildi', ...vipService.saveTierPerks(req.params.rank, req.body?.perks || {}) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Log ──
 router.get('/log', authMiddleware, (req, res) => {
     try { res.json({ log: vipService.log(parseInt(req.query.limit) || 100) }); } catch (e) { res.status(500).json({ error: e.message }); }

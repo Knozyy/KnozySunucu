@@ -83,6 +83,13 @@ function presetByGrant(grantCommands) {
     return null;
 }
 
+// "Perkler" sekmesi form varsayılanları (blok YOKsa ön-doldurma; rehberle birebir).
+const TIER_PERK_DEFAULTS = {
+    vip:      { nameFormat: '&b[VIP] {name}&r',  homeMax: 10, homeCooldown: 30, back: true, rtp: false, enderchest: false, maxClaimed: 750,  maxForceLoaded: 80 },
+    vip_plus: { nameFormat: '&a[VIP+] {name}&r', homeMax: 20, homeCooldown: 10, back: true, rtp: true,  enderchest: false, maxClaimed: 1200, maxForceLoaded: 120 },
+    mvp:      { nameFormat: '&6[MVP] {name}&r',  homeMax: 35, homeCooldown: 0,  back: true, rtp: true,  enderchest: true,  maxClaimed: 2000, maxForceLoaded: 200 },
+};
+
 function fmtExpiry(sec) {
     if (!sec) return 'Süresiz';
     const left = sec - Math.floor(Date.now() / 1000);
@@ -181,7 +188,7 @@ export default function VipPage() {
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
+                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
                         color: tab === t.id ? '#fff' : A.dim, fontSize: 12, fontWeight: 500, padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -320,6 +327,9 @@ export default function VipPage() {
                 </div>
             )}
 
+            {/* PERKLER (ranks.snbt editörü) */}
+            {tab === 'perks' && <PerksTab />}
+
             {/* LOG */}
             {tab === 'log' && (
                 <Card title="VIP Günlüğü">
@@ -448,6 +458,89 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
                     <button onClick={onClose} style={btnGhost}>İptal</button>
                     <button onClick={() => { if (!f.name) return toast.error('Paket adı gerekli'); onSave(f); }} disabled={saving} style={btnPrimary}>{saving ? 'Kaydediliyor…' : 'Kaydet'}</button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ── PERKLER sekmesi — ranks.snbt'yi panelden yapılandırılmış düzenleme ──
+function PerksTab() {
+    const { data, isLoading } = useQuery({ queryKey: ['vip-ranks-perks'], queryFn: () => api.get('/vip/ranks-perks').then(r => r.data) });
+    if (isLoading) return <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>;
+    const tiers = data?.tiers || [];
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Card title="Kademe Perkleri (ranks.snbt)">
+                <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                    Perkleri buradan düzenle → Kaydet → sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Her kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                </p>
+                {data && !data.fileFound && (
+                    <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                        ranks.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Ranks kurulu/çalışmış olmalı; kurulum için bkz. <code style={{ fontFamily: A.mono }}>.planning/2026-06-08-vip-perk-rehberi.md</code>.
+                    </div>
+                )}
+            </Card>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
+                {tiers.map(t => <TierPerkCard key={t.rank} tier={t} />)}
+            </div>
+        </div>
+    );
+}
+
+function TierPerkCard({ tier }) {
+    const qc = useQueryClient();
+    const preset = TIER_PRESETS.find(t => t.rank === tier.rank);
+    // Blok varsa dosyadaki gerçek durumu göster; yoksa preset varsayılanlarıyla ön-doldur.
+    const seed = tier.exists && tier.perks ? {
+        nameFormat: tier.perks.nameFormat ?? '',
+        homeMax: tier.perks.homeMax ?? '', homeCooldown: tier.perks.homeCooldown ?? '',
+        back: !!tier.perks.back, rtp: !!tier.perks.rtp, enderchest: !!tier.perks.enderchest,
+        maxClaimed: tier.perks.maxClaimed ?? '', maxForceLoaded: tier.perks.maxForceLoaded ?? '',
+    } : { ...(TIER_PERK_DEFAULTS[tier.rank] || {}) };
+    const [f, setF] = useState(seed);
+    const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+    const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
+
+    const save = useMutation({
+        mutationFn: () => api.put(`/vip/ranks-perks/${tier.rank}`, {
+            perks: {
+                nameFormat: f.nameFormat || null,
+                homeMax: numOrNull(f.homeMax), homeCooldown: numOrNull(f.homeCooldown),
+                back: !!f.back, rtp: !!f.rtp, enderchest: !!f.enderchest,
+                maxClaimed: numOrNull(f.maxClaimed), maxForceLoaded: numOrNull(f.maxForceLoaded),
+            },
+        }).then(r => r.data),
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+
+    return (
+        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: preset?.color || 'var(--accent)' }} />
+                <span style={{ fontWeight: 600 }}>{tier.label || tier.rank}</span>
+                <Pill color={tier.exists ? A.ok : A.faint}>{tier.exists ? 'tanımlı' : 'yok — kaydedince oluşturulur'}</Pill>
+                <code style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{tier.rank}</code>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>İsim formatı ({'{name}'} yer tutucu · &amp;b renk)</Cap>
+                    <Input value={f.nameFormat || ''} onChange={e => set('nameFormat', e.target.value)} placeholder="&b[VIP] {name}&r" /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div><Cap style={{ display: 'block', marginBottom: 4 }}>Home sayısı</Cap><Input type="number" value={f.homeMax ?? ''} onChange={e => set('homeMax', e.target.value)} /></div>
+                    <div><Cap style={{ display: 'block', marginBottom: 4 }}>Home bekleme (sn)</Cap><Input type="number" value={f.homeCooldown ?? ''} onChange={e => set('homeCooldown', e.target.value)} /></div>
+                    <div><Cap style={{ display: 'block', marginBottom: 4 }}>Claim chunk</Cap><Input type="number" value={f.maxClaimed ?? ''} onChange={e => set('maxClaimed', e.target.value)} /></div>
+                    <div><Cap style={{ display: 'block', marginBottom: 4 }}>Force-load chunk</Cap><Input type="number" value={f.maxForceLoaded ?? ''} onChange={e => set('maxForceLoaded', e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
+                    {[['back', '/back'], ['rtp', '/rtp'], ['enderchest', '/enderchest']].map(([k, lbl]) => (
+                        <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!f[k]} onChange={e => set(k, e.target.checked)} /> {lbl}
+                        </label>
+                    ))}
+                </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
             </div>
         </div>
     );
