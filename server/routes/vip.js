@@ -11,9 +11,15 @@ router.get('/stats', authMiddleware, (req, res) => {
     try { res.json(vipService.stats()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Discord rolleri (paket düzenlemede rol seçici) ──
+// ── Discord sunucuları (guild seçici) ──
+router.get('/guilds', authMiddleware, async (req, res) => {
+    try { res.json({ guilds: await discordBotService.listGuilds() }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Discord rolleri (seçilen guild'in rolleri) ──
 router.get('/roles', authMiddleware, async (req, res) => {
-    try { res.json({ roles: await discordBotService.listGuildRoles() }); }
+    try { res.json({ roles: await discordBotService.listGuildRoles(req.query.guildId || null) }); }
     catch (e) { res.status(500).json({ error: e.message }); }
 });
 

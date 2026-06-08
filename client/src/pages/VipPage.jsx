@@ -33,12 +33,10 @@ export default function VipPage() {
     const { data: pkgData } = useQuery({ queryKey: ['vip-packages'], queryFn: () => api.get('/vip/packages').then(r => r.data) });
     const { data: grantData } = useQuery({ queryKey: ['vip-grants'], queryFn: () => api.get('/vip/grants?status=active').then(r => r.data), refetchInterval: 15000 });
     const { data: logData } = useQuery({ queryKey: ['vip-log'], queryFn: () => api.get('/vip/log').then(r => r.data), refetchInterval: 15000, enabled: tab === 'log' });
-    const { data: rolesData } = useQuery({ queryKey: ['vip-roles'], queryFn: () => api.get('/vip/roles').then(r => r.data), enabled: !!editPkg });
     const { data: wlData } = useQuery({ queryKey: ['vip-whitelist'], queryFn: () => api.get('/discord/whitelist').then(r => r.data) });
 
     const packages = pkgData?.packages || [];
     const grants = grantData?.grants || [];
-    const roles = rolesData?.roles || [];
     const wl = wlData?.entries || [];
     const logs = logData?.log || [];
 
@@ -234,14 +232,23 @@ export default function VipPage() {
                 </Card>
             )}
 
-            {editPkg && <PackageModal pkg={editPkg} roles={roles} onClose={() => setEditPkg(null)} onSave={(p) => savePkg.mutate(p)} saving={savePkg.isPending} />}
+            {editPkg && <PackageModal pkg={editPkg} onClose={() => setEditPkg(null)} onSave={(p) => savePkg.mutate(p)} saving={savePkg.isPending} />}
         </div>
     );
 }
 
-function PackageModal({ pkg, roles, onClose, onSave, saving }) {
+function PackageModal({ pkg, onClose, onSave, saving }) {
     const [f, setF] = useState(pkg);
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+    const [guildId, setGuildId] = useState(pkg.discord_guild_id || '');
+    const { data: guildsData } = useQuery({ queryKey: ['vip-guilds'], queryFn: () => api.get('/vip/guilds').then(r => r.data) });
+    const guilds = guildsData?.guilds || [];
+    const { data: rolesData, isFetching: rolesLoading } = useQuery({
+        queryKey: ['vip-roles', guildId],
+        queryFn: () => api.get('/vip/roles', { params: guildId ? { guildId } : {} }).then(r => r.data),
+        enabled: !!guildId,
+    });
+    const roles = rolesData?.roles || [];
     return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
@@ -253,9 +260,15 @@ function PackageModal({ pkg, roles, onClose, onSave, saving }) {
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Paket adı</Cap><Input value={f.name} onChange={e => set('name', e.target.value)} placeholder="VIP+" /></div>
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Renk</Cap><Input type="color" value={f.color} onChange={e => set('color', e.target.value)} /></div>
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Süre (gün, 0 = süresiz)</Cap><Input type="number" value={f.duration_days} onChange={e => set('duration_days', e.target.value)} /></div>
+                    <div><Cap style={{ display: 'block', marginBottom: 4 }}>Discord sunucusu</Cap>
+                        <select value={guildId} onChange={e => { setGuildId(e.target.value); set('discord_guild_id', e.target.value); set('discord_role_id', ''); }} style={selStyle}>
+                            <option value="">— sunucu seç ({guilds.length}) —</option>
+                            {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                    </div>
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Discord rolü</Cap>
-                        <select value={f.discord_role_id || ''} onChange={e => { const r = roles.find(x => x.id === e.target.value); set('discord_role_id', e.target.value); set('discord_guild_id', r?.guild_id || ''); }} style={selStyle}>
-                            <option value="">— rol yok —</option>
+                        <select value={f.discord_role_id || ''} onChange={e => set('discord_role_id', e.target.value)} style={selStyle} disabled={!guildId}>
+                            <option value="">{!guildId ? '— önce sunucu seç —' : (rolesLoading ? 'yükleniyor…' : '— rol yok —')}</option>
                             {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                     </div>

@@ -552,6 +552,14 @@ class DiscordBotService {
         return { ok, statusCode: r?.statusCode };
     }
 
+    /** Botun bulunduğu tüm sunucular (guild seçici için). */
+    async listGuilds() {
+        const guilds = await this._discordApiGet('/users/@me/guilds');
+        if (!Array.isArray(guilds)) return [];
+        return guilds.map(g => ({ id: String(g.id), name: g.name, icon: g.icon || null }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     /** Botun bulunduğu birincil guild id (cache'li). */
     async getPrimaryGuildId() {
         if (this._primaryGuildId) return this._primaryGuildId;
