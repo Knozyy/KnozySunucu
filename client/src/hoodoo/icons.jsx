@@ -50,6 +50,7 @@ export const I = {
     Send:       makeIcon(<><line x1="3" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></>),
     Chat:       makeIcon(<><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></>),
     Server:     makeIcon(<><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><line x1="7" y1="7" x2="7" y2="7"/><line x1="7" y1="17" x2="7" y2="17"/></>),
+    Crown:      makeIcon(<><path d="M3 8l4 4 5-7 5 7 4-4v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><line x1="3" y1="20" x2="21" y2="20"/></>),
 };
 
 export default I;

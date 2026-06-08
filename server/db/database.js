@@ -283,6 +283,50 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_lag_attribution_ts ON lag_attribution(ts);
+
+    -- ── VIP Sistemi (panelden yönetilen, çoklu paket; Discord rolü + MC komutları) ──
+    -- Yapılandırılabilir VIP paketleri: her biri bir Discord rolü atar ve verme/bitiş
+    -- anında MC komutları çalıştırır (LuckPerms grubu, kit, vb. — {nick} yer tutucusu).
+    CREATE TABLE IF NOT EXISTS vip_packages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT DEFAULT '#f1c40f',
+      discord_role_id TEXT,                 -- atanacak Discord rolü (opsiyonel)
+      discord_guild_id TEXT,                -- rolün guild'i (boşsa birincil guild)
+      duration_days INTEGER DEFAULT 30,     -- varsayılan süre (0 = süresiz)
+      grant_commands TEXT NOT NULL DEFAULT '[]',  -- JSON: verme anı MC komutları ({nick},{discord})
+      revoke_commands TEXT NOT NULL DEFAULT '[]', -- JSON: bitiş/iptal anı MC komutları
+      sort_order INTEGER DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS vip_grants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      package_id INTEGER REFERENCES vip_packages(id) ON DELETE SET NULL,
+      package_name TEXT,                    -- anlık kopya (paket silinse de görünür)
+      user_id TEXT,                         -- Discord kullanıcı id (rol için)
+      mc_nick TEXT,                         -- Minecraft nick (komutlar için)
+      granted_by TEXT DEFAULT 'admin',
+      granted_at INTEGER NOT NULL,          -- epoch sn
+      expires_at INTEGER,                   -- epoch sn · NULL = süresiz
+      status TEXT NOT NULL DEFAULT 'active',-- active | expired | revoked
+      revoked_at INTEGER,
+      note TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_vip_grants_status ON vip_grants(status, expires_at);
+
+    CREATE TABLE IF NOT EXISTS vip_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grant_id INTEGER,
+      action TEXT NOT NULL,                 -- grant | expire | revoke | error
+      package_name TEXT,
+      mc_nick TEXT,
+      user_id TEXT,
+      detail TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)

@@ -24,6 +24,7 @@ export const PAGES = [
     { key: 'backup',      path: '/backup',     label: 'Yedek',        emoji: '💾', icon: I.Archive },
     { key: 'discord',     path: '/discord',    label: 'Discord Bot',  emoji: '🎮', icon: I.Chat },
     { key: 'lagguard',    path: '/lag-guard',  label: 'Lag Koruması', emoji: '🛡️', icon: I.Signal },
+    { key: 'vip',         path: '/vip',        label: 'VIP',          emoji: '👑', icon: I.Crown, adminOnly: true },
     { key: 'terminal',    path: '/terminal',   label: 'Terminal',     emoji: '⌨️', icon: I.Terminal, adminOnly: true },
     { key: 'servers',     path: '/servers',    label: 'Sunucular',    emoji: '🖥️', icon: I.Server, adminOnly: true },
     { key: 'settings',    path: '/settings',   label: 'Ayarlar',      emoji: '⚙️', icon: I.Cog, adminOnly: true },

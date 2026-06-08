@@ -510,6 +510,73 @@ class DiscordBotService {
         });
     }
 
+    _discordApiPut(path) {
+        const token = this.getDiscordToken();
+        if (!token) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const opts = {
+                hostname: 'discord.com',
+                path: `/api/v10${path}`,
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bot ${token}`,
+                    'User-Agent': 'KnozyPanel (1.0)',
+                    'Content-Length': 0,
+                },
+            };
+            const req = https.request(opts, (res) => {
+                let data = '';
+                res.on('data', c => { data += c; });
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+            req.on('error', () => resolve(null));
+            req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+            req.end();
+        });
+    }
+
+    // ── Üye rol ekle/çıkar (VIP sistemi kullanır) ─────────────────────────────
+    async addMemberRole(userId, roleId, guildId) {
+        const gid = guildId || await this.getPrimaryGuildId();
+        if (!gid || !userId || !roleId) return { ok: false, error: 'guild/user/role eksik' };
+        const r = await this._discordApiPut(`/guilds/${gid}/members/${userId}/roles/${roleId}`);
+        const ok = r && r.statusCode >= 200 && r.statusCode < 300;
+        return { ok, statusCode: r?.statusCode };
+    }
+
+    async removeMemberRole(userId, roleId, guildId) {
+        const gid = guildId || await this.getPrimaryGuildId();
+        if (!gid || !userId || !roleId) return { ok: false, error: 'guild/user/role eksik' };
+        const r = await this._discordApiDelete(`/guilds/${gid}/members/${userId}/roles/${roleId}`);
+        const ok = r && r.statusCode >= 200 && r.statusCode < 300;
+        return { ok, statusCode: r?.statusCode };
+    }
+
+    /** Botun bulunduğu birincil guild id (cache'li). */
+    async getPrimaryGuildId() {
+        if (this._primaryGuildId) return this._primaryGuildId;
+        try {
+            const guilds = await this._discordApiGet('/users/@me/guilds');
+            if (Array.isArray(guilds) && guilds.length) {
+                this._primaryGuildId = String(guilds[0].id);
+                return this._primaryGuildId;
+            }
+        } catch { /* ignore */ }
+        return null;
+    }
+
+    /** Bir guild'in rollerini döndür (panel paket düzenlemede rol seçici için). */
+    async listGuildRoles(guildId) {
+        const gid = guildId || await this.getPrimaryGuildId();
+        if (!gid) return [];
+        const roles = await this._discordApiGet(`/guilds/${gid}/roles`);
+        if (!Array.isArray(roles)) return [];
+        return roles
+            .filter(r => r.name !== '@everyone')
+            .map(r => ({ id: String(r.id), name: r.name, color: r.color, guild_id: gid }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     /**
      * Rol bilgilerini cache'le (guildId + roleIds[])
      * @returns {Promise<Object<string,{name, color, guild_id}>>}

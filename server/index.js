@@ -89,6 +89,7 @@ const serverListRoutes = require('./routes/servers');
 const dashboardRoutes = require('./routes/dashboard');
 const pushRoutes = require('./routes/push');
 const lagGuardRoutes = require('./routes/lagGuard');
+const vipRoutes = require('./routes/vip');
 const minecraftService = require('./services/minecraftService');
 const serverRegistry = require('./services/serverRegistry');
 
@@ -166,6 +167,7 @@ app.use('/api/servers', serverListRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/lag-guard', lagGuardRoutes);
+app.use('/api/vip', vipRoutes);
 
 // Health check — startTime sunucu yeniden başlayınca değişir, frontend bunu algılar
 const SERVER_START_TIME = Date.now();
@@ -187,6 +189,9 @@ app.use((req, res) => {
 
 // Süreli whitelist periyodik kontrolü
 require('./services/timedWhitelistService').start();
+
+// VIP süre kontrolü (süresi dolan VIP'leri otomatik geri al)
+require('./services/vipService').start();
 
 // Discord webhook bildirimleri
 require('./services/webhookListener').start();

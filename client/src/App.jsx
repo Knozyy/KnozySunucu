@@ -22,6 +22,7 @@ import DiscordPage from '@/pages/DiscordPage';
 import AutomationPage from '@/pages/AutomationPage';
 import PerformancePage from '@/pages/PerformancePage';
 import LagGuardPage from '@/pages/LagGuardPage';
+import VipPage from '@/pages/VipPage';
 import PlayersPage from '@/pages/PlayersPage';
 import ServersPage from '@/pages/ServersPage';
 
@@ -91,6 +92,7 @@ function AppInner() {
           <Route path="automation" element={<AutomationPage />} />
           <Route path="performance" element={<PerformancePage />} />
           <Route path="lag-guard" element={<LagGuardPage />} />
+          <Route path="vip" element={<VipPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="servers" element={<ServersPage />} />
         </Route>
