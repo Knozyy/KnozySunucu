@@ -43,6 +43,46 @@ const PERK_CATALOG = [
     },
 ];
 
+// Hazır kademeler — .planning/2026-06-08-vip-perk-rehberi.md ile birebir.
+// Perkler sunucudaki config/ftbranks/ranks.snbt'de tanımlı; panel sadece 'ftbranks add/remove' çalıştırır.
+const TIER_PRESETS = [
+    {
+        rank: 'vip', name: 'VIP', color: '#3498db', duration_days: 30,
+        perks: ['Renkli isim [VIP]', '10 home', 'Home bekleme: 30', '/back', 'Claim: 750', 'Force-load: 80'],
+        grant: ['ftbranks add {nick} vip', 'say {nick} sunucuya VIP olarak katildi!'],
+        revoke: ['ftbranks remove {nick} vip'],
+    },
+    {
+        rank: 'vip_plus', name: 'VIP+', color: '#2ecc71', duration_days: 30,
+        perks: ['Renkli isim [VIP+]', '20 home', 'Home bekleme: 10', '/back', '/rtp', 'Claim: 1200', 'Force-load: 120'],
+        grant: ['ftbranks add {nick} vip_plus', 'say {nick} artik VIP+ oldu!'],
+        revoke: ['ftbranks remove {nick} vip_plus'],
+    },
+    {
+        rank: 'mvp', name: 'MVP', color: '#f1c40f', duration_days: 30,
+        perks: ['Renkli isim [MVP]', '35 home', 'Home bekleme: 0', '/back', '/rtp', '/enderchest', 'Claim: 2000', 'Force-load: 200'],
+        grant: ['ftbranks add {nick} mvp', 'say {nick} artik MVP oldu!'],
+        revoke: ['ftbranks remove {nick} mvp'],
+    },
+];
+
+// Paket komutları DB'de JSON dizi olarak saklanır; modal/önizleme newline metin ister.
+function parseCmdsText(v) {
+    if (Array.isArray(v)) return v.join('\n');
+    try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.join('\n') : String(v || ''); }
+    catch { return String(v || ''); }
+}
+
+// Bir paketin grant komutlarındaki 'ftbranks add {nick} <rütbe>' satırından kademeyi bul (tam eşleşme — vip ≠ vip_plus).
+function presetByGrant(grantCommands) {
+    const lines = String(grantCommands || '').split('\n');
+    for (const ln of lines) {
+        const m = ln.trim().match(/^ftbranks\s+add\s+\{nick\}\s+(\S+)/i);
+        if (m) return TIER_PRESETS.find(t => t.rank === m[1]) || null;
+    }
+    return null;
+}
+
 function fmtExpiry(sec) {
     if (!sec) return 'Süresiz';
     const left = sec - Math.floor(Date.now() / 1000);
@@ -120,6 +160,9 @@ export default function VipPage() {
         if (!gPlayer) return toast.error('Oyuncu seç');
         grant.mutate({ packageId: Number(gPkg), userId: gPlayer.userId, mcNick: gPlayer.mcNick, durationDays: gDays === '' ? undefined : Number(gDays), note: gNote });
     };
+
+    // Mevcut paketi düzenleme için aç (JSON komutları → modalın beklediği newline metne çevir).
+    const openPackage = (p) => setEditPkg({ ...p, grant_commands: parseCmdsText(p.grant_commands), revoke_commands: parseCmdsText(p.revoke_commands), enabled: !!p.enabled });
 
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: A.sans, color: A.text }}>
@@ -215,7 +258,41 @@ export default function VipPage() {
             {/* PAKETLER */}
             {tab === 'packages' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div><button onClick={() => setEditPkg({ ...EMPTY_PKG })} style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}><I.Plus size={13} /> Paket Ekle</button></div>
+                    {/* Hazır kademeler — perkler ranks.snbt'de tanımlı, panel sadece rütbe ekler/çıkarır */}
+                    <Card title="Hazır Kademeler">
+                        <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                            Tek tıkla VIP / VIP+ / MVP paketini oluştur. Perkler sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code> dosyasında tanımlıdır — kurulum için bkz. <code style={{ fontFamily: A.mono, color: A.dim }}>.planning/2026-06-08-vip-perk-rehberi.md</code>. (ranks.snbt'yi panelden düzenleme yakında.)
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+                            {TIER_PRESETS.map(t => {
+                                const ex = packages.find(p => presetByGrant(parseCmdsText(p.grant_commands))?.rank === t.rank);
+                                return (
+                                    <div key={t.rank} style={{ background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ width: 12, height: 12, borderRadius: 3, background: t.color, display: 'inline-block' }} />
+                                            <span style={{ fontWeight: 600 }}>{t.name}</span>
+                                            <span style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{t.duration_days}g</span>
+                                        </div>
+                                        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                            {t.perks.map(pk => (
+                                                <li key={pk} style={{ fontSize: 11, color: A.dim, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <span style={{ color: t.color }}>•</span>{pk}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        {ex ? (
+                                            <button onClick={() => openPackage(ex)} style={{ ...btnGhost, marginTop: 'auto' }}>Düzenle (var)</button>
+                                        ) : (
+                                            <button onClick={() => setEditPkg({ ...EMPTY_PKG, name: t.name, color: t.color, duration_days: t.duration_days, grant_commands: t.grant.join('\n'), revoke_commands: t.revoke.join('\n') })}
+                                                style={{ ...btnPrimary, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Plus size={12} /> Oluştur</button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Card>
+
+                    <div><button onClick={() => setEditPkg({ ...EMPTY_PKG })} style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}><I.Plus size={13} /> Boş Paket Ekle</button></div>
                     {packages.length === 0 ? <p style={{ fontSize: 12, color: A.faint }}>Henüz paket yok.</p> : packages.map(p => {
                         const gc = (() => { try { return JSON.parse(p.grant_commands || '[]'); } catch { return []; } })();
                         const rc = (() => { try { return JSON.parse(p.revoke_commands || '[]'); } catch { return []; } })();
@@ -234,7 +311,7 @@ export default function VipPage() {
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                                    <button onClick={() => setEditPkg({ ...p, grant_commands: gc.join('\n'), revoke_commands: rc.join('\n'), enabled: !!p.enabled })} style={btnGhost}>Düzenle</button>
+                                    <button onClick={() => openPackage(p)} style={btnGhost}>Düzenle</button>
                                     <button onClick={() => { if (confirm(`"${p.name}" paketi silinsin mi?`)) delPkg.mutate(p.id); }} style={{ ...btnGhost, color: A.err }}>Sil</button>
                                 </div>
                             </div>
@@ -299,6 +376,8 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
         setPerkVals({});
     };
 
+    const presetMatch = presetByGrant(f.grant_commands); // grant komutu bir kademeye uyuyorsa perklerini göster
+
     return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
@@ -322,6 +401,18 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
                             {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                     </div>
+                    {/* Kademe perkleri — grant komutu bir hazır kademeye uyuyorsa (salt-bilgi, ranks.snbt'de tanımlı) */}
+                    {presetMatch && (
+                        <div style={{ gridColumn: '1 / -1', background: A.bg, border: `1px solid ${presetMatch.color}`, borderRadius: 4, padding: 10 }}>
+                            <Cap style={{ display: 'block', marginBottom: 6 }}>{presetMatch.name} perkleri · <span style={{ color: A.faint, fontWeight: 400 }}>ranks.snbt'de tanımlı</span></Cap>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {presetMatch.perks.map(pk => (
+                                    <span key={pk} style={{ fontSize: 11, color: A.dim, background: A.panel, border: `1px solid ${A.border}`, borderRadius: 3, padding: '3px 8px' }}>{pk}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Hazır perk kataloğu — seçilince komutları otomatik üretir */}
                     <div style={{ gridColumn: '1 / -1', background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: 10 }}>
                         <Cap style={{ display: 'block', marginBottom: 6 }}>Hazır perk ekle (komutları otomatik üretir)</Cap>
