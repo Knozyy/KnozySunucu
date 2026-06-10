@@ -18,6 +18,7 @@ const ftbChunks = require('./ftbChunks');
 const observable = require('../observable');
 
 const NS_PER_MS = 1e6;
+const TICK_BUDGET_MS = 50; // bir tick bütçesi — budgetPct bunun yüzdesi
 
 class AttributionProbe {
     constructor() {
@@ -27,8 +28,13 @@ class AttributionProbe {
 
     isBusy() { return this._busy; }
 
-    /** Observable JSON'unu sahip/hotspot/tür atıfına çevirir (saf fonksiyon). */
-    attributeProfile(json, serverPath) {
+    /**
+     * Observable JSON'unu sahip/hotspot/tür atıfına çevirir (saf fonksiyon) — v2.
+     * v2: görece "toplamın %X'i" YOK; mutlak ms + 50ms tick bütçesi yüzdesi var.
+     * Makine (blk) ve canlı (ent) maliyeti ayrı; wild (claimsiz) hiçbir sahibe yazılmaz.
+     * @param ownerAt — test için enjekte edilebilir sahip çözücü (dim,x,z) → owner|null
+     */
+    attributeProfile(json, serverPath, ownerAt = null) {
         const d = (json && json.data) || {};
         const diag = (json && json.diagnostics) || {};
         const hotspots = [];
@@ -42,38 +48,50 @@ class AttributionProbe {
             }
         }
         const total = hotspots.reduce((s, h) => s + h.rate, 0) || 1;
-        const ownerOf = (h) => {
-            if (h.x == null || h.z == null) return null;
-            const o = ftbChunks.ownerAt(serverPath, h.dim, h.x, h.z);
+        const resolve = ownerAt || ((dim, x, z) => {
+            const o = ftbChunks.ownerAt(serverPath, dim, x, z);
             return o && o.owner ? o.owner : null;
-        };
+        });
+        const ownerOf = (h) => (h.x == null || h.z == null) ? null : resolve(h.dim, h.x, h.z);
 
-        // Sahip başına maliyet
-        const ownerRate = {};
+        const ms = (rate) => +(rate / NS_PER_MS).toFixed(3);
+        const budgetPct = (rate) => +(100 * (rate / NS_PER_MS) / TICK_BUDGET_MS).toFixed(1);
+
+        // Sahip başına maliyet — makine (blk) ve canlı (ent) AYRI; wild kimseye yazılmaz
+        const acc = {}; // owner → { blk, ent } (ns/tick)
+        const wildAcc = { blk: 0, ent: 0 };
         for (const h of hotspots) {
-            const owner = ownerOf(h) || 'claimsiz (wild)';
-            ownerRate[owner] = (ownerRate[owner] || 0) + h.rate;
+            const owner = ownerOf(h);
+            const bucket = owner ? (acc[owner] = acc[owner] || { blk: 0, ent: 0 }) : wildAcc;
+            bucket[h.kind === 'blk' ? 'blk' : 'ent'] += h.rate;
         }
-        const owners = Object.entries(ownerRate)
-            .map(([owner, rate]) => ({ owner, ms: +(rate / NS_PER_MS).toFixed(3), pct: +(100 * rate / total).toFixed(1) }))
-            .sort((a, b) => b.ms - a.ms);
+        const owners = Object.entries(acc).map(([owner, b]) => ({
+            owner,
+            blockMs: ms(b.blk), entityMs: ms(b.ent), totalMs: ms(b.blk + b.ent),
+            budgetPct: budgetPct(b.blk + b.ent),
+        })).sort((a, b) => b.totalMs - a.totalMs);
+        const wild = {
+            blockMs: ms(wildAcc.blk), entityMs: ms(wildAcc.ent), totalMs: ms(wildAcc.blk + wildAcc.ent),
+            budgetPct: budgetPct(wildAcc.blk + wildAcc.ent),
+        };
 
         // En pahalı bireysel hotspot'lar (koordinat + sahip)
         hotspots.sort((a, b) => b.rate - a.rate);
         const top = hotspots.slice(0, 15).map(h => ({
             kind: h.kind, type: h.type, dim: h.dim, pos: [h.x, h.y, h.z],
-            ms: +(h.rate / NS_PER_MS).toFixed(3), pct: +(100 * h.rate / total).toFixed(1), owner: ownerOf(h),
+            ms: ms(h.rate), budgetPct: budgetPct(h.rate), owner: ownerOf(h),
         }));
 
         // En pahalı türler
         const typeRate = {};
         for (const h of hotspots) typeRate[h.type] = (typeRate[h.type] || 0) + h.rate;
         const types = Object.entries(typeRate)
-            .map(([type, rate]) => ({ type, ms: +(rate / NS_PER_MS).toFixed(3), pct: +(100 * rate / total).toFixed(1) }))
+            .map(([type, rate]) => ({ type, ms: ms(rate), budgetPct: budgetPct(rate) }))
             .sort((a, b) => b.ms - a.ms).slice(0, 10);
 
         return {
-            owners, top, types,
+            v: 2,
+            owners, wild, top, types,
             totalMs: +(total / NS_PER_MS).toFixed(2), count: hotspots.length,
             ticks: d.ticks || null, duration: diag.duration || null,
             modLoader: diag.modLoader || null, mcVersion: diag.minecraftVersion || null,
