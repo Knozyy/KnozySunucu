@@ -155,6 +155,9 @@ class AttributionProbe {
                 .run(Date.now(), mode, mspt, suspectCount, JSON.stringify(evidence));
             getDb().prepare("DELETE FROM lag_attribution WHERE ts < ?").run(Date.now() - 30 * 86400_000);
         } catch { /* ignore */ }
+
+        // Discord lag panosu — yeni kayıt sonrası tazele (kuruluysa; kayıt akışını asla bozmaz)
+        try { require('../../lagBoardService').scheduleRefresh(); } catch { /* ignore */ }
     }
 
     /** Sürekli kritik lag'de seyrek otomatik tarama (rate-limit 10dk; profil overhead'i var). */
