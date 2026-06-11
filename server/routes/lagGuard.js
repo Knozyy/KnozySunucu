@@ -146,6 +146,11 @@ router.delete('/restart-queue', authMiddleware, requireRole('admin'), (req, res)
 });
 
 // ── Lag Atıf / Shadow Log (Faz 3) ─────────────────────────────────────────────
+router.get('/attribution/evidence', authMiddleware, (req, res) => {
+    try { res.json(lagGuard.getAttributionEvidence()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/attribution', authMiddleware, (req, res) => {
     try { res.json(lagGuard.getAttribution(parseInt(req.query.limit) || 50)); }
     catch (e) { res.status(500).json({ error: e.message }); }

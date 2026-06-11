@@ -36,6 +36,10 @@ const DEFAULTS = {
     // Restart gerektiren kaldıraçlar dahil edilsin mi (0/1)
     allowRestartLevers: 0,
     observableSeconds: 20,
+    // Atıf — adil kanıt (tek tarama asla suçlamaz)
+    attribFlagMs: 5,        // sahip işaretleme eşiği (medyan ms/tick)
+    attribMinScans: 3,      // en az bu kadar lag-taramasında eşik üstü olmalı
+    attribWindowScans: 6,   // kanıt penceresi (son N lag-taraması)
 };
 
 const MODES = ['off', 'dryrun', 'auto'];
@@ -118,6 +122,12 @@ class LagGuard {
     }
 
     getMetrics(rangeHours = 6) { return { history: metrics.getHistory(rangeHours) }; }
+
+    /** Tekrarlanan yük özeti — son taramalardan medyan tabanlı adil işaretleme. */
+    getAttributionEvidence() {
+        const evidence = require('./attribution/evidence');
+        return evidence.summarize(attribution.list(100), this._settings);
+    }
 
     // ── Kaldıraçlar (passthrough) ────────────────────────────────────────
     getLevers() { return { levers: registry.list() }; }
