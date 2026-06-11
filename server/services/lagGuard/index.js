@@ -85,6 +85,12 @@ class LagGuard {
             else if (live.mspt >= s.msptWarn) level = 'warn';
             else if (live.mspt <= s.msptTarget) level = 'stable';
             else level = 'minor';
+        } else if (live.tps != null) {
+            // MSPT bilinmiyor (örn. TPS=20 ve kaynak MSPT vermiyor) → TPS eşikleriyle değerlendir
+            if (live.tps <= s.tpsCritical) level = 'critical';
+            else if (live.tps <= s.tpsWarn) level = 'warn';
+            else if (live.tps >= s.tpsTarget) level = 'stable';
+            else level = 'minor';
         }
         const levers = registry.list();
         const throttled = levers.filter(l => l.current_value != null && l.current_value !== l.default_value).length;

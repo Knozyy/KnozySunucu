@@ -55,8 +55,11 @@ class Metrics {
     // ── Event handler'ları ──────────────────────────────────────────────
     _onTps({ tps, mspt }) {
         if (tps == null) return;
-        // MSPT yoksa TPS'ten yaklaşık türet (≥20 TPS → ~50ms)
-        const effMspt = mspt != null ? mspt : (tps >= 20 ? 50 : Math.round((1000 / Math.max(tps, 1)) * 10) / 10);
+        // MSPT yoksa: TPS<20 ise türet (sunucu tick-bound → 1000/TPS matematiksel olarak doğru).
+        // TPS≥20 ise BİLİNMİYOR (null) bırak — eski "=50ms" varsayımı sağlıklı sunucuyu
+        // "sınırda" gösteriyor ve atıf lag kapısını haksız tetikleyebiliyordu.
+        const effMspt = mspt != null ? mspt
+            : (tps < 20 ? Math.round((1000 / Math.max(tps, 1)) * 10) / 10 : null);
         this._lastTps = tps;
         this._lastMspt = effMspt;
         this._ring.push({ ts: Date.now(), tps, mspt: effMspt });
