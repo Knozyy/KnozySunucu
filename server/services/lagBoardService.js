@@ -24,45 +24,66 @@ function setSetting(key, value) {
     } catch { /* ignore */ }
 }
 
-// İlk-5 satırları: ms > 0, büyükten küçüğe (kullanıcı kararı: kişiler + ms, desc, ilk 5)
-function top5Lines(rows, msKey) {
+// Stil A görsel sabitleri: madalya sırası + lidere oranlı 10'luk bar
+const RANK_EMOJI = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+const BAR_LEN = 10;
+const COLOR = { healthy: 0x2ecc71, lagging: 0xe74c3c, unknown: 0x95a5a6 };
+
+// İlk-5 bloğu: ms > 0, büyükten küçüğe; her giriş 2 satır —
+// "🥇 **isim**" + "　▰▰▰▱… `11.2 ms`" (bar lidere oranlı, en az 1 dolu blok)
+function top5Block(rows, msKey) {
     const top = (rows || [])
         .filter(r => Number(r[msKey]) > 0)
         .sort((a, b) => Number(b[msKey]) - Number(a[msKey]))
         .slice(0, TOP_N);
     if (!top.length) return null;
-    return top.map((r, i) => `${i + 1}. **${r.owner}** — ${r[msKey]} ms`).join('\n');
+    const leader = Number(top[0][msKey]);
+    return top.map((r, i) => {
+        const v = Number(r[msKey]);
+        const filled = Math.max(1, Math.round(BAR_LEN * v / leader));
+        const bar = '▰'.repeat(filled) + '▱'.repeat(BAR_LEN - filled);
+        return `${RANK_EMOJI[i]} **${r.owner}**\n　${bar} \`${v.toFixed(1)} ms\``;
+    }).join('\n');
 }
 
-/** Saf embed üretici — { evidence, lastScan } → Discord embed objesi. */
+/** Saf embed üretici — { evidence, lastScan } → Discord embed objesi (Stil A). */
 function buildEmbed({ evidence, lastScan }) {
     // 📊 Ortalama (adil kanıt medyanları; etiket 'Ortalama')
     let avgText;
     if (!evidence || evidence.insufficient) {
-        avgText = `Yeterli veri yok (en az ${evidence?.minScans ?? 3} lag-taraması gerekir).`;
+        avgText = `⏳ Yeterli veri yok (en az ${evidence?.minScans ?? 3} lag-taraması gerekir).`;
     } else {
-        avgText = top5Lines([...(evidence.flagged || []), ...(evidence.watch || [])], 'medianMs')
-            || 'Kayda değer yük yok.';
+        avgText = top5Block([...(evidence.flagged || []), ...(evidence.watch || [])], 'medianMs')
+            || '✅ Kayda değer yük yok — sunucu temiz.';
     }
 
     // ⏱️ Son Tarama (v2: totalMs, eski kayıt: ms) — sağlıklı anda alındıysa 'teşhis'
+    // + durum satırı ve embed rengi son taramanın MSPT'sinden türetilir
     let lastTitle = '⏱️ Son Tarama';
-    let lastText = 'Henüz tarama yok.';
+    let lastText = '📭 Henüz tarama yok.';
+    let statusLine = 'durum: ⚪ bilinmiyor';
+    let color = COLOR.unknown;
     if (lastScan && lastScan.evidence && lastScan.evidence.ok !== false) {
         const ev = lastScan.evidence;
         const msKey = ev.v === 2 ? 'totalMs' : 'ms';
-        lastText = top5Lines(ev.owners, msKey) || 'Sahipli yük yok.';
+        lastText = top5Block(ev.owners, msKey) || '✅ Sahipli yük yok (yük claimsiz/wild).';
         const t = new Date(lastScan.ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
         const msptWarn = evidence?.msptWarn ?? 52;
         const healthy = lastScan.mspt_at == null || lastScan.mspt_at < msptWarn;
-        lastTitle = `⏱️ Son Tarama (${t}${lastScan.mspt_at != null ? ` · MSPT ${Math.round(lastScan.mspt_at)}` : ''}${healthy ? ' · teşhis' : ''})`;
+        const msptTxt = lastScan.mspt_at != null ? ` · MSPT ${Math.round(lastScan.mspt_at)}` : '';
+        lastTitle = `⏱️ Son Tarama — ${t}${msptTxt}${healthy ? ' · teşhis' : ''}`;
+        color = healthy ? COLOR.healthy : COLOR.lagging;
+        statusLine = healthy
+            ? `durum: 🟢 sağlıklı${msptTxt}`
+            : `durum: 🔴 zorlanıyor${msptTxt}`;
     }
 
     return {
         title: '🛡️ Lag Sıralaması',
-        color: 0xe67e22,
+        color,
+        description: `${statusLine}\nson güncelleme: <t:${Math.floor(Date.now() / 1000)}:R>`,
         fields: [
-            { name: `📊 Ortalama (son ${evidence?.windowScans ?? 6} lag-taraması)`, value: avgText },
+            { name: `📊 Ortalama — son ${evidence?.windowScans ?? 6} lag-taraması`, value: avgText },
             { name: lastTitle, value: lastText },
         ],
         footer: { text: 'Knozy Sunucu Paneli' },
