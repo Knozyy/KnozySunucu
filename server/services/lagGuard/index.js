@@ -123,10 +123,17 @@ class LagGuard {
 
     getMetrics(rangeHours = 6) { return { history: metrics.getHistory(rangeHours) }; }
 
-    /** Tekrarlanan yük özeti — son taramalardan medyan tabanlı adil işaretleme. */
+    /** Tekrarlanan yük özeti — son taramalardan medyan tabanlı adil işaretleme.
+     *  VIP muafiyeti: aktif VIP nick'leri + yüzdelik eşik artışı vipService'ten beslenir. */
     getAttributionEvidence() {
         const evidence = require('./attribution/evidence');
-        return evidence.summarize(attribution.list(100), this._settings);
+        let vipNicks = new Set(), vipExemptPct = 0;
+        try {
+            const vipService = require('../vipService');
+            vipNicks = vipService.activeVipNicks();
+            vipExemptPct = vipService.getSettings().lagExemptPct || 0;
+        } catch { /* vip servisi yoksa muafiyetsiz devam */ }
+        return evidence.summarize(attribution.list(100), { ...this._settings, vipNicks, vipExemptPct });
     }
 
     // ── Kaldıraçlar (passthrough) ────────────────────────────────────────

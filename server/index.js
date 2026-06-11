@@ -190,8 +190,10 @@ app.use((req, res) => {
 // Süreli whitelist periyodik kontrolü
 require('./services/timedWhitelistService').start();
 
-// VIP süre kontrolü (süresi dolan VIP'leri otomatik geri al)
-require('./services/vipService').start();
+// VIP süre kontrolü (süresi dolan VIP'leri otomatik geri al) + giriş/çıkış duyuruları
+const vipService = require('./services/vipService');
+vipService.start();
+vipService.attach(minecraftService);
 
 // Discord webhook bildirimleri
 require('./services/webhookListener').start();

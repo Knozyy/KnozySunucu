@@ -277,6 +277,7 @@ class MinecraftService extends EventEmitter {
         if (joinMatch && !this.players.includes(joinMatch[1])) {
             this.players.push(joinMatch[1]);
             this.emit('players', this.players);
+            this.emit('playerJoin', joinMatch[1]); // VIP duyuru/rezerve-slot için
             try {
                 const db = getDb();
                 const ip = this._pendingIp?.[joinMatch[1]] || null;
@@ -289,6 +290,7 @@ class MinecraftService extends EventEmitter {
         if (leaveMatch) {
             this.players = this.players.filter(p => p !== leaveMatch[1]);
             this.emit('players', this.players);
+            this.emit('playerLeave', leaveMatch[1]);
             try {
                 const db = getDb();
                 const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE username = ? AND left_at IS NULL ORDER BY id DESC LIMIT 1').get(leaveMatch[1]);

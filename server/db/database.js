@@ -296,6 +296,8 @@ function initDatabase() {
       duration_days INTEGER DEFAULT 30,     -- varsayılan süre (0 = süresiz)
       grant_commands TEXT NOT NULL DEFAULT '[]',  -- JSON: verme anı MC komutları ({nick},{discord})
       revoke_commands TEXT NOT NULL DEFAULT '[]', -- JSON: bitiş/iptal anı MC komutları
+      join_message TEXT,                          -- VIP girince sohbet duyurusu ({nick},{package})
+      leave_message TEXT,                         -- VIP çıkınca sohbet duyurusu
       sort_order INTEGER DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -328,6 +330,13 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migration: vip_packages — join/leave duyuru mesajı kolonları
+  try {
+    const vc = database.prepare("PRAGMA table_info(vip_packages)").all().map(c => c.name);
+    if (!vc.includes('join_message')) database.exec('ALTER TABLE vip_packages ADD COLUMN join_message TEXT');
+    if (!vc.includes('leave_message')) database.exec('ALTER TABLE vip_packages ADD COLUMN leave_message TEXT');
+  } catch (e) { /* tablo henüz yoksa sorun değil */ }
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)
   try {
