@@ -535,6 +535,67 @@ class DiscordBotService {
         });
     }
 
+    /** JSON gövdeli istek (POST/PATCH) — mesaj gönderme/düzenleme için. */
+    _discordApiBody(method, path, body) {
+        const token = this.getDiscordToken();
+        if (!token) return Promise.resolve(null);
+        const payload = JSON.stringify(body || {});
+        return new Promise((resolve) => {
+            const opts = {
+                hostname: 'discord.com',
+                path: `/api/v10${path}`,
+                method,
+                headers: {
+                    'Authorization': `Bot ${token}`,
+                    'User-Agent': 'KnozyPanel (1.0)',
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload),
+                },
+            };
+            const req = https.request(opts, (res) => {
+                let data = '';
+                res.on('data', c => { data += c; });
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+            req.on('error', () => resolve(null));
+            req.setTimeout(8000, () => { req.destroy(); resolve(null); });
+            req.write(payload);
+            req.end();
+        });
+    }
+
+    /** Bir guild'in METİN kanalları (lag panosu kanal seçici için). */
+    async listGuildChannels(guildId) {
+        if (!guildId) return [];
+        const channels = await this._discordApiGet(`/guilds/${guildId}/channels`);
+        if (!Array.isArray(channels)) return [];
+        return channels
+            .filter(c => c.type === 0)
+            .map(c => ({ id: String(c.id), name: c.name, position: c.position ?? 0 }))
+            .sort((a, b) => a.position - b.position);
+    }
+
+    /** Kanala mesaj gönder → { ok, id, statusCode }. */
+    async sendChannelMessage(channelId, payload) {
+        const r = await this._discordApiBody('POST', `/channels/${channelId}/messages`, payload);
+        const ok = !!(r && r.statusCode >= 200 && r.statusCode < 300);
+        let id = null;
+        if (ok) { try { id = String(JSON.parse(r.data).id); } catch { /* ignore */ } }
+        return { ok, id, statusCode: r?.statusCode ?? null };
+    }
+
+    /** Mevcut mesajı düzenle → { ok, statusCode } (404 = mesaj silinmiş). */
+    async editChannelMessage(channelId, messageId, payload) {
+        const r = await this._discordApiBody('PATCH', `/channels/${channelId}/messages/${messageId}`, payload);
+        return { ok: !!(r && r.statusCode >= 200 && r.statusCode < 300), statusCode: r?.statusCode ?? null };
+    }
+
+    /** Mesajı sil (best-effort). */
+    async deleteChannelMessage(channelId, messageId) {
+        const r = await this._discordApiDelete(`/channels/${channelId}/messages/${messageId}`);
+        return { ok: !!(r && r.statusCode >= 200 && r.statusCode < 300) };
+    }
+
     // ── Üye rol ekle/çıkar (VIP sistemi kullanır) ─────────────────────────────
     async addMemberRole(userId, roleId, guildId) {
         const gid = guildId || await this.getPrimaryGuildId();
