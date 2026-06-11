@@ -67,6 +67,12 @@ export default function LagGuardPage() {
         queryFn: () => api.get('/lag-guard/attribution?limit=40').then(r => r.data),
         refetchInterval: 10000,
     });
+    const { data: attrEvidence } = useQuery({
+        queryKey: ['lagguard-attr-evidence'],
+        queryFn: () => api.get('/lag-guard/attribution/evidence').then(r => r.data),
+        refetchInterval: 30000,
+        enabled: tab === 'atif',
+    });
 
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: ['lagguard-status'] });
@@ -156,7 +162,10 @@ export default function LagGuardPage() {
             if (d.started) {
                 toast.success('Observable profili çalışıyor (~25sn)… bitince listeye düşer', { duration: 8000 });
                 // Sonuç ~25sn sonra gelir; birkaç kez yenile
-                [8000, 16000, 24000, 30000].forEach(ms => setTimeout(() => qc.invalidateQueries({ queryKey: ['lagguard-attribution'] }), ms));
+                [8000, 16000, 24000, 30000].forEach(ms => setTimeout(() => {
+                    qc.invalidateQueries({ queryKey: ['lagguard-attribution'] });
+                    qc.invalidateQueries({ queryKey: ['lagguard-attr-evidence'] });
+                }, ms));
             } else {
                 toast(d.note || 'Zaten çalışıyor');
             }
@@ -434,6 +443,7 @@ export default function LagGuardPage() {
             {/* ATIF / SHADOW LOG */}
             {tab === 'atif' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <EvidenceCard ev={attrEvidence} />
                     <Card title="Lag Atıf — Shadow Log"
                         action={
                             <div style={{ display: 'flex', gap: 6 }}>
@@ -446,9 +456,11 @@ export default function LagGuardPage() {
                             </div>
                         }>
                         <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                            <strong style={{ color: A.dim }}>Observable</strong> profili çalıştırılır; her laggy entity/block'un koordinatı + maliyeti (ms/tick)
-                            <strong style={{ color: A.dim }}> FTB Chunks claim sahibine</strong> dağıtılır → <strong style={{ color: A.dim }}>sahip başına TPS payı</strong>.
-                            <strong style={{ color: A.warn }}> Ceza uygulanmaz</strong> — yalnızca kayıt. Kritik lag'de 10dk'da bir otomatik.
+                            <strong style={{ color: A.dim }}>Observable</strong> profili her laggy entity/block'un maliyetini (ms/tick) ölçer;
+                            koordinat <strong style={{ color: A.dim }}>FTB Chunks claim sahibine</strong> bağlanır. Maliyet
+                            <strong style={{ color: A.dim }}> 50ms tick bütçesine göre mutlaktır</strong> — "toplamın yüzdesi" değildir,
+                            sağlıklı sunucuda kimse suçlanmaz. <strong style={{ color: A.warn }}>Ceza uygulanmaz</strong> — yalnızca kayıt.
+                            Kritik lag'de 10dk'da bir otomatik.
                         </p>
                     </Card>
 
@@ -521,6 +533,46 @@ function Empty({ text = 'Veri bekleniyor…' }) {
     return <div style={{ color: A.faint, fontSize: 12, padding: '36px 0', textAlign: 'center' }}>{text}</div>;
 }
 
+function EvidenceCard({ ev }) {
+    if (!ev) return null;
+    const flagged = ev.flagged || [];
+    const watch = ev.watch || [];
+    return (
+        <Card title="Tekrarlanan Yük" accent={flagged.length ? A.err : A.faint}>
+            <p style={{ fontSize: 11, color: A.faint, margin: '0 0 10px' }}>
+                Yalnızca <strong style={{ color: A.dim }}>lag sırasında</strong> (MSPT ≥ {ev.msptWarn}) alınan son {ev.windowScans} taramanın
+                <strong style={{ color: A.dim }}> medyanı</strong>; bir sahip en az {ev.minScans} taramada eşik üstüyse işaretlenir.
+                <strong style={{ color: A.warn }}> Tek tarama asla suçlamaz</strong> · wild kimseye yazılmaz.
+            </p>
+            {ev.insufficient ? (
+                <Empty text={`Yetersiz kanıt — ${ev.lagScanCount} lag-taraması var, en az ${ev.minScans} gerekir. Sağlıklı sunucuda kimse işaretlenmez.`} />
+            ) : flagged.length === 0 ? (
+                <Empty text="Tekrarlanan yük tespit edilmedi — kimse işaretli değil." />
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {flagged.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 4, padding: '8px 12px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{f.owner}</span>
+                            <Pill color={f.confidence === 'yüksek' ? A.err : A.warn}>güven: {f.confidence}</Pill>
+                            <span style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>{f.aboveCount}/{f.scanCount} taramada eşik üstü</span>
+                            <span style={{ marginLeft: 'auto', fontFamily: A.mono, fontSize: 12 }}>
+                                medyan <strong style={{ color: A.err }}>{f.medianMs}ms</strong> · bütçe %{f.budgetPct}
+                                <span style={{ color: A.faint, fontSize: 11 }}> · mak {f.medianBlockMs} / canlı {f.medianEntityMs}</span>
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {!ev.insufficient && (watch.length > 0 || ev.wild) && (
+                <div style={{ marginTop: 10, fontSize: 11, color: A.faint, fontFamily: A.mono }}>
+                    {watch.length > 0 && <div>izlemede (işaret yok): {watch.filter(w => w.medianMs > 0).map(w => `${w.owner} ${w.medianMs}ms`).join(' · ') || '—'}</div>}
+                    {ev.wild && <div>wild (kimseye yazılmaz): medyan {ev.wild.medianMs}ms · bütçe %{ev.wild.budgetPct}</div>}
+                </div>
+            )}
+        </Card>
+    );
+}
+
 function AttributionCard({ entry }) {
     const ev = entry.evidence || {};
     const owners = ev.owners || [];
@@ -541,20 +593,29 @@ function AttributionCard({ entry }) {
                 {ev.url ? <a href={ev.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontFamily: A.mono, color: 'var(--accent)' }}>↗ Observable</a> : null}
             </div>
 
-            {/* Sahip başına TPS payı */}
-            {owners.length > 0 && (
+            {/* Sahip başına maliyet (v2: mutlak ms + bütçe payı; eski kayıtlarda görece %) */}
+            {(owners.length > 0 || (ev.v === 2 && ev.wild?.totalMs > 0)) && (
                 <div style={{ marginTop: 12 }}>
-                    <Cap>Sahip başına TPS payı</Cap>
+                    <Cap>{ev.v === 2 ? 'Sahip başına maliyet (50ms bütçeye göre)' : 'Sahip başına TPS payı (eski format)'}</Cap>
                     <div style={{ marginTop: 4 }}>
-                        {owners.slice(0, 12).map((o, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 3fr 0.9fr', gap: 10, alignItems: 'center', padding: '5px 0', borderBottom: i !== Math.min(owners.length, 12) - 1 ? `1px solid ${A.border}` : 'none' }}>
-                                <span style={{ fontWeight: 600, fontSize: 13, color: /claimsiz/.test(o.owner) ? A.faint : A.text }}>{o.owner}</span>
-                                <div style={{ height: 6, background: A.bg, borderRadius: 3, overflow: 'hidden' }}>
-                                    <div style={{ width: `${Math.min(100, o.pct)}%`, height: '100%', background: o.pct > 25 ? A.err : o.pct > 10 ? A.warn : 'var(--accent)' }} />
+                        {(ev.v === 2
+                            ? [...owners, ...(ev.wild && ev.wild.totalMs > 0 ? [{ owner: 'claimsiz (wild) — kimseye yazılmaz', ...ev.wild, _wild: true }] : [])]
+                            : owners
+                        ).slice(0, 12).map((o, i, arr) => {
+                            const pctBar = ev.v === 2 ? o.budgetPct : o.pct;
+                            return (
+                                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 3fr 1.4fr', gap: 10, alignItems: 'center', padding: '5px 0', borderBottom: i !== arr.length - 1 ? `1px solid ${A.border}` : 'none' }}>
+                                    <span style={{ fontWeight: 600, fontSize: 13, color: (o._wild || /claimsiz/.test(o.owner)) ? A.faint : A.text }}>{o.owner}</span>
+                                    <div style={{ height: 6, background: A.bg, borderRadius: 3, overflow: 'hidden' }}>
+                                        <div style={{ width: `${Math.min(100, pctBar)}%`, height: '100%', background: pctBar > 25 ? A.err : pctBar > 10 ? A.warn : 'var(--accent)' }} />
+                                    </div>
+                                    <span style={{ fontFamily: A.mono, fontSize: 11.5, textAlign: 'right', color: pctBar > 25 ? A.err : A.text }}>
+                                        {ev.v === 2 ? `${o.totalMs}ms · bütçe %${o.budgetPct}` : `%${o.pct} · ${o.ms}ms`}
+                                        {ev.v === 2 && !o._wild && <span style={{ color: A.faint, display: 'block', fontSize: 10 }}>mak {o.blockMs} · canlı {o.entityMs}</span>}
+                                    </span>
                                 </div>
-                                <span style={{ fontFamily: A.mono, fontSize: 12, textAlign: 'right', color: o.pct > 25 ? A.err : A.text }}>%{o.pct} · {o.ms}ms</span>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -584,7 +645,7 @@ function AttributionCard({ entry }) {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                         {types.slice(0, 8).map((t, i) => (
                             <span key={i} style={{ fontSize: 11, fontFamily: A.mono, color: A.dim, background: A.bg, border: `1px solid ${A.border}`, borderRadius: 3, padding: '2px 6px' }}>
-                                {t.type.replace('minecraft:', '')} <strong style={{ color: t.pct > 15 ? A.err : A.text }}>%{t.pct}</strong>
+                                {t.type.replace('minecraft:', '')} <strong style={{ color: (t.budgetPct ?? t.pct) > 15 ? A.err : A.text }}>{t.budgetPct != null ? `bütçe %${t.budgetPct}` : `%${t.pct}`}</strong>
                             </span>
                         ))}
                     </div>
@@ -628,6 +689,15 @@ const SETTINGS_GROUPS = [
             { k: 'cooldownAfterRecovery', label: 'Açma sonrası bekleme' },
             { k: 'stableForRecovery', label: 'Açmadan önce stabil kalma' },
             { k: 'observableSeconds', label: 'Observable profil süresi' },
+        ],
+    },
+    {
+        title: 'Atıf — Adil Kanıt',
+        hint: 'Sahip işaretleme: yalnızca lag sırasındaki (MSPT ≥ uyarı eşiği) taramalar sayılır; medyan + tekrar şartı. Tek tarama asla suçlamaz.',
+        fields: [
+            { k: 'attribFlagMs', label: 'İşaretleme eşiği (medyan ms/tick)' },
+            { k: 'attribMinScans', label: 'En az lag-taraması (tekrar şartı)' },
+            { k: 'attribWindowScans', label: 'Kanıt penceresi (son N tarama)' },
         ],
     },
 ];
