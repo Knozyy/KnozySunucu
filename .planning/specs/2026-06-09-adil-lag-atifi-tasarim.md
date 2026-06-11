@@ -1,7 +1,7 @@
 # Adil Lag Atıfı — "Savunulabilir Kanıt" Modeli — Tasarım
 
 **Tarih:** 2026-06-09
-**Durum:** ✅ Tasarım onaylandı — uygulamaya hazır (plan bekliyor).
+**Durum:** ✅ Uygulandı (bkz. .planning/plans/2026-06-09-adil-lag-atifi.md).
 **Bağlam:** Mevcut atıf sistemi (LagGuard Faz 3, `attribution/probe.js`) adaletsiz sonuç üretiyor.
 Kullanıcının doğruladığı belirtiler: (1) oranlar suçsuzu suçluyor, (2) ardışık taramalar tutarsız,
 (3) claim sahibi ≠ suçlu. Kullanım amacı: **admin görünürlüğü + ileride Faz 4 ceza önerisi temeli**
