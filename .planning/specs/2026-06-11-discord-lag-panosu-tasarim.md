@@ -1,7 +1,7 @@
 # Discord Lag Panosu — Tasarım
 
 **Tarih:** 2026-06-11
-**Durum:** ✅ Tasarım onaylandı — uygulamaya hazır.
+**Durum:** ✅ Uygulandı (bkz. .planning/plans/2026-06-11-discord-lag-panosu.md).
 **Bağlam:** Adil lag atıfı tamamlandı (spec: 2026-06-09). Kullanıcı, atıf listesini Discord'da
 botla yansıtmak istiyor: "sitede her yenilendiğinde Discord'da da yenilenecek".
 **Onaylanan kararlar:** İçerik = **kişiler + ms, büyükten küçüğe, ilk 5** · **iki liste**:

@@ -19,7 +19,7 @@
 **Files:**
 - Modify: `server/services/discordBotService.js`
 
-- [ ] **Step 1:** `_discordApiPut(path)` metodunun ALTINA şu metodları ekle (aynı stil — sınıf içi):
+- [x] **Step 1:** `_discordApiPut(path)` metodunun ALTINA şu metodları ekle (aynı stil — sınıf içi):
 
 ```js
     /** JSON gövdeli istek (POST/PATCH) — mesaj gönderme/düzenleme için. */
@@ -84,9 +84,9 @@
     }
 ```
 
-- [ ] **Step 2: Smoke** — server/ dizininden: `node -e "const d=require('./services/discordBotService'); for (const m of ['_discordApiBody','listGuildChannels','sendChannelMessage','editChannelMessage','deleteChannelMessage']) if (typeof d[m] !== 'function') throw new Error(m); console.log('OK');"` → `OK`. Ayrıca `npm test` → 49 pass korunur.
+- [x] **Step 2: Smoke** — server/ dizininden: `node -e "const d=require('./services/discordBotService'); for (const m of ['_discordApiBody','listGuildChannels','sendChannelMessage','editChannelMessage','deleteChannelMessage']) if (typeof d[m] !== 'function') throw new Error(m); console.log('OK');"` → `OK`. Ayrıca `npm test` → 49 pass korunur.
 
-- [ ] **Step 3: Commit** (yalnızca bu dosya):
+- [x] **Step 3: Commit** (yalnızca bu dosya):
 
 ```
 feat(discord): kanal/mesaj REST yardimcilari — gonder/duzenle/sil + kanal listesi
@@ -106,7 +106,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - Create: `server/services/lagBoardService.test.js`
 - Modify: `server/services/lagGuard/attribution/probe.js` (`_record` sonuna hook)
 
-- [ ] **Step 1: Failing test** — `server/services/lagBoardService.test.js`:
+- [x] **Step 1: Failing test** — `server/services/lagBoardService.test.js`:
 
 ```js
 const test = require('node:test');
@@ -176,9 +176,9 @@ test('buildEmbed: Son Tarama eski format (ms anahtarı) + sağlıklıysa teşhis
 });
 ```
 
-- [ ] **Step 2: FAIL gör** — server/ dizininden `node --test services/lagBoardService.test.js` → `Cannot find module './lagBoardService'`.
+- [x] **Step 2: FAIL gör** — server/ dizininden `node --test services/lagBoardService.test.js` → `Cannot find module './lagBoardService'`.
 
-- [ ] **Step 3:** `server/services/lagBoardService.js` oluştur:
+- [x] **Step 3:** `server/services/lagBoardService.js` oluştur:
 
 ```js
 /**
@@ -328,18 +328,18 @@ module.exports = instance;
 module.exports.buildEmbed = buildEmbed;
 ```
 
-- [ ] **Step 4: PASS gör** — `node --test services/lagBoardService.test.js` → 5/5.
+- [x] **Step 4: PASS gör** — `node --test services/lagBoardService.test.js` → 5/5.
 
-- [ ] **Step 5: Tetik** — `server/services/lagGuard/attribution/probe.js` `_record` metodunda, `catch { /* ignore */ }` satırından SONRA (metodun sonuna, try/catch DIŞINA) ekle:
+- [x] **Step 5: Tetik** — `server/services/lagGuard/attribution/probe.js` `_record` metodunda, `catch { /* ignore */ }` satırından SONRA (metodun sonuna, try/catch DIŞINA) ekle:
 
 ```js
         // Discord lag panosu — yeni kayıt sonrası tazele (kuruluysa; kayıt akışını asla bozmaz)
         try { require('../../lagBoardService').scheduleRefresh(); } catch { /* ignore */ }
 ```
 
-- [ ] **Step 6:** `npm test` → 54 pass (49 + 5), 0 fail. Smoke: `node -e "require('./services/lagBoardService'); require('./services/lagGuard/attribution/probe'); console.log('OK');"` → OK.
+- [x] **Step 6:** `npm test` → 54 pass (49 + 5), 0 fail. Smoke: `node -e "require('./services/lagBoardService'); require('./services/lagGuard/attribution/probe'); console.log('OK');"` → OK.
 
-- [ ] **Step 7: Commit** (3 dosya):
+- [x] **Step 7: Commit** (3 dosya):
 
 ```
 feat(lag-board): Discord lag panosu servisi — saf embed + kur/tazele/kaldir
@@ -360,7 +360,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - Modify: `server/routes/lagGuard.js`
 - Modify: `client/src/pages/LagGuardPage.jsx`
 
-- [ ] **Step 1: Route'lar** — `server/routes/lagGuard.js`: en üstte `const lagGuard = require('../services/lagGuard');` satırının ALTINA ekle:
+- [x] **Step 1: Route'lar** — `server/routes/lagGuard.js`: en üstte `const lagGuard = require('../services/lagGuard');` satırının ALTINA ekle:
 
 ```js
 const lagBoard = require('../services/lagBoardService');
@@ -390,7 +390,7 @@ router.delete('/board', authMiddleware, requireRole('admin'), async (req, res) =
 });
 ```
 
-- [ ] **Step 2: Panel kartı** — `client/src/pages/LagGuardPage.jsx`:
+- [x] **Step 2: Panel kartı** — `client/src/pages/LagGuardPage.jsx`:
 
 (a) Ayarlar sekmesinde, Restart-Config Kuyruğu `</Card>` kapanışı ile `{settings ? <SettingsPanel ...` arasına ekle:
 
@@ -476,9 +476,9 @@ function LagBoardCard() {
 
 DİKKAT: dosyada `useState`, `useQuery`, `useMutation`, `useQueryClient`, `api`, `toast`, `Card`, `Cap`, `Pill`, `btnGhost`, `btnPrimary`, `A`, `selStyle` zaten import/tanımlı — yeni import GEREKMEZ (kontrol et; eksikse mevcut import satırına ekle).
 
-- [ ] **Step 3: Doğrula** — server/: `node -e "require('./routes/lagGuard'); console.log('OK');"` → OK; `npm test` → 54 pass. client/: `npx eslint src/pages/LagGuardPage.jsx` → exit 0; `npx vite build` → ✓ built.
+- [x] **Step 3: Doğrula** — server/: `node -e "require('./routes/lagGuard'); console.log('OK');"` → OK; `npm test` → 54 pass. client/: `npx eslint src/pages/LagGuardPage.jsx` → exit 0; `npx vite build` → ✓ built.
 
-- [ ] **Step 4: Commit** (2 dosya):
+- [x] **Step 4: Commit** (2 dosya):
 
 ```
 feat(lag-board): board API'lari + panel kurulum karti (sunucu/kanal secici)
@@ -493,10 +493,10 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 
 ### Task 4: Uçtan uca doğrulama + dokümanlar
 
-- [ ] **Step 1:** server/: `npm test` → 54 pass. Smoke: `node -e "require('./services/lagBoardService'); require('./services/discordBotService'); require('./routes/lagGuard'); console.log('OK');"` → OK.
-- [ ] **Step 2:** client/: eslint + `npx vite build` temiz.
-- [ ] **Step 3:** `.planning/specs/2026-06-11-discord-lag-panosu-tasarim.md` `**Durum:**` satırını `**Durum:** ✅ Uygulandı (bkz. .planning/plans/2026-06-11-discord-lag-panosu.md).` yap; bu plan dosyasındaki tüm `- [ ]` → `- [x]`.
-- [ ] **Step 4: Commit** (2 .planning dosyası):
+- [x] **Step 1:** server/: `npm test` → 54 pass. Smoke: `node -e "require('./services/lagBoardService'); require('./services/discordBotService'); require('./routes/lagGuard'); console.log('OK');"` → OK.
+- [x] **Step 2:** client/: eslint + `npx vite build` temiz.
+- [x] **Step 3:** `.planning/specs/2026-06-11-discord-lag-panosu-tasarim.md` `**Durum:**` satırını `**Durum:** ✅ Uygulandı (bkz. .planning/plans/2026-06-11-discord-lag-panosu.md).` yap; bu plan dosyasındaki tüm `- [ ]` → `- [x]`.
+- [x] **Step 4: Commit** (2 .planning dosyası):
 
 ```
 docs(lag-board): discord lag panosu spec + plan durumu guncellendi
