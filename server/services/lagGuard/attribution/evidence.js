@@ -29,10 +29,11 @@ const r1 = (n) => +Number(n).toFixed(1);
  *             flagged: Array, watch: Array, wild: {medianMs,budgetPct}|null }}
  */
 function summarize(scans, settings = {}) {
-    const msptWarn = Number(settings.msptWarn) || 52;
-    const flagMs = Number(settings.attribFlagMs) || 5;
-    const minScans = Number(settings.attribMinScans) || 3;
-    const windowScans = Number(settings.attribWindowScans) || 6;
+    const numOr = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d); // 0 geçerli bir ayar — || ile ezme
+    const msptWarn = numOr(settings.msptWarn, 52);
+    const flagMs = numOr(settings.attribFlagMs, 5);
+    const minScans = numOr(settings.attribMinScans, 3);
+    const windowScans = numOr(settings.attribWindowScans, 6);
 
     // Lag kapısı + v2 filtresi → en yeni N lag-taraması
     const lagScans = (scans || [])

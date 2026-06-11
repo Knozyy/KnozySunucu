@@ -107,3 +107,15 @@ test('wild medyanı ayrı raporlanır', () => {
     assert.equal(r.wild.budgetPct, 20);
     assert.deepEqual(r.flagged, []); // wild asla işaretlenmez
 });
+
+test('ayar 0 geçerli: attribFlagMs=0 varsayılana ezilmez', () => {
+    const scans = [
+        mkScan(60, [owner('Knozy', 1)]),
+        mkScan(60, [owner('Knozy', 1)]),
+        mkScan(60, [owner('Knozy', 1)]),
+    ];
+    const r = summarize(scans, { ...SETTINGS, attribFlagMs: 0 });
+    // eşik 0 → 1ms'lik medyan bile işaretlenir (0 varsayılan 5'e ezilseydi işaretlenmezdi)
+    assert.equal(r.flagged.length, 1);
+    assert.equal(r.flagged[0].owner, 'Knozy');
+});
