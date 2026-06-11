@@ -517,6 +517,8 @@ export default function LagGuardPage() {
                             )}
                     </Card>
 
+                    <LagBoardCard />
+
                     {settings
                         ? <SettingsPanel key={JSON.stringify(settings)} initial={settings} onSave={(patch) => saveSettings.mutate(patch)} saving={saveSettings.isPending} />
                         : <Empty text="Ayarlar yükleniyor…" />}
@@ -567,6 +569,78 @@ function EvidenceCard({ ev }) {
                 <div style={{ marginTop: 10, fontSize: 11, color: A.faint, fontFamily: A.mono }}>
                     {watch.length > 0 && <div>izlemede (işaret yok): {watch.filter(w => w.medianMs > 0).map(w => `${w.owner} ${w.medianMs}ms`).join(' · ') || '—'}</div>}
                     {ev.wild && <div>wild (kimseye yazılmaz): medyan {ev.wild.medianMs}ms · bütçe %{ev.wild.budgetPct}</div>}
+                </div>
+            )}
+        </Card>
+    );
+}
+
+// Discord Lag Panosu — kanal seç + kur; bot tek mesajı düzenleyerek günceller
+function LagBoardCard() {
+    const qc = useQueryClient();
+    const [guildId, setGuildId] = useState('');
+    const [channelId, setChannelId] = useState('');
+
+    const { data: board } = useQuery({ queryKey: ['lagboard'], queryFn: () => api.get('/lag-guard/board').then(r => r.data) });
+    const { data: guildsData } = useQuery({ queryKey: ['vip-guilds'], queryFn: () => api.get('/vip/guilds').then(r => r.data) });
+    const { data: chData, isFetching: chLoading } = useQuery({
+        queryKey: ['lagboard-channels', guildId],
+        queryFn: () => api.get('/lag-guard/board/channels', { params: { guildId } }).then(r => r.data),
+        enabled: !!guildId,
+    });
+    const guilds = guildsData?.guilds || [];
+    const channels = chData?.channels || [];
+    const inv = () => qc.invalidateQueries({ queryKey: ['lagboard'] });
+
+    const setup = useMutation({
+        mutationFn: () => api.post('/lag-guard/board/setup', { guildId, channelId }).then(r => r.data),
+        onSuccess: () => { inv(); toast.success('Pano kuruldu — bot mesajı attı, artık otomatik güncellenecek'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kurulamadı'),
+    });
+    const refresh = useMutation({
+        mutationFn: () => api.post('/lag-guard/board/refresh').then(r => r.data),
+        onSuccess: (d) => toast[d.ok ? 'success' : 'error'](d.ok ? 'Pano güncellendi' : (d.note || 'Güncellenemedi')),
+        onError: (e) => toast.error(e.response?.data?.error || 'Güncellenemedi'),
+    });
+    const remove = useMutation({
+        mutationFn: () => api.delete('/lag-guard/board').then(r => r.data),
+        onSuccess: () => { inv(); toast.success('Pano kaldırıldı'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaldırılamadı'),
+    });
+
+    return (
+        <Card title="Discord Lag Panosu" accent={board?.configured ? A.ok : A.faint}>
+            <p style={{ fontSize: 11, color: A.faint, margin: '0 0 10px' }}>
+                Bot seçilen kanala <strong style={{ color: A.dim }}>tek mesaj</strong> atar ve her yeni taramadan sonra
+                <strong style={{ color: A.dim }}> aynı mesajı düzenler</strong> — Ortalama + Son Tarama ilk-5 ms listeleri.
+            </p>
+            {board?.configured ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <Pill color={A.ok}>KURULU</Pill>
+                    <code style={{ fontSize: 11, color: A.faint, fontFamily: A.mono }}>kanal: {board.channelId} · mesaj: {board.messageId}</code>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button onClick={() => refresh.mutate()} disabled={refresh.isPending} style={{ ...btnGhost, color: 'var(--accent)' }}>Şimdi Yenile</button>
+                        <button onClick={() => { if (confirm('Discord panosu kaldırılsın mı? (mesaj silinir)')) remove.mutate(); }} style={{ ...btnGhost, color: A.err }}>Kaldır</button>
+                    </div>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                        <Cap style={{ display: 'block', marginBottom: 4 }}>Discord sunucusu</Cap>
+                        <select value={guildId} onChange={e => { setGuildId(e.target.value); setChannelId(''); }} style={selStyle}>
+                            <option value="">— sunucu seç ({guilds.length}) —</option>
+                            {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                        <Cap style={{ display: 'block', marginBottom: 4 }}>Kanal</Cap>
+                        <select value={channelId} onChange={e => setChannelId(e.target.value)} style={selStyle} disabled={!guildId}>
+                            <option value="">{!guildId ? '— önce sunucu seç —' : (chLoading ? 'yükleniyor…' : `— kanal seç (${channels.length}) —`)}</option>
+                            {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                        </select>
+                    </div>
+                    <button onClick={() => { if (!guildId || !channelId) return toast.error('Sunucu ve kanal seç'); setup.mutate(); }}
+                        disabled={setup.isPending} style={btnPrimary}>{setup.isPending ? 'Kuruluyor…' : 'Panoyu Kur'}</button>
                 </div>
             )}
         </Card>

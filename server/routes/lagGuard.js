@@ -2,6 +2,8 @@ const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 const lagGuard = require('../services/lagGuard');
+const lagBoard = require('../services/lagBoardService');
+const discordBotService = require('../services/discordBotService');
 
 const router = express.Router();
 
@@ -165,6 +167,25 @@ router.post('/attribution/scan', authMiddleware, requireRole('admin'), async (re
 router.delete('/attribution', authMiddleware, requireRole('admin'), (req, res) => {
     try { res.json(lagGuard.clearAttribution()); }
     catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ── Discord Lag Panosu ───────────────────────────────────────────────────────
+router.get('/board', authMiddleware, (req, res) => {
+    try { res.json(lagBoard.status()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.get('/board/channels', authMiddleware, async (req, res) => {
+    try { res.json({ channels: await discordBotService.listGuildChannels(String(req.query.guildId || '')) }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/board/setup', authMiddleware, requireRole('admin'), async (req, res) => {
+    try { res.json({ message: 'Pano kuruldu', ...(await lagBoard.setup(String(req.body?.guildId || ''), String(req.body?.channelId || ''))) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/board/refresh', authMiddleware, requireRole('admin'), async (req, res) => {
+    try { res.json(await lagBoard.refresh()); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/board', authMiddleware, requireRole('admin'), async (req, res) => {
+    try { res.json(await lagBoard.remove()); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 module.exports = router;
