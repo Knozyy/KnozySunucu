@@ -24,23 +24,179 @@ function db() { return getDb(); }
 function now() { return Math.floor(Date.now() / 1000); }
 function parseCmds(json) { try { const a = JSON.parse(json || '[]'); return Array.isArray(a) ? a.filter(Boolean) : []; } catch { return []; } }
 
-function applyTemplate(cmd, { mcNick, userId }) {
+// {gradient:#RRGGBB:#RRGGBB} → nick'i karakter karakter renklendirir (&#RRGGBB kodlarıyla).
+// 1.16+ hex destekleyen chat/nick modlarıyla çalışır (örn. FTB Essentials nick).
+function gradientNick(nick, fromHex, toHex) {
+    const p = (h) => {
+        const m = String(h || '').replace('#', '').match(/^([0-9a-f]{6})$/i);
+        return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null;
+    };
+    const a = p(fromHex), b = p(toHex);
+    if (!a || !b || !nick) return nick || '';
+    const chars = [...nick];
+    const n = Math.max(1, chars.length - 1);
+    return chars.map((ch, i) => {
+        const t = i / n;
+        const hex = [0, 1, 2].map(k => Math.round(a[k] + (b[k] - a[k]) * t).toString(16).padStart(2, '0')).join('');
+        return `&#${hex}${ch}`;
+    }).join('');
+}
+
+function applyTemplate(cmd, { mcNick, userId, packageName }) {
     return String(cmd)
+        .replace(/\{gradient:(#?[0-9a-f]{6}):(#?[0-9a-f]{6})\}/gi, (_, c1, c2) => gradientNick(mcNick || '', c1, c2))
         .replace(/\{nick\}/gi, mcNick || '')
         .replace(/\{player\}/gi, mcNick || '')
+        .replace(/\{package\}/gi, packageName || '')
         .replace(/\{discord\}/gi, userId || '');
 }
 
+// VIP ayar varsayılanları (app_settings · vip_ öneki)
+const SETTING_DEFAULTS = {
+    lagExemptPct: 50,     // VIP lag-işaretleme eşiği +%X (LagGuard atıf muafiyeti)
+    reservedSlots: 0,     // sunucu doluysa VIP'lere ayrılan slot (0 = kapalı)
+    joinLeaveEnabled: 1,  // VIP giriş/çıkış duyuruları (0/1)
+};
+
 class VipService {
-    constructor() { this._interval = null; }
+    constructor() {
+        this._interval = null;
+        this._mc = null;
+        this._settings = { ...SETTING_DEFAULTS };
+        this._onJoin = this._onJoin.bind(this);
+        this._onLeave = this._onLeave.bind(this);
+    }
 
     start() {
+        this._loadSettings();
         this._check();
         this._interval = setInterval(() => this._check(), 60 * 1000);
         if (this._interval.unref) this._interval.unref();
         console.log('[VIP] Servis başlatıldı.');
     }
     stop() { if (this._interval) { clearInterval(this._interval); this._interval = null; } }
+
+    /** minecraftService event'lerine bağlan (giriş/çıkış duyuruları + rezerve slot). */
+    attach(mcService) {
+        if (this._mc === mcService) return;
+        if (this._mc) {
+            try { this._mc.off('playerJoin', this._onJoin); this._mc.off('playerLeave', this._onLeave); } catch { /* ignore */ }
+        }
+        this._mc = mcService || null;
+        if (mcService) {
+            mcService.on('playerJoin', this._onJoin);
+            mcService.on('playerLeave', this._onLeave);
+        }
+    }
+
+    // ── Ayarlar (app_settings · vip_ öneki) ─────────────────────────────────
+    getSettings() { return { ...this._settings }; }
+    updateSettings(patch = {}) {
+        for (const [k, v] of Object.entries(patch)) {
+            if (k in this._settings) {
+                this._settings[k] = Number(v);
+                this._saveSetting(`vip_${k}`, String(this._settings[k]));
+            }
+        }
+        return this.getSettings();
+    }
+    _loadSettings() {
+        try {
+            const d = db();
+            for (const key of Object.keys(SETTING_DEFAULTS)) {
+                const row = d.prepare('SELECT value FROM app_settings WHERE key = ?').get(`vip_${key}`);
+                if (row && Number.isFinite(Number(row.value))) this._settings[key] = Number(row.value);
+            }
+        } catch { /* tablo henüz olmayabilir */ }
+    }
+    _saveSetting(key, value) {
+        try {
+            db().prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+                        ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')`)
+                .run(key, value, value);
+        } catch { /* ignore */ }
+    }
+
+    // ── VIP nick yardımcıları (LagGuard muafiyeti vb. dış kullanım) ─────────
+    /** Aktif VIP mc_nick'leri (lowercase Set). */
+    activeVipNicks() {
+        try {
+            const rows = db().prepare("SELECT mc_nick FROM vip_grants WHERE status = 'active' AND mc_nick IS NOT NULL").all();
+            return new Set(rows.map(r => String(r.mc_nick).toLowerCase()));
+        } catch { return new Set(); }
+    }
+    isVipNick(nick) { return nick ? this.activeVipNicks().has(String(nick).toLowerCase()) : false; }
+    /** Aktif grant + paketi (nick ile). */
+    _activeGrantByNick(nick) {
+        try {
+            return db().prepare(
+                "SELECT * FROM vip_grants WHERE status = 'active' AND LOWER(mc_nick) = ? ORDER BY id DESC LIMIT 1"
+            ).get(String(nick).toLowerCase()) || null;
+        } catch { return null; }
+    }
+
+    // ── Giriş/Çıkış duyuruları + rezerve slot ───────────────────────────────
+    _onJoin(name) {
+        try {
+            // 1) Rezerve slot: sunucu doluysa VIP olmayan oyuncuyu kickle
+            const reserved = this._settings.reservedSlots;
+            if (reserved > 0 && this._mc && !this.isVipNick(name)) {
+                const maxPlayers = this._maxPlayers();
+                const online = this._mc.players?.length || 0;
+                if (maxPlayers && online > maxPlayers - reserved) {
+                    try {
+                        this._mc.sendCommand(`kick ${name} Sunucu dolu — kalan slotlar VIP üyelere ayrılmıştır.`);
+                        this._log(null, 'reserved_kick', null, name, null, `dolu (${online}/${maxPlayers}, rezerve ${reserved})`);
+                    } catch { /* ignore */ }
+                    return; // kicklenen oyuncu için duyuru yapma
+                }
+            }
+            // 2) VIP giriş duyurusu
+            if (!this._settings.joinLeaveEnabled) return;
+            const g = this._activeGrantByNick(name);
+            if (!g) return;
+            const pkg = g.package_id ? this.getPackage(g.package_id) : null;
+            const msg = pkg?.join_message;
+            if (!msg) return;
+            this._announce(msg, { mcNick: name, packageName: g.package_name, color: pkg?.color });
+        } catch { /* ignore */ }
+    }
+
+    _onLeave(name) {
+        try {
+            if (!this._settings.joinLeaveEnabled) return;
+            const g = this._activeGrantByNick(name);
+            if (!g) return;
+            const pkg = g.package_id ? this.getPackage(g.package_id) : null;
+            const msg = pkg?.leave_message;
+            if (!msg) return;
+            this._announce(msg, { mcNick: name, packageName: g.package_name, color: pkg?.color });
+        } catch { /* ignore */ }
+    }
+
+    /** Sohbete renkli duyuru bas (tellraw, paket rengiyle). */
+    _announce(template, { mcNick, packageName, color }) {
+        if (!this._mc || this._mc.status !== 'running') return;
+        const text = applyTemplate(template, { mcNick, packageName });
+        const json = JSON.stringify({ text, color: /^#[0-9a-f]{6}$/i.test(color || '') ? color : 'gold' });
+        try { this._mc.sendCommand(`tellraw @a ${json}`); } catch { /* ignore */ }
+    }
+
+    /** server.properties / status'tan max oyuncu sayısı. */
+    _maxPlayers() {
+        try {
+            const st = this._mc?.getStatus?.();
+            if (st?.maxPlayers) return Number(st.maxPlayers);
+        } catch { /* ignore */ }
+        try {
+            const sp = this._mc?.getServerPath?.();
+            if (sp) {
+                const m = fs.readFileSync(path.join(sp, 'server.properties'), 'utf-8').match(/^max-players\s*=\s*(\d+)/m);
+                if (m) return Number(m[1]);
+            }
+        } catch { /* ignore */ }
+        return null;
+    }
 
     // ── Paketler ──────────────────────────────────────────────────────────
     listPackages() {
@@ -52,12 +208,13 @@ class VipService {
     createPackage(d) {
         if (!d.name) throw new Error('Paket adı gerekli');
         const res = db().prepare(`INSERT INTO vip_packages
-            (name, color, discord_role_id, discord_guild_id, duration_days, grant_commands, revoke_commands, sort_order, enabled)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+            (name, color, discord_role_id, discord_guild_id, duration_days, grant_commands, revoke_commands, join_message, leave_message, sort_order, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
             d.name, d.color || '#f1c40f', d.discord_role_id || null, d.discord_guild_id || null,
             Number(d.duration_days) || 0,
             JSON.stringify(Array.isArray(d.grant_commands) ? d.grant_commands : parseCmds(d.grant_commands)),
             JSON.stringify(Array.isArray(d.revoke_commands) ? d.revoke_commands : parseCmds(d.revoke_commands)),
+            d.join_message || null, d.leave_message || null,
             Number(d.sort_order) || 0, d.enabled === false ? 0 : 1
         );
         return this.getPackage(res.lastInsertRowid);
@@ -74,11 +231,14 @@ class VipService {
         if ('duration_days' in d) m.duration_days = Number(d.duration_days) || 0;
         if ('grant_commands' in d) m.grant_commands = JSON.stringify(Array.isArray(d.grant_commands) ? d.grant_commands : parseCmds(d.grant_commands));
         if ('revoke_commands' in d) m.revoke_commands = JSON.stringify(Array.isArray(d.revoke_commands) ? d.revoke_commands : parseCmds(d.revoke_commands));
+        if ('join_message' in d) m.join_message = d.join_message || null;
+        if ('leave_message' in d) m.leave_message = d.leave_message || null;
         if ('sort_order' in d) m.sort_order = Number(d.sort_order) || 0;
         if ('enabled' in d) m.enabled = d.enabled ? 1 : 0;
         db().prepare(`UPDATE vip_packages SET name=@name, color=@color, discord_role_id=@discord_role_id,
             discord_guild_id=@discord_guild_id, duration_days=@duration_days, grant_commands=@grant_commands,
-            revoke_commands=@revoke_commands, sort_order=@sort_order, enabled=@enabled WHERE id=@id`).run({ ...m, id });
+            revoke_commands=@revoke_commands, join_message=@join_message, leave_message=@leave_message,
+            sort_order=@sort_order, enabled=@enabled WHERE id=@id`).run({ ...m, id });
         return this.getPackage(id);
     }
 
@@ -225,7 +385,7 @@ class VipService {
             if (this._mcRunning()) {
                 const inst = this._mcInstance();
                 let n = 0;
-                for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId })); n++; } catch { /* ignore */ } }
+                for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId, packageName: pkg.name })); n++; } catch { /* ignore */ } }
                 parts.push(`${n}/${cmds.length} MC komutu`);
             } else parts.push('MC komutları ERTELENDİ (sunucu kapalı)');
         }
@@ -245,7 +405,7 @@ class VipService {
         if (cmds.length && mcNick && this._mcRunning()) {
             const inst = this._mcInstance();
             let n = 0;
-            for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId })); n++; } catch { /* ignore */ } }
+            for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId, packageName: pkg?.name })); n++; } catch { /* ignore */ } }
             parts.push(`${n}/${cmds.length} MC komutu`);
         }
         return parts.join(' · ') || 'geri alındı';

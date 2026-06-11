@@ -34,6 +34,11 @@ function summarize(scans, settings = {}) {
     const flagMs = numOr(settings.attribFlagMs, 5);
     const minScans = numOr(settings.attribMinScans, 3);
     const windowScans = numOr(settings.attribWindowScans, 6);
+    // VIP muafiyeti: VIP sahipler için işaretleme eşiği +%X (vipNicks: lowercase isim kümesi)
+    const vipExemptPct = numOr(settings.vipExemptPct, 0);
+    const vipNicks = settings.vipNicks instanceof Set ? settings.vipNicks
+        : new Set(Array.isArray(settings.vipNicks) ? settings.vipNicks.map(s => String(s).toLowerCase()) : []);
+    const isVip = (owner) => vipNicks.has(String(owner).toLowerCase());
 
     // Lag kapısı + v2 filtresi → en yeni N lag-taraması
     const lagScans = (scans || [])
@@ -51,19 +56,24 @@ function summarize(scans, settings = {}) {
 
     const flagged = [], watch = [];
     for (const owner of ownersAll) {
+        // VIP sahipler için yükseltilmiş eşik (örn. %50 → 5ms yerine 7.5ms'te işaretlenir)
+        const vip = isVip(owner);
+        const ownerFlagMs = vip ? flagMs * (1 + vipExemptPct / 100) : flagMs;
         const perScan = lagScans.map(s => (s.evidence.owners || []).find(o => o.owner === owner));
         const totals = perScan.map(o => (o ? o.totalMs : 0));
         const med = median(totals);
-        const aboveCount = totals.filter(t => t >= flagMs).length;
+        const aboveCount = totals.filter(t => t >= ownerFlagMs).length;
         const row = {
             owner,
+            vip,
+            flagThresholdMs: r1(ownerFlagMs),
             medianMs: r1(med),
             medianBlockMs: r1(median(perScan.map(o => (o ? o.blockMs : 0)))),
             medianEntityMs: r1(median(perScan.map(o => (o ? o.entityMs : 0)))),
             budgetPct: r1(100 * med / TICK_BUDGET_MS),
             aboveCount, scanCount: lagScans.length,
         };
-        if (med >= flagMs && aboveCount >= minScans) {
+        if (med >= ownerFlagMs && aboveCount >= minScans) {
             row.confidence = (aboveCount / lagScans.length >= 0.75) ? 'yüksek' : 'orta';
             flagged.push(row);
         } else {

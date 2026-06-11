@@ -11,6 +11,15 @@ router.get('/stats', authMiddleware, (req, res) => {
     try { res.json(vipService.stats()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Ayarlar (lag muafiyeti %, rezerve slot, giriş/çıkış duyuruları) ──
+router.get('/settings', authMiddleware, (req, res) => {
+    try { res.json({ settings: vipService.getSettings() }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/settings', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json({ message: 'Ayarlar kaydedildi', settings: vipService.updateSettings(req.body) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Discord sunucuları (guild seçici) ──
 router.get('/guilds', authMiddleware, async (req, res) => {
     try { res.json({ guilds: await discordBotService.listGuilds() }); }

@@ -7,7 +7,7 @@ import { Cap, Num, Pill, Card, Input } from '@/hoodoo/primitives';
 import { I } from '@/hoodoo/icons';
 
 const selStyle = { background: A.bg, border: `1px solid ${A.border}`, color: A.text, fontSize: 12, padding: '7px 10px', borderRadius: 3, width: '100%', outline: 'none' };
-const EMPTY_PKG = { name: '', color: '#f1c40f', discord_role_id: '', discord_guild_id: '', duration_days: 30, grant_commands: '', revoke_commands: '', enabled: true };
+const EMPTY_PKG = { name: '', color: '#f1c40f', discord_role_id: '', discord_guild_id: '', duration_days: 30, grant_commands: '', revoke_commands: '', join_message: '', leave_message: '', enabled: true };
 
 // Hazır perk kataloğu — seçilince grant/revoke komutlarını otomatik üretir ({nick} oyuncu adı)
 const PERK_CATALOG = [
@@ -30,6 +30,19 @@ const PERK_CATALOG = [
         id: 'lp_perm', label: 'LuckPerms izni', fields: [{ key: 'node', ph: 'ftbessentials.home.count.5' }],
         build: v => ({ grant: [`lp user {nick} permission set ${v.node} true`], revoke: [`lp user {nick} permission unset ${v.node}`] }),
         note: 'LuckPerms gerekir. Ör. fazladan ev/komut izni.',
+    },
+    {
+        id: 'gradient', label: 'Gradient isim (renk geçişli)', fields: [{ key: 'c1', ph: '#55ffff' }, { key: 'c2', ph: '#ff55ff' }],
+        build: v => ({
+            grant: [`nickname {nick} {gradient:${v.c1 || '#55ffff'}:${v.c2 || '#ff55ff'}}`],
+            revoke: [`nickname {nick} reset`],
+        }),
+        note: 'Verme anında {gradient:...} oyuncunun adını karakter karakter &#RRGGBB ile boyar. Komut FTB Essentials /nickname içindir — sunucundaki nick komutuna göre düzenle (hex desteği gerekir).',
+    },
+    {
+        id: 'afk', label: 'AFK süresi / muafiyeti (rütbe izni)', fields: [{ key: 'rank', ph: 'vip' }, { key: 'node', ph: 'ftbessentials.afk_timeout' }, { key: 'value', ph: '60' }],
+        build: v => ({ grant: v.rank && v.node ? [`ftbranks set ${v.rank} ${v.node} ${v.value || 'true'}`] : [], revoke: [] }),
+        note: 'RÜTBEYE yazılır (oyuncuya değil; bir kez yeter). Node adı FTB Essentials sürümüne göre değişir — yanlış node sessizce etkisizdir, sunucunda doğrula.',
     },
     {
         id: 'broadcast', label: 'Duyuru mesajı (verince)', fields: [{ key: 'msg', ph: '{nick} VIP oldu!' }],
@@ -114,6 +127,7 @@ export default function VipPage() {
     const { data: pkgData } = useQuery({ queryKey: ['vip-packages'], queryFn: () => api.get('/vip/packages').then(r => r.data) });
     const { data: grantData } = useQuery({ queryKey: ['vip-grants'], queryFn: () => api.get('/vip/grants?status=active').then(r => r.data), refetchInterval: 15000 });
     const { data: logData } = useQuery({ queryKey: ['vip-log'], queryFn: () => api.get('/vip/log').then(r => r.data), refetchInterval: 15000, enabled: tab === 'log' });
+    const { data: settingsData } = useQuery({ queryKey: ['vip-settings'], queryFn: () => api.get('/vip/settings').then(r => r.data) });
     const { data: wlData } = useQuery({ queryKey: ['vip-whitelist'], queryFn: () => api.get('/discord/whitelist').then(r => r.data) });
 
     const packages = pkgData?.packages || [];
@@ -135,6 +149,8 @@ export default function VipPage() {
                 duration_days: Number(p.duration_days) || 0, enabled: p.enabled,
                 grant_commands: (p.grant_commands || '').split('\n').map(s => s.trim()).filter(Boolean),
                 revoke_commands: (p.revoke_commands || '').split('\n').map(s => s.trim()).filter(Boolean),
+                join_message: p.join_message || null,
+                leave_message: p.leave_message || null,
             };
             return p.id ? api.put(`/vip/packages/${p.id}`, body) : api.post('/vip/packages', body);
         },
@@ -188,7 +204,7 @@ export default function VipPage() {
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
+                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'settings', label: 'Ayarlar', icon: I.Cog }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
                         color: tab === t.id ? '#fff' : A.dim, fontSize: 12, fontWeight: 500, padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -330,6 +346,9 @@ export default function VipPage() {
             {/* PERKLER (ranks.snbt editörü) */}
             {tab === 'perks' && <PerksTab />}
 
+            {/* AYARLAR */}
+            {tab === 'settings' && <VipSettingsTab settings={settingsData?.settings} />}
+
             {/* LOG */}
             {tab === 'log' && (
                 <Card title="VIP Günlüğü">
@@ -450,6 +469,14 @@ function PackageModal({ pkg, onClose, onSave, saving }) {
                         <Cap style={{ display: 'block', marginBottom: 4 }}>Bitiş/iptal komutları</Cap>
                         <textarea value={f.revoke_commands} onChange={e => set('revoke_commands', e.target.value)} rows={2} placeholder={'lp user {nick} parent remove vip'} style={{ ...selStyle, fontFamily: A.mono, resize: 'vertical' }} />
                     </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <Cap style={{ display: 'block', marginBottom: 4 }}>Giriş duyurusu ({'{nick}'} {'{package}'} · boş = duyuru yok)</Cap>
+                        <Input value={f.join_message || ''} onChange={e => set('join_message', e.target.value)} placeholder="👑 {package} üyesi {nick} sunucuya katıldı!" />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <Cap style={{ display: 'block', marginBottom: 4 }}>Çıkış duyurusu (boş = duyuru yok)</Cap>
+                        <Input value={f.leave_message || ''} onChange={e => set('leave_message', e.target.value)} placeholder="{package} üyesi {nick} ayrıldı." />
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <input type="checkbox" checked={!!f.enabled} onChange={e => set('enabled', e.target.checked)} /> <Cap>Aktif</Cap>
                     </div>
@@ -542,6 +569,54 @@ function TierPerkCard({ tier }) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                 <button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
             </div>
+        </div>
+    );
+}
+
+// ── VIP Ayarları sekmesi ───────────────────────────────────────────────────
+function VipSettingsTab({ settings }) {
+    const qc = useQueryClient();
+    const [f, setF] = useState(null);
+    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1 };
+    const set = (k, v) => setF({ ...cur, [k]: v });
+    const save = useMutation({
+        mutationFn: () => api.put('/vip/settings', {
+            lagExemptPct: Number(cur.lagExemptPct) || 0,
+            reservedSlots: Number(cur.reservedSlots) || 0,
+            joinLeaveEnabled: cur.joinLeaveEnabled ? 1 : 0,
+        }),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['vip-settings'] }); toast.success('Ayarlar kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
+            <Card title="Lag Cezası Muafiyeti">
+                <Cap style={{ display: 'block', marginBottom: 4 }}>VIP işaretleme eşiği artışı (%)</Cap>
+                <Input type="number" value={cur.lagExemptPct} onChange={e => set('lagExemptPct', e.target.value)} min={0} max={500} style={{ maxWidth: 140 }} />
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Lag atıfında normal oyuncu örn. <b style={{ color: A.dim }}>5ms</b>'te işaretlenirken, %50 muafiyetle VIP ancak{' '}
+                    <b style={{ color: A.dim }}>7.5ms</b>'te işaretlenir. 0 = muafiyet yok. (Gelecek ceza sistemi de bu eşiği kullanacak.)
+                </p>
+            </Card>
+            <Card title="Rezerve Slot (Queue Priority)">
+                <Cap style={{ display: 'block', marginBottom: 4 }}>VIP'lere ayrılan slot sayısı (0 = kapalı)</Cap>
+                <Input type="number" value={cur.reservedSlots} onChange={e => set('reservedSlots', e.target.value)} min={0} max={50} style={{ maxWidth: 140 }} />
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Sunucu dolunca VIP olmayan yeni girenler kibarca kicklenir, son N slot VIP'lere kalır.{' '}
+                    <b style={{ color: A.warn }}>Önemli:</b> server.properties'te <code style={{ fontFamily: A.mono }}>max-players</code>'ı
+                    normal kapasite + rezerve kadar artırın (örn. 20 oyunculuk sunucu, 3 rezerve → max-players=23).
+                </p>
+            </Card>
+            <Card title="Giriş/Çıkış Duyuruları">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.joinLeaveEnabled} onChange={e => set('joinLeaveEnabled', e.target.checked ? 1 : 0)} />
+                    <span style={{ fontSize: 12 }}>VIP giriş/çıkış duyuruları aktif</span>
+                </label>
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Mesaj metinleri paket başına ayarlanır (Paketler → Düzenle → Giriş/Çıkış mesajı). Boş bırakılan paket duyuru yapmaz.
+                </p>
+            </Card>
+            <div><button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Ayarları Kaydet'}</button></div>
         </div>
     );
 }
