@@ -301,7 +301,7 @@ export default function DiscordPage() {
         mutationFn: (settings) => api.put('/discord/bot-settings', settings),
         onSuccess: () => {
             toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.');
-            queryClient.invalidateQueries({ queryKey: ['bot-settings'] });
+            queryClient.invalidateQueries({ queryKey: ['discord-bot-settings'] });
         },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
@@ -369,6 +369,7 @@ export default function DiscordPage() {
     const TABS = [
         { key: 'whitelist',       label: 'Whitelist',        icon: I.Users },
         { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
+        { key: 'donations',       label: 'Bağış Sistemi',    icon: I.Heart },
         { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
         { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
         { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
@@ -675,6 +676,9 @@ export default function DiscordPage() {
                     botSettings={botSettings} botSettingsMutation={botSettingsMutation} />
             )}
 
+            {/* ══ Bağış Sistemi ══ */}
+            {activeTab === 'donations' && <DonationsTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
+
             {/* ══ RCON Kuyruğu ══ */}
             {activeTab === 'rcon-queue' && (
                 <RconQueueTab queueData={queueData} queueLoading={queueLoading}
@@ -700,6 +704,265 @@ export default function DiscordPage() {
 
             {/* ══ Test İşlemleri ══ */}
             {activeTab === 'test-actions' && <TestActionsTab/>}
+        </div>
+    );
+}
+
+// ── Bağış Sistemi Sekmesi ────────────────────────────────────────────────────
+
+const DEFAULT_DONATION_CONFIG = {
+    enabled: false,
+    donateListUrl: '',
+    publicDonateUrl: '',
+    codePrefix: 'KNZ',
+    claimTtlHours: 72,
+    minNotifyAmount: 50,
+    incentivePercent: 0,
+    donationLogChannelId: '',
+    packages: [],
+};
+
+function fieldLabel(text) {
+    return <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>{text}</div>;
+}
+function fieldHint(text) {
+    return <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>{text}</div>;
+}
+
+function DonationsTab({ botSettings, botSettingsMutation }) {
+    const [form, setForm] = useState(DEFAULT_DONATION_CONFIG);
+
+    const { data: vipData } = useQuery({
+        queryKey: ['vip-packages'],
+        queryFn: () => api.get('/vip/packages').then(r => r.data),
+    });
+    const vipPackages = vipData?.packages || [];
+    const savedRoles = botSettings?.savedRoles || [];
+
+    useEffect(() => {
+        if (botSettings?.donation_config) {
+            setForm({
+                ...DEFAULT_DONATION_CONFIG,
+                ...botSettings.donation_config,
+                packages: botSettings.donation_config.packages || [],
+            });
+        }
+    }, [botSettings]);
+
+    const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
+    const setPkg = (i, key, value) => setForm(f => {
+        const packages = [...f.packages];
+        packages[i] = { ...packages[i], [key]: value };
+        return { ...f, packages };
+    });
+    const addPkg = () => setForm(f => ({
+        ...f,
+        packages: [...f.packages, {
+            id: 'pkg_' + Date.now().toString(36),
+            label: '', type: 'timed_role', roleId: '', vipPackageId: '',
+            durationDays: 30, price: 100, stackable: true, enabled: true,
+        }],
+    }));
+    const delPkg = (i) => setForm(f => ({ ...f, packages: f.packages.filter((_, idx) => idx !== i) }));
+
+    const save = () => {
+        const invalid = form.packages.find(p =>
+            !p.label.trim() ||
+            !(Number(p.price) > 0) ||
+            (p.type === 'timed_role' && (!p.roleId || !(Number(p.durationDays) > 0))) ||
+            (p.type === 'vip' && !p.vipPackageId)
+        );
+        if (invalid) {
+            toast.error('Eksik paket alanı var: isim, tutar ve rol/VIP paketi zorunlu.');
+            return;
+        }
+        botSettingsMutation.mutate({
+            donation_config: {
+                ...form,
+                claimTtlHours: Number(form.claimTtlHours) || 72,
+                minNotifyAmount: Number(form.minNotifyAmount) || 0,
+                incentivePercent: Number(form.incentivePercent) || 0,
+                codePrefix: (form.codePrefix || 'KNZ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'KNZ',
+                packages: form.packages.map(p => ({
+                    ...p,
+                    price: Number(p.price) || 0,
+                    durationDays: Number(p.durationDays) || 0,
+                    vipPackageId: p.vipPackageId ? Number(p.vipPackageId) : '',
+                })),
+            },
+        });
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* ── ByNoGame kural uyarısı ── */}
+            <div style={{ ...card, padding: '12px 16px', borderColor: 'rgba(245,158,11,0.35)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <I.Alert size={16} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }}/>
+                <div style={{ fontSize: 11.5, color: A.faint, lineHeight: 1.5 }}>
+                    ByNoGame sözleşmesi (Madde 7.2.d) donate sisteminin <b>ticari amaçla</b> kullanımını yasaklar.
+                    Bu sistem "satış" değil, <b>destekçilere teşekkür avantajı</b> olarak sunulmalıdır.
+                    Duyurularda "satın al / fiyat" yerine "destek ol / teşekkür hediyesi" dili kullanın.
+                </div>
+            </div>
+
+            {/* ── Genel Ayarlar ── */}
+            <div style={{ ...card, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <Cap>Bağış Sistemi Ayarları</Cap>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: A.text }}>
+                        <input type="checkbox" checked={!!form.enabled} onChange={e => set('enabled', e.target.checked)}/>
+                        Sistem Aktif
+                    </label>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                        {fieldLabel('ByNoGame Donate Liste Linki (bot bunu okur)')}
+                        <input type="text" value={form.donateListUrl} onChange={e => set('donateListUrl', e.target.value)}
+                            placeholder="https://donate.bynogame.com/donatelist/xxxxxxxx-xxxx-..." style={inputStyle}/>
+                        {fieldHint('ByNoGame panelindeki "Donate Listem" sayfasının linki. Bot 2 dakikada bir bu sayfadan yeni bağışları okur.')}
+                    </div>
+                    <div>
+                        {fieldLabel('Herkese Açık Bağış Sayfası (kullanıcılar burada bağış yapar)')}
+                        <input type="text" value={form.publicDonateUrl} onChange={e => set('publicDonateUrl', e.target.value)}
+                            placeholder="https://donate.bynogame.com/kullanici-adi" style={inputStyle}/>
+                        {fieldHint('/bagis komutundaki "Bağış Yap" butonu bu adrese yönlendirir.')}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
+                        <div>
+                            {fieldLabel('Teşvik Bonusu (%)')}
+                            <input type="number" min="0" max="100" value={form.incentivePercent}
+                                onChange={e => set('incentivePercent', e.target.value)} style={inputStyle}/>
+                            {fieldHint('Örn. %10 → 30 gün yerine 33 gün verilir.')}
+                        </div>
+                        <div>
+                            {fieldLabel('Kod Öneki')}
+                            <input type="text" value={form.codePrefix} onChange={e => set('codePrefix', e.target.value)}
+                                placeholder="KNZ" style={inputStyle}/>
+                            {fieldHint('Bağış mesajındaki kod: ÖNEK-XXXX')}
+                        </div>
+                        <div>
+                            {fieldLabel('Kod Geçerliliği (saat)')}
+                            <input type="number" min="1" value={form.claimTtlHours}
+                                onChange={e => set('claimTtlHours', e.target.value)} style={inputStyle}/>
+                            {fieldHint('/bagis ile alınan kodun ömrü.')}
+                        </div>
+                        <div>
+                            {fieldLabel('Bildirim Alt Limiti (₺)')}
+                            <input type="number" min="0" value={form.minNotifyAmount}
+                                onChange={e => set('minNotifyAmount', e.target.value)} style={inputStyle}/>
+                            {fieldHint('Kodsuz bağışlar bu tutarın üstündeyse log kanalına düşer.')}
+                        </div>
+                    </div>
+                    <div>
+                        {fieldLabel('Bağış Log Kanalı ID (opsiyonel)')}
+                        <input type="text" value={form.donationLogChannelId} onChange={e => set('donationLogChannelId', e.target.value)}
+                            placeholder="Boşsa Süreli Rol log kanalı kullanılır" style={inputStyle}/>
+                        {fieldHint('Eşleşen ve eşleşmeyen bağış bildirimleri bu kanala gönderilir.')}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Paketler ── */}
+            <div style={{ ...card, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <Cap>Destek Paketleri</Cap>
+                    <button onClick={addPkg} style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <I.Plus size={13}/> Paket Ekle
+                    </button>
+                </div>
+
+                {form.packages.length === 0 && (
+                    <div style={{ fontSize: 12, color: A.faint, padding: '12px 0' }}>
+                        Henüz paket yok. "Paket Ekle" ile başlayın — örn. Sunucu Katılım Üyeliği (süreli rol) veya VIP kademesi.
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {form.packages.map((p, i) => (
+                        <div key={p.id} style={{ ...card, background: A.bg, padding: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>{p.id}</span>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer', marginLeft: 'auto' }}>
+                                    <input type="checkbox" checked={!!p.stackable} onChange={e => setPkg(i, 'stackable', e.target.checked)}/>
+                                    Katlanabilir (2× destek → 2× süre)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={!!p.enabled} onChange={e => setPkg(i, 'enabled', e.target.checked)}/>
+                                    Aktif
+                                </label>
+                                <button onClick={() => delPkg(i)} title="Paketi sil"
+                                    style={{ ...btnGhost, padding: '4px 8px', color: '#f87171' }}>
+                                    <I.Trash size={13}/>
+                                </button>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                                <div>
+                                    {fieldLabel('Paket Adı')}
+                                    <input type="text" value={p.label} onChange={e => setPkg(i, 'label', e.target.value)}
+                                        placeholder="Örn: Sunucu Katılım Üyeliği (30 gün)" style={inputStyle}/>
+                                </div>
+                                <div>
+                                    {fieldLabel('Tür')}
+                                    <select value={p.type} onChange={e => setPkg(i, 'type', e.target.value)} style={inputStyle}>
+                                        <option value="timed_role">Süreli Rol</option>
+                                        <option value="vip">VIP Paketi</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    {fieldLabel('Min. Destek (₺)')}
+                                    <input type="number" min="1" value={p.price} onChange={e => setPkg(i, 'price', e.target.value)} style={inputStyle}/>
+                                </div>
+                            </div>
+
+                            {p.type === 'timed_role' ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                                    <div>
+                                        {fieldLabel('Discord Rolü')}
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <select value={savedRoles.some(r => String(r.id) === String(p.roleId)) ? p.roleId : ''}
+                                                onChange={e => e.target.value && setPkg(i, 'roleId', e.target.value)}
+                                                style={{ ...inputStyle, width: '50%' }}>
+                                                <option value="">Kayıtlı rollerden seç...</option>
+                                                {savedRoles.map(r => <option key={r.id} value={r.id}>{r.name} ({r.id})</option>)}
+                                            </select>
+                                            <input type="text" value={p.roleId} onChange={e => setPkg(i, 'roleId', e.target.value)}
+                                                placeholder="veya Rol ID yapıştır" style={{ ...inputStyle, width: '50%' }}/>
+                                        </div>
+                                        {fieldHint('Aynı rol tekrar alınırsa süre üst üste eklenir (uzatma).')}
+                                    </div>
+                                    <div>
+                                        {fieldLabel('Süre (gün)')}
+                                        <input type="number" min="1" value={p.durationDays}
+                                            onChange={e => setPkg(i, 'durationDays', e.target.value)} style={inputStyle}/>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    {fieldLabel('Panel VIP Paketi')}
+                                    <select value={p.vipPackageId} onChange={e => setPkg(i, 'vipPackageId', e.target.value)} style={inputStyle}>
+                                        <option value="">VIP paketi seç...</option>
+                                        {vipPackages.map(vp => (
+                                            <option key={vp.id} value={vp.id}>
+                                                {vp.name} ({vp.duration_days > 0 ? `${vp.duration_days} gün` : 'süresiz'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {fieldHint('Süre ve roller VIP sayfasındaki paketten gelir. Aynı paket tekrar alınırsa süre uzatılır; daha değerli pakete geçişte kalan süre orana göre yeni pakete aktarılır.')}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={save} disabled={botSettingsMutation.isPending}
+                    style={{ ...btnPrimary, opacity: botSettingsMutation.isPending ? 0.6 : 1 }}>
+                    {botSettingsMutation.isPending ? 'Kaydediliyor...' : 'Bağış Ayarlarını Kaydet'}
+                </button>
+            </div>
         </div>
     );
 }
