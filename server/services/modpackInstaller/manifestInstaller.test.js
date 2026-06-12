@@ -142,6 +142,78 @@ test('downloadMods: batch düşerse tekli GET fallback çalışır', async () =>
     assert.strictEqual(res.failed.length, 0);
 });
 
+test('downloadMods: reuseDir varsa aynı dosya indirilmeden kopyalanır', async () => {
+    const dir = tmpDir();
+    writeManifest(dir, { ...SAMPLE, files: [
+        { projectID: 100, fileID: 1001, required: true },
+        { projectID: 200, fileID: 2001, required: true },
+    ] });
+    const manifest = mi.parseManifest(dir);
+
+    // Önceki sürümün mods klasörü: modA.jar zaten var
+    const reuseDir = path.join(dir, 'eski-mods');
+    fs.mkdirSync(reuseDir);
+    fs.writeFileSync(path.join(reuseDir, 'modA.jar'), 'eski-icerik', 'utf8');
+
+    let downloads = 0;
+    const cf = {
+        apiRequestPost: async () => ({
+            data: [
+                { id: 1001, fileName: 'modA.jar', downloadUrl: 'https://cdn/a.jar' },
+                { id: 2001, fileName: 'modB.jar', downloadUrl: 'https://cdn/b.jar' },
+            ],
+        }),
+        apiRequest: async () => ({ data: null }),
+        downloadFile: async (url, dest) => { downloads++; fs.writeFileSync(dest, 'yeni'); },
+    };
+
+    const res = await mi.downloadMods(dir, manifest, { cf, reuseDir });
+
+    assert.strictEqual(res.reused, 1, 'modA kopyalanmalı');
+    assert.strictEqual(downloads, 1, 'sadece modB indirilmeli');
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'mods', 'modA.jar'), 'utf8'), 'eski-icerik');
+    assert.strictEqual(res.failed.length, 0);
+});
+
+test('downloadMods: sorunsuz kurulumda eski eksik raporu temizlenir', async () => {
+    const dir = tmpDir();
+    writeManifest(dir, { ...SAMPLE, files: [{ projectID: 100, fileID: 1001, required: true }] });
+    const manifest = mi.parseManifest(dir);
+    // Önceki başarısız kurulumdan kalma rapor
+    fs.writeFileSync(path.join(dir, 'eksik-modlar.txt'), 'eski', 'utf8');
+    fs.writeFileSync(path.join(dir, 'eksik-modlar.json'), '{"items":[]}', 'utf8');
+
+    const cf = {
+        apiRequestPost: async () => ({ data: [{ id: 1001, fileName: 'modA.jar', downloadUrl: 'https://cdn/a.jar' }] }),
+        apiRequest: async () => ({ data: null }),
+        downloadFile: async (url, dest) => fs.writeFileSync(dest, 'jar'),
+    };
+
+    await mi.downloadMods(dir, manifest, { cf });
+    assert.ok(!fs.existsSync(path.join(dir, 'eksik-modlar.txt')));
+    assert.ok(!fs.existsSync(path.join(dir, 'eksik-modlar.json')));
+});
+
+test('writeMissingReport JSON kopyası üretir (panel UI için)', async () => {
+    const dir = tmpDir();
+    writeManifest(dir, { ...SAMPLE, files: [{ projectID: 200, fileID: 2001, required: true }] });
+    const manifest = mi.parseManifest(dir);
+
+    const cf = {
+        apiRequestPost: async () => ({ data: [{ id: 2001, fileName: 'modB.jar', downloadUrl: null }] }),
+        apiRequest: async () => ({ data: null }),
+        downloadFile: async () => {},
+    };
+
+    await mi.downloadMods(dir, manifest, { cf });
+
+    const json = JSON.parse(fs.readFileSync(path.join(dir, 'eksik-modlar.json'), 'utf8'));
+    assert.strictEqual(json.items.length, 1);
+    assert.strictEqual(json.items[0].fileName, 'modB.jar');
+    assert.strictEqual(json.items[0].projectID, 200);
+    assert.match(json.items[0].url, /curseforge\.com\/projects\/200/);
+});
+
 test('downloadMods: indirme hatasında retry sonrası eksik olarak raporlar', async () => {
     const dir = tmpDir();
     writeManifest(dir, { ...SAMPLE, files: [{ projectID: 100, fileID: 1001, required: true }] });

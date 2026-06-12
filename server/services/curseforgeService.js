@@ -15,7 +15,10 @@ let installStatus = {
     task: '',
     status: '',
     error: null,
+    log: [],
 };
+
+const MAX_INSTALL_LOG = 400;
 
 class CurseForgeService {
     getApiKey() {
@@ -23,19 +26,30 @@ class CurseForgeService {
     }
 
     getInstallStatus() {
-        return { ...installStatus };
+        return { ...installStatus, log: [...installStatus.log] };
     }
 
     resetInstallStatus() {
-        installStatus = { isInstalling: false, progress: 0, task: '', status: '', error: null };
+        installStatus = { isInstalling: false, progress: 0, task: '', status: '', error: null, log: [] };
     }
 
     _updateProgress(task, progress, status) {
-        installStatus = { isInstalling: true, progress, task, status, error: null };
+        installStatus = { ...installStatus, isInstalling: true, progress, task, status, error: null };
+        this._logInstall(`[%${progress}] ${task}: ${status}`);
     }
 
     _setError(error) {
-        installStatus = { isInstalling: false, progress: 0, task: 'Hata', status: error, error };
+        installStatus = { ...installStatus, isInstalling: false, progress: 0, task: 'Hata', status: error, error };
+        this._logInstall(`HATA: ${error}`);
+    }
+
+    /** Kurulum log satırı — UI'da canlı akış olarak gösterilir */
+    _logInstall(msg) {
+        const time = new Date().toLocaleTimeString('tr-TR');
+        installStatus.log.push(`${time} ${msg}`);
+        if (installStatus.log.length > MAX_INSTALL_LOG) {
+            installStatus.log = installStatus.log.slice(-MAX_INSTALL_LOG);
+        }
     }
 
     async apiRequest(endpoint) {
@@ -197,6 +211,71 @@ class CurseForgeService {
             };
             followRedirect(url);
         });
+    }
+
+    /**
+     * Kurulum ön kontrolü: disk alanı + RAM uyarısı.
+     * Modpack zip'i + çıkartma + mod indirmeleri + libraries için
+     * zip boyutunun ~4 katı (en az 5GB) boş alan istenir.
+     */
+    _preflightCheck(basePath, fileLength) {
+        try {
+            if (!fs.existsSync(basePath)) fs.mkdirSync(basePath, { recursive: true });
+            const st = fs.statfsSync(basePath);
+            const freeBytes = st.bsize * st.bavail;
+            const needBytes = Math.max((fileLength || 0) * 4, 5 * 1024 * 1024 * 1024);
+            if (freeBytes < needBytes) {
+                const gb = (n) => (n / 1024 / 1024 / 1024).toFixed(1);
+                throw new Error(
+                    `Yetersiz disk alanı: ${gb(freeBytes)} GB boş, en az ${gb(needBytes)} GB gerekli. ` +
+                    'Eski paketleri/yedekleri temizleyip tekrar deneyin.'
+                );
+            }
+        } catch (err) {
+            if (err.message.startsWith('Yetersiz disk')) throw err;
+            // statfs desteklenmiyorsa kontrolü atla (kurulumu engelleme)
+        }
+
+        try {
+            const os = require('os');
+            const totalGB = os.totalmem() / 1024 / 1024 / 1024;
+            if (totalGB < 6) {
+                this._logInstall(`UYARI: Sistemde ${totalGB.toFixed(1)} GB RAM var — büyük modpack'ler için az olabilir.`);
+            }
+        } catch { /* ignore */ }
+    }
+
+    /** Diğer paketlerin kullanmadığı ilk boş portu seç (25565'ten başlar). */
+    _pickFreePort(db) {
+        const used = new Set();
+        try {
+            for (const r of db.prepare('SELECT server_port FROM installed_modpacks WHERE server_port IS NOT NULL').all()) {
+                used.add(Number(r.server_port));
+            }
+        } catch { /* tablo yoksa */ }
+        let port = 25565;
+        while (used.has(port) && port < 25665) port++;
+        return port;
+    }
+
+    /** server-port değerini server.properties'e yaz (dosya yoksa oluştur). */
+    _writeServerPort(profilePath, port) {
+        try {
+            const propsPath = path.join(profilePath, 'server.properties');
+            if (fs.existsSync(propsPath)) {
+                let content = fs.readFileSync(propsPath, 'utf-8');
+                if (/^server-port\s*=/m.test(content)) {
+                    content = content.replace(/^server-port\s*=.*/m, `server-port=${port}`);
+                } else {
+                    content += `\nserver-port=${port}\n`;
+                }
+                fs.writeFileSync(propsPath, content, 'utf-8');
+            } else {
+                fs.writeFileSync(propsPath, `#Minecraft server properties\n#Knozy Sunucu Paneli\nserver-port=${port}\nonline-mode=true\nmax-players=20\n`, 'utf-8');
+            }
+        } catch (err) {
+            console.error('[Modpacks] server-port yazılamadı:', err.message);
+        }
     }
 
     /**
@@ -380,9 +459,11 @@ class CurseForgeService {
      * Modpack yükleme - ilerleme takipli
      */
     async installModpack(modId, fileId) {
-        if (installStatus.isInstalling) {
+        // Güncelleme akışı kendi progress'ini başlatmış olarak gelir — onu engelleme
+        if (installStatus.isInstalling && !this._inUpdateFlow) {
             throw new Error('Zaten bir kurulum devam ediyor');
         }
+        if (!this._inUpdateFlow) this.resetInstallStatus();
 
         try {
             const db = getDb();
@@ -396,6 +477,10 @@ class CurseForgeService {
             const selectedFile = files.find(f => f.id === fileId) || files[0];
 
             if (!selectedFile) throw new Error('Dosya bulunamadı');
+
+            // 1.5 Ön kontrol: disk alanı yetersizse kurulum yarıda ölmesin
+            this._updateProgress('Ön Kontrol', 7, 'Disk alanı kontrol ediliyor...');
+            this._preflightCheck(baseServerPath, selectedFile.fileLength || 0);
 
             // Profil klasör adı (slug)
             const slug = modDetails.slug || modDetails.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -459,7 +544,8 @@ class CurseForgeService {
             const finalizeResult = await finalizer.finalizeInstall(profilePath, {
                 maxRam: process.env.MINECRAFT_MAX_RAM || '4G',
                 minRam: process.env.MINECRAFT_MIN_RAM || '2G',
-                log: (msg) => console.log(`[Modpacks][finalize] ${msg}`),
+                reuseModsDir: this._pendingReuseDir || null,
+                log: (msg) => { console.log(`[Modpacks][finalize] ${msg}`); this._logInstall(msg); },
                 onProgress: (pct, status) => {
                     // finalize %0-100 → genel ilerleme %62-88
                     this._updateProgress('Kurulum Sonlandırılıyor', 62 + Math.floor(pct * 0.26), status);
@@ -472,9 +558,10 @@ class CurseForgeService {
 
             // 7. Veritabanını güncelle (curseforge_file_id ve file_display_name dahil)
             this._updateProgress('Kayıt', 90, 'Veritabanı güncelleniyor...');
+            const serverPort = this._pickFreePort(db);
             const stmt = db.prepare(`
-                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status, curseforge_file_id, file_display_name) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed', ?, ?)
+                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status, curseforge_file_id, file_display_name, server_port)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed', ?, ?, ?)
             `);
 
             stmt.run(
@@ -487,7 +574,12 @@ class CurseForgeService {
                 isFirstInstall ? 1 : 0,
                 selectedFile.id,
                 selectedFile.displayName,
+                serverPort,
             );
+
+            // Portu server.properties'e işle (çoklu paket port çakışması yaşanmasın)
+            this._writeServerPort(profilePath, serverPort);
+            this._logInstall(`Sunucu portu: ${serverPort}`);
 
             // 8. Tamamlandı
             const warnText = finalizeResult.warnings.length > 0
@@ -566,6 +658,19 @@ class CurseForgeService {
      * Modpack güncelleme (dünya koruyarak)
      */
     async updateModpack(dbId, modId, fileId) {
+        if (installStatus.isInstalling) {
+            throw new Error('Zaten bir kurulum devam ediyor');
+        }
+        this.resetInstallStatus();
+        this._inUpdateFlow = true;
+        try {
+            return await this._doUpdateModpack(dbId, modId, fileId);
+        } finally {
+            this._inUpdateFlow = false;
+        }
+    }
+
+    async _doUpdateModpack(dbId, modId, fileId) {
         const db = getDb();
         const existing = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(dbId);
         const serverPath = existing?.install_path || (process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server');
@@ -594,40 +699,71 @@ class CurseForgeService {
             }
         }
 
+        // Rollback anlık görüntüsü: eski mods/config/scriptler silinmek yerine
+        // .rollback/ altına TAŞINIR — hem tek tıkla geri dönüş, hem de akıllı
+        // güncellemede değişmeyen modların yeniden indirilmemesi için kaynak.
+        this._updateProgress('Yedekleme', 10, 'Önceki sürüm rollback için saklanıyor...');
+        const rollbackDir = path.join(serverPath, '.rollback');
+        try { fs.rmSync(rollbackDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        fs.mkdirSync(rollbackDir, { recursive: true });
+        try {
+            fs.writeFileSync(path.join(rollbackDir, 'meta.json'), JSON.stringify({
+                savedAt: new Date().toISOString(),
+                curseforge_id: existing?.curseforge_id || modId,
+                name: existing?.name || '',
+                version: existing?.version || '',
+                curseforge_file_id: existing?.curseforge_file_id || null,
+                file_display_name: existing?.file_display_name || '',
+            }, null, 2), 'utf8');
+        } catch { /* ignore */ }
+
         // Eski modpack'i kaldır (sadece DB - dosyalar zaten üzerine yazılacak)
         this._updateProgress('Temizlik', 15, 'Eski modpack temizleniyor...');
         const wasActive = existing?.is_active === 1;
         db.prepare('DELETE FROM installed_modpacks WHERE id = ?').run(dbId);
 
-        // Eski dosyaları temizle (mods, config vs - dünyalar hariç)
+        // Eski dosyaları temizle: silmek yerine .rollback/ altına taşı (dünyalar hariç)
         try {
             const items = fs.readdirSync(serverPath);
             for (const item of items) {
                 if (preserveDirs.includes(item)) continue;
                 if (preserveFiles.includes(item)) continue;
-                if (item === '..') continue;
+                if (item === '..' || item === '.rollback') continue;
                 const itemPath = path.join(serverPath, item);
+                const rbPath = path.join(rollbackDir, item);
                 try {
-                    const stat = fs.lstatSync(itemPath);
-                    if (stat.isDirectory()) {
-                        fs.rmSync(itemPath, { recursive: true, force: true });
-                    } else {
-                        fs.unlinkSync(itemPath);
-                    }
-                } catch { /* ignore */ }
+                    fs.renameSync(itemPath, rbPath);
+                } catch {
+                    // rename başarısızsa (kilitli dosya vb.) eski davranış: sil
+                    try {
+                        const stat = fs.lstatSync(itemPath);
+                        if (stat.isDirectory()) fs.rmSync(itemPath, { recursive: true, force: true });
+                        else fs.unlinkSync(itemPath);
+                    } catch { /* ignore */ }
+                }
             }
         } catch { /* ignore */ }
 
-        // Yeni modpack'i kur
-        await this.installModpack(modId, fileId);
+        // Yeni modpack'i kur — değişmeyen modlar .rollback/mods'tan kopyalanır
+        this._pendingReuseDir = path.join(rollbackDir, 'mods');
+        try {
+            await this.installModpack(modId, fileId);
+        } finally {
+            this._pendingReuseDir = null;
+        }
+
+        // Yeni satıra eski profilin ayarlarını taşı (RAM/JVM/port güncellemede kaybolmasın)
+        const newProfile = db.prepare('SELECT id FROM installed_modpacks WHERE curseforge_id = ? ORDER BY id DESC LIMIT 1').get(modId);
+        if (newProfile && existing) {
+            db.prepare('UPDATE installed_modpacks SET min_ram = ?, max_ram = ?, jvm_args = ?, server_port = ? WHERE id = ?')
+                .run(existing.min_ram || '', existing.max_ram || '', existing.jvm_args || '',
+                    existing.server_port || 25565, newProfile.id);
+        }
 
         // Yeni kurulan profili aktif yap (eskisi aktifse)
-        if (wasActive) {
-            const newProfile = db.prepare('SELECT id FROM installed_modpacks WHERE curseforge_id = ? ORDER BY id DESC LIMIT 1').get(modId);
-            if (newProfile) {
-                db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
-                db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(newProfile.id);
-            }
+        if (wasActive && newProfile) {
+            db.prepare('UPDATE installed_modpacks SET is_active = 0').run();
+            db.prepare('UPDATE installed_modpacks SET is_active = 1 WHERE id = ?').run(newProfile.id);
         }
 
         // Korunan dosyaları geri yükle
@@ -656,6 +792,71 @@ class CurseForgeService {
         };
 
         return { message: 'Modpack güncellendi' };
+    }
+
+    /**
+     * Son güncellemeyi geri al: .rollback/ içeriğini geri taşı + DB sürüm bilgisini düzelt.
+     * Dünyalar güncellemede zaten korunduğu için dokunulmaz.
+     */
+    rollbackModpack(dbId) {
+        if (installStatus.isInstalling) throw new Error('Kurulum sürerken geri alınamaz');
+
+        const db = getDb();
+        const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(dbId);
+        if (!modpack) throw new Error('Modpack bulunamadı');
+        const serverPath = modpack.install_path;
+        const rollbackDir = path.join(serverPath, '.rollback');
+
+        if (!fs.existsSync(rollbackDir)) {
+            throw new Error('Geri alınacak önceki sürüm yok (.rollback bulunamadı)');
+        }
+
+        let meta = {};
+        try { meta = JSON.parse(fs.readFileSync(path.join(rollbackDir, 'meta.json'), 'utf8')); }
+        catch { /* meta yoksa sadece dosyaları geri al */ }
+
+        // Mevcut (yeni) sürüm dosyalarını sil, rollback içeriğini geri taşı
+        const preserve = new Set(['world', 'world_nether', 'world_the_end', 'backups',
+            'server.properties', 'whitelist.json', 'ops.json', 'banned-players.json', 'banned-ips.json', 'eula.txt', '.rollback']);
+        const rollbackItems = fs.readdirSync(rollbackDir).filter(i => i !== 'meta.json');
+
+        for (const item of rollbackItems) {
+            const current = path.join(serverPath, item);
+            try {
+                if (fs.existsSync(current) && !preserve.has(item)) {
+                    fs.rmSync(current, { recursive: true, force: true });
+                }
+                fs.renameSync(path.join(rollbackDir, item), current);
+            } catch (err) {
+                console.error(`[Modpacks] Rollback taşıma hatası (${item}): ${err.message}`);
+            }
+        }
+        try { fs.rmSync(rollbackDir, { recursive: true, force: true }); } catch { /* ignore */ }
+
+        // DB sürüm bilgisini eski haline getir
+        if (meta.version || meta.curseforge_file_id) {
+            db.prepare('UPDATE installed_modpacks SET version = ?, curseforge_file_id = ?, file_display_name = ? WHERE id = ?')
+                .run(meta.version || modpack.version, meta.curseforge_file_id || null,
+                    meta.file_display_name || meta.version || '', dbId);
+        }
+
+        return {
+            message: `${modpack.name} önceki sürüme geri alındı (${meta.version || 'bilinmeyen sürüm'})`,
+            restoredItems: rollbackItems.length,
+        };
+    }
+
+    /** Rollback verisi var mı? (UI butonu göstermek için) */
+    getRollbackInfo(dbId) {
+        try {
+            const db = getDb();
+            const modpack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(dbId);
+            if (!modpack?.install_path) return { available: false };
+            const metaPath = path.join(modpack.install_path, '.rollback', 'meta.json');
+            if (!fs.existsSync(metaPath)) return { available: false };
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+            return { available: true, version: meta.version || null, savedAt: meta.savedAt || null };
+        } catch { return { available: false }; }
     }
 
     /**

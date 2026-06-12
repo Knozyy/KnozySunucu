@@ -267,6 +267,18 @@ export default function ModpacksPage() {
         else activateMutation.mutate(modpack.id);
     };
 
+    const checkUpdatesMutation = useMutation({
+        mutationFn: () => api.post('/modpacks/check-updates').then(r => r.data),
+        onSuccess: (data) => {
+            if (data.found?.length > 0) {
+                toast.success(`${data.found.length} pakette güncelleme var: ${data.found.map(f => f.name).join(', ')}`);
+            } else {
+                toast.success('Tüm paketler güncel');
+            }
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Güncelleme kontrolü başarısız'),
+    });
+
     const modpacksToShow = activeTab === 'search'
         ? (searchResults?.modpacks || popularData?.modpacks || [])
         : (installedData?.modpacks || []);
@@ -359,13 +371,16 @@ export default function ModpacksPage() {
                     </div>
                 )}
                 {activeTab === 'installed' && (
-                    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] })}
-                        style={{
-                            ...btnGhost, marginLeft: 'auto',
-                            display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                        }}>
-                        <I.Restart size={11}/> YENİLE
-                    </button>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button onClick={() => checkUpdatesMutation.mutate()} disabled={checkUpdatesMutation.isPending}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                            {checkUpdatesMutation.isPending ? <Spinner size={11}/> : <I.Download size={11}/>} GÜNCELLEME DENETLE
+                        </button>
+                        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] })}
+                            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                            <I.Restart size={11}/> YENİLE
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -429,6 +444,22 @@ export default function ModpacksPage() {
                             transition: 'width 0.5s ease', borderRadius: 2,
                         }}/>
                     </div>
+                    {/* Canlı kurulum logu — hangi adımda olduğu satır satır görünür */}
+                    {installStatusData?.log?.length > 0 && (
+                        <div style={{
+                            marginTop: 10, background: A.bg, border: `1px solid ${A.border}`,
+                            borderRadius: 2, padding: '8px 10px', maxHeight: 150, overflowY: 'auto',
+                            display: 'flex', flexDirection: 'column-reverse',
+                        }}>
+                            <div>
+                                {installStatusData.log.slice(-40).map((line, i) => (
+                                    <div key={i} style={{ fontFamily: A.mono, fontSize: 10, color: A.faint, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                        {line}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -708,6 +739,8 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                             port:{modpack.server_port}
                         </div>
                     )}
+                    {isInstalled && <HealthBadge lastHealth={modpack.last_health}/>}
+                    {isInstalled && modpack.id && <MissingModsChip modpackId={modpack.id}/>}
                     {modpack.latestFiles?.[0]?.gameVersions && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
                             {modpack.latestFiles[0].gameVersions.slice(0, 3).map((v, i) => (
@@ -732,6 +765,8 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                             style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
                             <I.Wrench size={10}/> DOĞRULA
                         </button>
+                        <HealthCheckButton modpackId={modpack.id}/>
+                        <RollbackButton modpackId={modpack.id}/>
                         {modpack.install_path && (
                             <button onClick={onOpenTerminal}
                                 style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
@@ -763,6 +798,176 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                 )}
             </div>
         </div>
+    );
+}
+
+// ── Sağlık rozeti (son açılış testi sonucu) ─────────────────────────────────
+function HealthBadge({ lastHealth }) {
+    if (!lastHealth) return null;
+    let h;
+    try { h = typeof lastHealth === 'string' ? JSON.parse(lastHealth) : lastHealth; } catch { return null; }
+    if (!h?.status) return null;
+    const map = {
+        success: { text: `✓ Açılış doğrulandı (${h.durationSec || '?'}sn)`, color: A.ok },
+        fail: { text: '✗ Açılış testi başarısız', color: A.err },
+        timeout: { text: '⏱ Açılış testi zaman aşımı', color: A.warn },
+    };
+    const m = map[h.status];
+    if (!m) return null;
+    return (
+        <div title={h.detail || ''} style={{ fontFamily: A.mono, fontSize: 10, color: m.color, marginTop: 3 }}>
+            {m.text}
+        </div>
+    );
+}
+
+// ── Açılış testi butonu (kurulum sonrası "gerçekten açılıyor mu" kontrolü) ──
+function HealthCheckButton({ modpackId }) {
+    const queryClient = useQueryClient();
+    const { data: status } = useQuery({
+        queryKey: ['modpackHealth', modpackId],
+        queryFn: () => api.get(`/modpacks/${modpackId}/health-check`).then(r => r.data),
+        refetchInterval: (q) => (q.state.data?.running ? 5000 : false),
+    });
+
+    const runMutation = useMutation({
+        mutationFn: () => api.post(`/modpacks/${modpackId}/health-check`).then(r => r.data),
+        onSuccess: (data) => {
+            toast.success(data.message || 'Test başlatıldı');
+            queryClient.invalidateQueries({ queryKey: ['modpackHealth', modpackId] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Test başlatılamadı'),
+    });
+
+    // Test bittiğinde kart listesini tazele (last_health rozeti güncellensin)
+    useEffect(() => {
+        if (status && !status.running && status.last) {
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+        }
+    }, [status?.running]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const testing = status?.running || runMutation.isPending;
+    return (
+        <button onClick={() => runMutation.mutate()} disabled={testing}
+            title="Sunucuyu başlatıp 'Done!' satırını bekler, sonra kapatır — paketin gerçekten açıldığını doğrular"
+            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px', opacity: testing ? 0.6 : 1 }}>
+            {testing ? <Spinner size={10}/> : <I.Play size={10}/>} {testing ? 'TEST SÜRÜYOR' : 'AÇILIŞ TESTİ'}
+        </button>
+    );
+}
+
+// ── Geri alma butonu (son güncellemeden önceki sürüme dön) ──────────────────
+function RollbackButton({ modpackId }) {
+    const queryClient = useQueryClient();
+    const { data: info } = useQuery({
+        queryKey: ['modpackRollback', modpackId],
+        queryFn: () => api.get(`/modpacks/${modpackId}/rollback`).then(r => r.data),
+        staleTime: 60 * 1000,
+    });
+
+    const rollbackMutation = useMutation({
+        mutationFn: () => api.post(`/modpacks/${modpackId}/rollback`).then(r => r.data),
+        onSuccess: (data) => {
+            toast.success(data.message || 'Önceki sürüme dönüldü');
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            queryClient.invalidateQueries({ queryKey: ['modpackRollback', modpackId] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Geri alma başarısız'),
+    });
+
+    if (!info?.available) return null;
+    return (
+        <button
+            onClick={() => {
+                if (window.confirm(`Son güncelleme geri alınsın mı?\nÖnceki sürüm: ${info.version || 'bilinmiyor'}\n(Dünyalar etkilenmez)`)) {
+                    rollbackMutation.mutate();
+                }
+            }}
+            disabled={rollbackMutation.isPending}
+            title={`Önceki sürüme dön: ${info.version || '?'}`}
+            style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px', color: A.warn, borderColor: 'rgba(251,191,36,0.25)' }}>
+            {rollbackMutation.isPending ? <Spinner size={10}/> : <I.Restart size={10}/>} GERİ AL
+        </button>
+    );
+}
+
+// ── Eksik mod rozeti + tamamlama modalı ─────────────────────────────────────
+function MissingModsChip({ modpackId }) {
+    const [open, setOpen] = useState(false);
+    const queryClient = useQueryClient();
+    const { data } = useQuery({
+        queryKey: ['missingMods', modpackId],
+        queryFn: () => api.get(`/modpacks/${modpackId}/missing-mods`).then(r => r.data),
+        staleTime: 60 * 1000,
+    });
+
+    const uploadMutation = useMutation({
+        mutationFn: (file) => {
+            const fd = new FormData();
+            fd.append('file', file);
+            return api.post(`/modpacks/${modpackId}/missing-mods/upload`, fd).then(r => r.data);
+        },
+        onSuccess: (res) => {
+            toast.success(res.message || 'Mod yüklendi');
+            queryClient.invalidateQueries({ queryKey: ['missingMods', modpackId] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
+    });
+
+    const pending = (data?.items || []).filter(i => !i.resolved);
+    if (pending.length === 0) return null;
+
+    return (
+        <>
+            <button onClick={() => setOpen(true)} style={{
+                marginTop: 4, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)',
+                color: A.warn, fontFamily: A.mono, fontSize: 10, padding: '3px 8px',
+                borderRadius: 2, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+                <I.Alert size={10}/> {pending.length} eksik mod — tamamla
+            </button>
+
+            {open && (
+                <Modal onClose={() => setOpen(false)} maxWidth={640}>
+                    <ModalHeader title={`Eksik Modlar (${pending.length})`} onClose={() => setOpen(false)}/>
+                    <div style={{ padding: 16, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ fontSize: 11.5, color: A.faint, lineHeight: 1.5 }}>
+                            Bu modların yazarları otomatik indirmeyi kapatmış. Linkten elle indirip
+                            buradan yükleyin — dosya doğrudan <code>mods/</code> klasörüne kaydedilir.
+                        </div>
+                        {(data?.items || []).map((item, i) => (
+                            <div key={i} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                                background: A.bg, border: `1px solid ${A.border}`, borderRadius: 2,
+                                opacity: item.resolved ? 0.5 : 1,
+                            }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontFamily: A.mono, fontSize: 11, color: item.resolved ? A.ok : A.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {item.resolved ? '✓ ' : ''}{item.fileName || `proje #${item.projectID}`}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: A.faint, marginTop: 2 }}>{item.reason}</div>
+                                </div>
+                                <a href={item.url} target="_blank" rel="noreferrer"
+                                    style={{ ...btnGhost, fontSize: 10, padding: '4px 8px', textDecoration: 'none' }}>
+                                    SAYFA
+                                </a>
+                                {!item.resolved && (
+                                    <label style={{ ...btnPrimary, fontSize: 10, padding: '4px 8px', cursor: 'pointer' }}>
+                                        {uploadMutation.isPending ? '...' : 'YÜKLE'}
+                                        <input type="file" accept=".jar" style={{ display: 'none' }}
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0];
+                                                if (f) uploadMutation.mutate(f);
+                                                e.target.value = '';
+                                            }}/>
+                                    </label>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </Modal>
+            )}
+        </>
     );
 }
 

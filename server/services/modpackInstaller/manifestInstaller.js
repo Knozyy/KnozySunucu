@@ -121,7 +121,7 @@ async function fetchFileDetails(files, cf) {
  * @param {object} deps { cf: curseforgeService, onProgress?: (pct, status)=>void, log?: (msg)=>void }
  * @returns {{ downloaded: number, failed: Array<{projectID, fileID, fileName, reason}> }}
  */
-async function downloadMods(installPath, manifest, { cf, onProgress, log }) {
+async function downloadMods(installPath, manifest, { cf, onProgress, log, reuseDir }) {
     const emit = log || (() => {});
     const modsDir = path.join(installPath, 'mods');
     if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
@@ -133,6 +133,7 @@ async function downloadMods(installPath, manifest, { cf, onProgress, log }) {
 
     const failed = [];
     let done = 0;
+    let reused = 0;
 
     const queue = [...required];
     const worker = async () => {
@@ -142,6 +143,14 @@ async function downloadMods(installPath, manifest, { cf, onProgress, log }) {
 
             if (!fd) {
                 failed.push({ projectID: f.projectID, fileID: f.fileID, fileName: null, reason: 'API detayı alınamadı' });
+            } else if (reuseDir && fd.fileName && fs.existsSync(path.join(reuseDir, fd.fileName))) {
+                // Akıllı güncelleme: aynı dosya önceki sürümde zaten var — indirme, kopyala
+                try {
+                    fs.copyFileSync(path.join(reuseDir, fd.fileName), path.join(modsDir, fd.fileName));
+                    reused++;
+                } catch {
+                    failed.push({ projectID: f.projectID, fileID: f.fileID, fileName: fd.fileName, reason: 'Eski sürümden kopyalanamadı' });
+                }
             } else if (!fd.downloadUrl) {
                 // Mod sahibi 3. parti dağıtımı kapatmış — elle indirilmeli
                 failed.push({ projectID: f.projectID, fileID: f.fileID, fileName: fd.fileName, reason: 'Dağıtım kapalı (elle indirin)' });
@@ -167,11 +176,16 @@ async function downloadMods(installPath, manifest, { cf, onProgress, log }) {
 
     await Promise.all(Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, required.length) }, worker));
 
+    if (reused > 0) emit(`${reused} mod önceki sürümden kopyalandı (indirme atlandı)`);
     if (failed.length > 0) {
         writeMissingReport(installPath, failed);
         emit(`${failed.length} mod indirilemedi — eksik-modlar.txt dosyasına bakın`);
+    } else {
+        // Önceki kurulumdan kalan rapor varsa temizle
+        try { fs.unlinkSync(path.join(installPath, 'eksik-modlar.txt')); } catch { /* yoksa sorun değil */ }
+        try { fs.unlinkSync(path.join(installPath, 'eksik-modlar.json')); } catch { /* yoksa sorun değil */ }
     }
-    return { downloaded: done - failed.length, failed };
+    return { downloaded: done - failed.length, failed, reused };
 }
 
 function writeMissingReport(installPath, failed) {
@@ -186,17 +200,26 @@ function writeMissingReport(installPath, failed) {
         '',
     ];
     try { fs.writeFileSync(path.join(installPath, 'eksik-modlar.txt'), lines.join('\n'), 'utf8'); } catch { /* ignore */ }
+    // Panel UI'ın güvenilir okuması için makine-okur kopya
+    const items = failed.map((f) => ({
+        projectID: f.projectID,
+        fileID: f.fileID,
+        fileName: f.fileName || null,
+        reason: f.reason,
+        url: `https://www.curseforge.com/projects/${f.projectID}`,
+    }));
+    try { fs.writeFileSync(path.join(installPath, 'eksik-modlar.json'), JSON.stringify({ items }, null, 2), 'utf8'); } catch { /* ignore */ }
 }
 
 /**
  * Tam manifest kurulumu: modlar + overrides. Loader kurulumu finalizer'da.
  * @returns {{ manifest, downloaded, failed }}
  */
-async function installFromManifest(installPath, { cf, onProgress, log }) {
+async function installFromManifest(installPath, { cf, onProgress, log, reuseDir }) {
     const manifest = parseManifest(installPath);
     if (!manifest) throw new Error('manifest.json okunamadı');
 
-    const result = await downloadMods(installPath, manifest, { cf, onProgress, log });
+    const result = await downloadMods(installPath, manifest, { cf, onProgress, log, reuseDir });
     applyOverrides(installPath, manifest.overridesDir, log);
 
     return { manifest, ...result };

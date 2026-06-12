@@ -93,11 +93,17 @@ pause
 `;
     }
 
-    generateUserJvmArgs(maxRam = '4G', minRam = '2G') {
-        return `# JVM Argumanlari - Knozy Sunucu Paneli
+    generateUserJvmArgs(maxRam = '4G', minRam = '2G', customArgs = '') {
+        // Kullanıcı özel argümanlarında -Xmx varsa bellek yönetimini ona bırak
+        const custom = String(customArgs || '').trim();
+        const customHasMemory = /-Xm[xs]/.test(custom);
+        const memoryLines = customHasMemory ? '' : `-Xmx${maxRam}\n-Xms${minRam}\n`;
+        const customBlock = custom
+            ? `# Özel argümanlar (panel ayarlarından)\n${custom.split(/\s+/).join('\n')}\n`
+            : '';
+        return `# JVM Argumanlari - Knozy Sunucu Paneli (panelden yonetilir, elle duzenlemeyin)
 # Forge / NeoForge tarafindan okunur
--Xmx${maxRam}
--Xms${minRam}
+${memoryLines}${customBlock}
 # Performans bayraklari (Aikar's Flags)
 -XX:+UseG1GC
 -XX:+ParallelRefProcEnabled

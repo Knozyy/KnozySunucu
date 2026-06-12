@@ -394,6 +394,10 @@ function initDatabase() {
     if (!colNames.includes('jvm_args')) {
       database.exec("ALTER TABLE installed_modpacks ADD COLUMN jvm_args TEXT");
     }
+    if (!colNames.includes('last_health')) {
+      // Son sağlık testi sonucu (JSON: {status, detail, at, durationSec})
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN last_health TEXT");
+    }
 
     const userCols = database.prepare("PRAGMA table_info(users)").all();
     const userColNames = userCols.map(c => c.name);

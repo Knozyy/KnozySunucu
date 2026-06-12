@@ -529,6 +529,24 @@ class MinecraftService extends EventEmitter {
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
 
+    /** Bu sunucuya atanmış paketin RAM/JVM ayarları (DB → env → varsayılan). */
+    _packJvmSettings() {
+        let pack = null;
+        try {
+            const db = getDb();
+            const srv = db.prepare('SELECT active_modpack_id FROM servers WHERE id = ?').get(this._serverConfig.id);
+            if (srv?.active_modpack_id) {
+                pack = db.prepare('SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE id = ?').get(srv.active_modpack_id);
+            }
+            if (!pack) pack = db.prepare("SELECT max_ram, min_ram, jvm_args FROM installed_modpacks WHERE is_active = 1").get();
+        } catch { /* ignore */ }
+        return {
+            maxRam: (pack && pack.max_ram) || process.env.MINECRAFT_MAX_RAM || '4G',
+            minRam: (pack && pack.min_ram) || process.env.MINECRAFT_MIN_RAM || '2G',
+            jvmArgs: this._serverConfig?.jvm_args || (pack && pack.jvm_args) || process.env.JVM_ARGS || '',
+        };
+    }
+
     /**
      * Paketin gerektirdiği Java'yı panel kurulumlarından (~/.knozysunucu/java) çözer.
      * MC sürümü güvenle tespit edilemezse null döner (sistem Java'sına dokunulmaz).
@@ -871,6 +889,15 @@ class MinecraftService extends EventEmitter {
         if (javaEnv) {
             this.addLog(`[System] Java ${javaEnv.version} kullanılacak: ${javaEnv.javaBinDir}`);
         }
+
+        // Panel RAM/JVM ayarlarını diske senkronla — script/user_jvm_args.txt
+        // kurulum anındaki değerlerde kalmasın (DB tek doğruluk kaynağı).
+        try {
+            const jvmSync = require('./modpackInstaller/jvmSync');
+            const syncRes = jvmSync.sync(serverPath, this._packJvmSettings());
+            for (const a of syncRes.applied) this.addLog(`[System] JVM senkron: ${a}`);
+            for (const w of syncRes.warnings) this.addLog(`[System] JVM uyarı: ${w}`);
+        } catch { /* ignore */ }
 
         if (this._useScreen()) {
             // ── Linux: screen içinde başlat ──────────────────────────────

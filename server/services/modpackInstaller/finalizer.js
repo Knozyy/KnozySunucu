@@ -15,7 +15,7 @@ const scriptGenerator = require('./scriptGenerator');
  * Onarım sihirbazındaki etkileşimli akıştan farkı: her şeyi otomatik,
  * tek geçişte ve async yapar — kurulum bittiğinde sunucu gerçekten açılabilir.
  */
-async function finalizeInstall(installPath, { maxRam = '4G', minRam = '2G', onProgress, log } = {}) {
+async function finalizeInstall(installPath, { maxRam = '4G', minRam = '2G', onProgress, log, reuseModsDir = null } = {}) {
     const emit = log || (() => {});
     const progress = (pct, status) => { if (onProgress) onProgress(pct, status); };
     const warnings = [];
@@ -31,9 +31,10 @@ async function finalizeInstall(installPath, { maxRam = '4G', minRam = '2G', onPr
             const res = await manifestInstaller.installFromManifest(installPath, {
                 cf,
                 log: emit,
+                reuseDir: reuseModsDir,
                 onProgress: (pct, status) => progress(Math.floor(pct * 0.5), status),
             });
-            actions.push(`${res.downloaded} mod indirildi`);
+            actions.push(`${res.downloaded} mod indirildi${res.reused ? ` (+${res.reused} önceki sürümden)` : ''}`);
             if (res.failed.length > 0) {
                 warnings.push(`${res.failed.length} mod indirilemedi — eksik-modlar.txt içinde liste ve linkler var.`);
             }

@@ -236,6 +236,18 @@ router.put('/:id/settings', authMiddleware, requireRole('admin'), (req, res) => 
         db.prepare('UPDATE installed_modpacks SET min_ram = ?, max_ram = ?, jvm_args = ? WHERE id = ?')
             .run(minRam || '', maxRam || '', jvmArgs || '', id);
 
+        // Ayarları diske ANINDA uygula (user_jvm_args.txt + panel scriptleri) —
+        // yoksa bir sonraki başlatmaya kadar eski değerler geçerli kalırdı
+        let jvmSyncResult = { applied: [], warnings: [] };
+        if (modpack.install_path) {
+            const jvmSync = require('../services/modpackInstaller/jvmSync');
+            jvmSyncResult = jvmSync.sync(modpack.install_path, {
+                maxRam: maxRam || process.env.MINECRAFT_MAX_RAM || '4G',
+                minRam: minRam || process.env.MINECRAFT_MIN_RAM || '2G',
+                jvmArgs: jvmArgs || '',
+            });
+        }
+
         // Properties (Oyun Ayarları) güncelle
         if (modpack.install_path) {
             const propsPath = path.join(modpack.install_path, 'server.properties');
@@ -277,7 +289,11 @@ router.put('/:id/settings', authMiddleware, requireRole('admin'), (req, res) => 
             }
         }
 
-        res.json({ message: 'Ayarlar güncellendi' });
+        const warnText = jvmSyncResult.warnings.length > 0 ? ` — Uyarı: ${jvmSyncResult.warnings.join(' | ')}` : '';
+        res.json({
+            message: `Ayarlar güncellendi${jvmSyncResult.applied.length > 0 ? ' ve diske uygulandı' : ''}${warnText}`,
+            jvmSync: jvmSyncResult,
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -321,6 +337,113 @@ router.get('/:id/verify', authMiddleware, (req, res) => {
     try {
         const result = installer.verify(parseInt(req.params.id));
         res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Eksik Modlar (dağıtımı kapalı / indirilemeyen) ─────────────────────────
+
+// Eksik mod listesi + mods/ klasöründe tamamlanma durumu
+router.get('/:id/missing-mods', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const modpack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(parseInt(req.params.id));
+        if (!modpack?.install_path) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        const jsonPath = path.join(modpack.install_path, 'eksik-modlar.json');
+        if (!fs.existsSync(jsonPath)) return res.json({ items: [] });
+
+        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        const modsDir = path.join(modpack.install_path, 'mods');
+        const items = (data.items || []).map(item => ({
+            ...item,
+            resolved: !!(item.fileName && fs.existsSync(path.join(modsDir, item.fileName))),
+        }));
+        res.json({ items });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Eksik modu elle yükle (jar dosyası → mods/)
+const multer = require('multer');
+const modUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 200 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.originalname.endsWith('.jar')) cb(null, true);
+        else cb(new Error('Sadece .jar dosyası yüklenebilir'));
+    },
+});
+router.post('/:id/missing-mods/upload', authMiddleware, requireRole('admin'), modUpload.single('file'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' });
+        const db = getDb();
+        const modpack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(parseInt(req.params.id));
+        if (!modpack?.install_path) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        const modsDir = path.join(modpack.install_path, 'mods');
+        if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
+        // path traversal koruması: sadece dosya adı kullanılır
+        const safeName = path.basename(req.file.originalname);
+        fs.writeFileSync(path.join(modsDir, safeName), req.file.buffer);
+        res.json({ message: `${safeName} mods/ klasörüne yüklendi` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Sürüm Geri Alma (Rollback) ─────────────────────────────────────────────
+
+// Rollback verisi mevcut mu?
+router.get('/:id/rollback', authMiddleware, (req, res) => {
+    try {
+        res.json(curseForge.getRollbackInfo(parseInt(req.params.id)));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Son güncellemeyi geri al
+router.post('/:id/rollback', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const result = curseForge.rollbackModpack(parseInt(req.params.id));
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Sağlık Testi (ilk başlatma doğrulaması) ───────────────────────────────
+
+const healthCheck = require('../services/modpackHealthCheck');
+
+router.post('/:id/health-check', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const result = await healthCheck.run(parseInt(req.params.id), { keepRunning: !!req.body?.keepRunning });
+        res.json({ message: 'Sağlık testi başlatıldı — sunucu açılıyor, sonuç birkaç dakika içinde belli olur.', ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/:id/health-check', authMiddleware, (req, res) => {
+    try {
+        res.json(healthCheck.getStatus(parseInt(req.params.id)));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Güncelleme Bildirimi ───────────────────────────────────────────────────
+
+// Tüm paketler için güncelleme kontrolünü elle tetikle
+router.post('/check-updates', authMiddleware, async (req, res) => {
+    try {
+        const notifier = require('../services/modpackUpdateNotifier');
+        const found = await notifier.checkAll();
+        res.json({ message: found.length > 0 ? `${found.length} pakette güncelleme bulundu` : 'Tüm paketler güncel', found });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

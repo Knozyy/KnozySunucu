@@ -198,6 +198,9 @@ vipService.attach(minecraftService);
 // Discord webhook bildirimleri
 require('./services/webhookListener').start();
 
+// Modpack güncelleme bildirimi (yeni sürüm çıkınca Discord webhook'una düşer)
+require('./services/modpackUpdateNotifier').start();
+
 // WebSocket router — console + terminal
 setupWebSockets(server);
 

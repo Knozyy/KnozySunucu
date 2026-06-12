@@ -10,7 +10,10 @@ let installStatus = {
     task: '',
     status: '',
     error: null,
+    log: [],
 };
+
+const MAX_INSTALL_LOG = 400;
 
 class FtbService {
     constructor() {
@@ -32,20 +35,30 @@ class FtbService {
     }
 
     getInstallStatus() {
-        return { ...installStatus };
+        return { ...installStatus, log: [...installStatus.log] };
     }
 
     resetInstallStatus() {
-        installStatus = { isInstalling: false, progress: 0, task: '', status: '', error: null };
+        installStatus = { isInstalling: false, progress: 0, task: '', status: '', error: null, log: [] };
     }
 
     _updateProgress(task, progress, status) {
-        installStatus = { isInstalling: true, progress, task, status, error: null };
+        installStatus = { ...installStatus, isInstalling: true, progress, task, status, error: null };
+        this._logInstall(`[%${progress}] ${task}: ${status}`);
     }
 
     _setError(error) {
-        installStatus = { isInstalling: false, progress: 0, task: 'Hata', status: error, error };
+        installStatus = { ...installStatus, isInstalling: false, progress: 0, task: 'Hata', status: error, error };
+        this._logInstall(`HATA: ${error}`);
         console.error(`[FTB Install Error] ${error}`);
+    }
+
+    _logInstall(msg) {
+        const time = new Date().toLocaleTimeString('tr-TR');
+        installStatus.log.push(`${time} ${msg}`);
+        if (installStatus.log.length > MAX_INSTALL_LOG) {
+            installStatus.log = installStatus.log.slice(-MAX_INSTALL_LOG);
+        }
     }
 
     async searchModpacks(query) {
@@ -164,10 +177,24 @@ class FtbService {
         if (installStatus.isInstalling) {
             throw new Error('Zaten bir kurulum devam ediyor');
         }
+        this.resetInstallStatus();
 
         try {
             const db = getDb();
             const baseServerPath = process.env.MINECRAFT_SERVER_PATH || path.join(__dirname, '../../sunucular');
+
+            // Ön kontrol: FTB paketleri büyüktür, en az 8GB boş disk iste
+            try {
+                if (!fs.existsSync(baseServerPath)) fs.mkdirSync(baseServerPath, { recursive: true });
+                const st = fs.statfsSync(baseServerPath);
+                const freeGB = (st.bsize * st.bavail) / 1024 / 1024 / 1024;
+                if (freeGB < 8) {
+                    throw new Error(`Yetersiz disk alanı: ${freeGB.toFixed(1)} GB boş, FTB kurulumu için en az 8 GB gerekli.`);
+                }
+            } catch (e) {
+                if (e.message.startsWith('Yetersiz disk')) throw e;
+                /* statfs yoksa kontrolü atla */
+            }
 
             // 1. Bilgi al
             this._updateProgress('Bilgi Alınıyor', 5, 'FTB Modpack bilgileri alınıyor...');
@@ -204,6 +231,8 @@ class FtbService {
                 child.stdout.on('data', (data) => {
                     const output = data.toString();
                     console.log(`[FTB Installer] ${output.trim()}`);
+                    const line = output.trim().split('\n').pop();
+                    if (line) this._logInstall(`installer: ${line.slice(0, 200)}`);
 
                     // Try to parse percentage if the installer outputs it
                     const match = output.match(/(\d+)%/);
@@ -248,9 +277,10 @@ class FtbService {
 
             // 6. Veritabanını güncelle
             this._updateProgress('Kayıt', 95, 'Veritabanı güncelleniyor...');
+            const serverPort = curseforgeService._pickFreePort(db);
             const stmt = db.prepare(`
-                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status, curseforge_file_id, file_display_name, provider) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed', ?, ?, ?)
+                INSERT INTO installed_modpacks (curseforge_id, name, version, author, logo_url, install_path, is_active, status, curseforge_file_id, file_display_name, provider, server_port)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'installed', ?, ?, ?, ?)
             `);
 
             stmt.run(
@@ -263,8 +293,13 @@ class FtbService {
                 isFirstInstall ? 1 : 0,
                 selectedFile.id,
                 selectedFile.name,
-                'ftb'
+                'ftb',
+                serverPort
             );
+
+            // Portu server.properties'e işle (çoklu paket çakışması olmasın)
+            curseforgeService._writeServerPort(profilePath, serverPort);
+            this._logInstall(`Sunucu portu: ${serverPort}`);
 
             // 7. Tamamlandı
             installStatus = {

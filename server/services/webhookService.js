@@ -9,6 +9,7 @@ const EVENT_LABELS = {
     player_join:     { label: 'Oyuncu Girdi',           color: 0x3b82f6, emoji: '👋' },
     player_leave:    { label: 'Oyuncu Ayrıldı',        color: 0x8b5cf6, emoji: '👋' },
     resource_alert:  { label: 'Kaynak Uyarısı',        color: 0xf59e0b, emoji: '⚠️' },
+    modpack_update:  { label: 'Modpack Güncellemesi',  color: 0x8b5cf6, emoji: '📦' },
 };
 
 function getConfig() {
