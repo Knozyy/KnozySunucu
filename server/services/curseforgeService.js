@@ -39,6 +39,15 @@ class CurseForgeService {
     }
 
     async apiRequest(endpoint) {
+        return this._apiCall(endpoint, 'GET', null);
+    }
+
+    /** CF API POST (örn. /v1/mods/files ile toplu dosya detayı) */
+    async apiRequestPost(endpoint, body) {
+        return this._apiCall(endpoint, 'POST', body);
+    }
+
+    _apiCall(endpoint, method, body) {
         const apiKey = this.getApiKey();
         if (!apiKey || apiKey === 'your_api_key_here') {
             throw new Error('CurseForge API key ayarlanmamış. .env dosyasını kontrol edin.');
@@ -46,13 +55,15 @@ class CurseForgeService {
 
         return new Promise((resolve, reject) => {
             const url = new URL(endpoint, CURSEFORGE_API_BASE);
+            const payload = body ? JSON.stringify(body) : null;
             const options = {
                 hostname: url.hostname,
                 path: url.pathname + url.search,
-                method: 'GET',
+                method,
                 headers: {
                     'Accept': 'application/json',
                     'x-api-key': apiKey,
+                    ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
                 },
             };
 
@@ -72,6 +83,7 @@ class CurseForgeService {
             req.setTimeout(15000, () => {
                 req.destroy(new Error('API isteği zaman aşımına uğradı'));
             });
+            if (payload) req.write(payload);
             req.end();
         });
     }
@@ -185,6 +197,33 @@ class CurseForgeService {
             };
             followRedirect(url);
         });
+    }
+
+    /**
+     * Zip arşivini çıkart. Sistem araçlarını dener, hiçbiri yoksa adm-zip'e
+     * düşer — böylece "unzip kurulu değil" hatası tarihe karışır.
+     */
+    _extractZip(zipPath, destDir) {
+        const { execSync } = require('child_process');
+        const attempts = process.platform === 'win32'
+            ? [`tar -xf "${zipPath}" -C "${destDir}"`]
+            : [`unzip -o "${zipPath}" -d "${destDir}"`, `bsdtar -xf "${zipPath}" -C "${destDir}"`];
+
+        for (const cmd of attempts) {
+            try {
+                execSync(cmd, { stdio: 'ignore', timeout: 10 * 60 * 1000 });
+                return;
+            } catch { /* sıradakini dene */ }
+        }
+
+        // Saf JS fallback (sistem aracı yok) — büyük zip'lerde daha yavaş ama çalışır
+        try {
+            const AdmZip = require('adm-zip');
+            new AdmZip(zipPath).extractAllTo(destDir, true);
+        } catch (err) {
+            console.error('Arşiv çıkartma hatası:', err);
+            throw new Error(`Dosyalar çıkartılamadı: ${err.message}`);
+        }
     }
 
     /**
@@ -396,7 +435,7 @@ class CurseForgeService {
             this._updateProgress('İndiriliyor', 20, 'Modpack indiriliyor...');
             const destPath = path.join(profilePath, selectedFile.fileName);
             await this.downloadFile(downloadUrl, destPath, (pct, downloaded, total) => {
-                const overallPct = 20 + Math.floor(pct * 0.5);
+                const overallPct = 20 + Math.floor(pct * 0.4);
                 const dlMB = (downloaded / 1024 / 1024).toFixed(1);
                 const totalMB = (total / 1024 / 1024).toFixed(1);
                 this._updateProgress('İndiriliyor', overallPct, `${dlMB} / ${totalMB} MB`);
@@ -404,24 +443,28 @@ class CurseForgeService {
 
             // 5. Arşivi Çıkart
             if (destPath.endsWith('.zip')) {
-                this._updateProgress('Çıkartılıyor', 75, 'Sunucu dosyaları çıkartılıyor...');
-                try {
-                    const { execSync } = require('child_process');
-                    if (process.platform === 'win32') {
-                        execSync(`tar -xf "${destPath}" -C "${profilePath}"`);
-                    } else {
-                        execSync(`unzip -o "${destPath}" -d "${profilePath}"`);
-                    }
-                    fs.unlinkSync(destPath);
-                } catch (err) {
-                    console.error('Arşiv çıkartma hatası:', err);
-                    throw new Error('Dosyalar çıkartılamadı ("unzip" hatası).');
-                }
+                this._updateProgress('Çıkartılıyor', 60, 'Sunucu dosyaları çıkartılıyor...');
+                this._extractZip(destPath, profilePath);
+                fs.unlinkSync(destPath);
             }
 
             // 5.5 Klasör yapısını normalize et (iç içe klasör durumu)
-            this._updateProgress('Düzenleniyor', 78, 'Klasör yapısı düzenleniyor...');
+            this._updateProgress('Düzenleniyor', 62, 'Klasör yapısı düzenleniyor...');
             this._normalizeExtractedFiles(profilePath);
+
+            // 5.6 Kurulumu sonlandır: client pack ise modları manifest'ten indir,
+            // Java'yı garanti et, loader installer'ı çalıştır, script/eula üret.
+            // Bu adım olmadan server-pack'siz paketler ASLA çalışmaz (zip'te mod yok).
+            const finalizer = require('./modpackInstaller/finalizer');
+            const finalizeResult = await finalizer.finalizeInstall(profilePath, {
+                maxRam: process.env.MINECRAFT_MAX_RAM || '4G',
+                minRam: process.env.MINECRAFT_MIN_RAM || '2G',
+                log: (msg) => console.log(`[Modpacks][finalize] ${msg}`),
+                onProgress: (pct, status) => {
+                    // finalize %0-100 → genel ilerleme %62-88
+                    this._updateProgress('Kurulum Sonlandırılıyor', 62 + Math.floor(pct * 0.26), status);
+                },
+            });
 
             // 6. İlk kurulumsa aktif yap
             const existingActive = db.prepare('SELECT id FROM installed_modpacks WHERE is_active = 1').get();
@@ -447,11 +490,14 @@ class CurseForgeService {
             );
 
             // 8. Tamamlandı
+            const warnText = finalizeResult.warnings.length > 0
+                ? ` — Uyarılar: ${finalizeResult.warnings.join(' | ')}`
+                : '';
             installStatus = {
                 isInstalling: false,
                 progress: 100,
                 task: 'Tamamlandı',
-                status: `Kurulum tamamlandı! (${slug}/)`,
+                status: `Kurulum tamamlandı! (${slug}/)${warnText}`,
                 error: null,
             };
 
@@ -462,6 +508,8 @@ class CurseForgeService {
                 isServerPack,
                 profilePath,
                 slug,
+                warnings: finalizeResult.warnings,
+                actions: finalizeResult.actions,
             };
         } catch (error) {
             this._setError(error.message);

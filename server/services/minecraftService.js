@@ -529,6 +529,34 @@ class MinecraftService extends EventEmitter {
         return process.env.MINECRAFT_SERVER_PATH || '/home/minecraft/server';
     }
 
+    /**
+     * Paketin gerektirdiği Java'yı panel kurulumlarından (~/.knozysunucu/java) çözer.
+     * MC sürümü güvenle tespit edilemezse null döner (sistem Java'sına dokunulmaz).
+     * @returns {{ version:number, javaPath:string, javaBinDir:string, javaHome:string } | null}
+     */
+    _resolveJavaEnv(serverPath) {
+        try {
+            const detector = require('./modpackInstaller/detector');
+            const det = detector.detect(serverPath);
+            // mcVersion yoksa requiredJava varsayılan 21'dir — yanlış sürüm
+            // enjekte etmemek için yalnızca emin olduğumuzda davran.
+            if (!det.mcVersion || !det.requiredJava) return null;
+
+            const JavaManager = require('./javaManager');
+            const jm = new JavaManager();
+            const javaPath = jm.getJavaPath(det.requiredJava);
+            if (!javaPath) return null;
+
+            const javaBinDir = path.dirname(javaPath);
+            return {
+                version: det.requiredJava,
+                javaPath,
+                javaBinDir,
+                javaHome: path.dirname(javaBinDir),
+            };
+        } catch { return null; }
+    }
+
     getActiveServer() {
         try {
             const db = getDb();
@@ -836,6 +864,14 @@ class MinecraftService extends EventEmitter {
         const scriptInfo = this._detectStartScript(serverPath);
         const cwd = (scriptInfo && scriptInfo.cwd) || serverPath;
 
+        // Paketin istediği Java sürümünü panel kurulumundan çöz — start scriptleri
+        // ve Forge run.sh PATH'teki "java"yı kullandığından PATH'e enjekte edilir.
+        // Aksi halde sistem Java'sı yanlış sürümse sunucu açılmadan çöker.
+        const javaEnv = this._resolveJavaEnv(serverPath);
+        if (javaEnv) {
+            this.addLog(`[System] Java ${javaEnv.version} kullanılacak: ${javaEnv.javaBinDir}`);
+        }
+
         if (this._useScreen()) {
             // ── Linux: screen içinde başlat ──────────────────────────────
             let runCmd;
@@ -893,7 +929,13 @@ class MinecraftService extends EventEmitter {
             // path/jvm_args değerlerinin bash enjeksiyonuna neden olması engellenir.
             const escapedCwd    = cwd.replace(/'/g, "'\\''");
             const escapedRunCmd = runCmd.replace(/'/g, "'\\''");
-            const fullCmd = `cd '${escapedCwd}' && { ${escapedRunCmd}; } 2>&1 | tee '${this._logFile}'`;
+            let javaPrefix = '';
+            if (javaEnv) {
+                const escBin  = javaEnv.javaBinDir.replace(/'/g, "'\\''");
+                const escHome = javaEnv.javaHome.replace(/'/g, "'\\''");
+                javaPrefix = `export JAVA_HOME='${escHome}'; export PATH='${escBin}':"$PATH"; `;
+            }
+            const fullCmd = `cd '${escapedCwd}' && ${javaPrefix}{ ${escapedRunCmd}; } 2>&1 | tee '${this._logFile}'`;
             execSync(`screen -dmS ${this._screenName} bash -c ${JSON.stringify(fullCmd)}`, { stdio: 'ignore' });
 
             this.addLog(`[System] Sunucu başlatılıyor (screen: ${this._screenName})`);
@@ -933,9 +975,18 @@ class MinecraftService extends EventEmitter {
                 args.push('-jar', this.getServerJar(), 'nogui');
             }
 
+            const spawnEnv = javaEnv
+                ? {
+                    ...process.env,
+                    JAVA_HOME: javaEnv.javaHome,
+                    PATH: `${javaEnv.javaBinDir}${path.delimiter}${process.env.PATH || ''}`,
+                }
+                : process.env;
+
             this.process = spawn(cmd, args, {
                 cwd,
                 stdio: ['pipe', 'pipe', 'pipe'],
+                env: spawnEnv,
             });
 
             this.status = 'starting';

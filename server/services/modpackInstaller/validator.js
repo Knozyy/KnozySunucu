@@ -67,10 +67,25 @@ class Validator {
     _checkLibraries(installPath, files, detectedInfo) {
         if (detectedInfo.loader === 'unknown') return [];
 
+        // Fabric: libraries/ yerine launcher jar'ına bakılır
+        if (detectedInfo.loader === 'fabric') {
+            const hasLauncher = files.some(f => /^fabric-server-launch(er)?\.jar$/.test(f));
+            if (hasLauncher) return [];
+            return [{
+                id: 'installer_not_run',
+                severity: 'error',
+                title: 'Fabric sunucu launcher\'ı yok',
+                description: 'fabric-server-launch.jar bulunamadı, sunucu başlamaz',
+                action: 'Fabric installer indirilip çalıştırılacak',
+                canSkip: false,
+                meta: { loader: 'fabric' },
+            }];
+        }
+
         const libPath = path.join(installPath, 'libraries');
         if (files.includes('libraries') && fs.existsSync(libPath)) return [];
 
-        // libraries yok — installer JAR var mı?
+        // libraries yok — yerel installer JAR var mı?
         const installerJar = this._findInstallerJar(files);
         if (installerJar) {
             return [{
@@ -84,12 +99,25 @@ class Validator {
             }];
         }
 
+        // Yerel installer yok ama loader + sürüm biliniyorsa indirilebilir
+        if (detectedInfo.loaderVersion) {
+            return [{
+                id: 'installer_not_run',
+                severity: 'error',
+                title: `${detectedInfo.loader === 'neoforge' ? 'NeoForge' : 'Forge'} kurulmamış`,
+                description: 'libraries/ klasörü yok; installer resmi maven deposundan indirilebilir',
+                action: `${detectedInfo.loader} ${detectedInfo.loaderVersion} installer indirilip çalıştırılacak`,
+                canSkip: false,
+                meta: { loader: detectedInfo.loader },
+            }];
+        }
+
         return [{
             id: 'missing_libraries',
             severity: 'error',
             title: 'libraries/ klasörü yok',
             description: 'Forge/NeoForge kütüphaneleri eksik, sunucu başlamaz',
-            action: 'Installer JAR bulunamadı — manuel kurulum gerekebilir',
+            action: 'Installer JAR ve loader sürümü bulunamadı — manuel kurulum gerekebilir',
             canSkip: false,
         }];
     }

@@ -56,8 +56,11 @@ class Detector {
             }
         }
 
-        // 2. JAR adı
+        // 2. JAR adı (fabric launcher'ı installer'dan önce yakala)
         const files = this._safeReaddir(installPath);
+        if (files.some(f => /^fabric-server-launch(er)?\.jar$/.test(f))) {
+            return { loader: 'fabric', loaderVersion: this._fabricVersionFromProperties(installPath) };
+        }
         for (const file of files) {
             if (!file.endsWith('.jar')) continue;
             const lower = file.toLowerCase();
@@ -77,17 +80,22 @@ class Detector {
                 const loaderEntry = (manifest.minecraft?.modLoaders || [])[0];
                 if (loaderEntry?.id) {
                     const id = loaderEntry.id.toLowerCase();
-                    if (id.startsWith('neoforge-')) {
-                        return { loader: 'neoforge', loaderVersion: id.replace('neoforge-', '') };
-                    }
-                    if (id.startsWith('forge-')) {
-                        return { loader: 'forge', loaderVersion: id.replace('forge-', '') };
+                    for (const type of ['neoforge', 'fabric', 'quilt', 'forge']) {
+                        if (id.startsWith(type + '-')) {
+                            return { loader: type, loaderVersion: id.slice(type.length + 1) };
+                        }
                     }
                 }
             } catch { /* ignore */ }
         }
 
         return { loader: 'unknown', loaderVersion: null };
+    }
+
+    /** fabric-server-launcher.properties → serverJar yanında loader sürümü tutulmaz;
+     *  install dizinindeki .fabric kalıntısından da okunamaz → null kabul edilir. */
+    _fabricVersionFromProperties() {
+        return null;
     }
 
     _detectMcVersion(installPath, loaderInfo) {
@@ -123,6 +131,7 @@ class Detector {
 
     _detectStartupMode(loaderInfo) {
         if (loaderInfo.loader === 'neoforge') return 'new';
+        if (loaderInfo.loader === 'fabric') return 'fabric';
         if (loaderInfo.loader === 'forge') {
             // Forge 37+ (MC 1.17+) → run.sh/user_jvm_args mantığı
             const mainVer = this._parseForgeMainVersion(loaderInfo.loaderVersion);
@@ -164,9 +173,12 @@ class Detector {
 
     _parseForgeMainVersion(loaderVersion) {
         if (!loaderVersion) return 0;
-        // "1.20.1-47.2.0" → 47
-        const match = loaderVersion.match(/[\-](\d+)\./);
-        return match ? parseInt(match[1]) : 0;
+        // "1.20.1-47.2.0" (libraries/jar formatı) → 47
+        const dashed = loaderVersion.match(/[\-](\d+)\./);
+        if (dashed) return parseInt(dashed[1]);
+        // "47.2.0" (manifest formatı, mc öneki yok) → 47
+        const plain = loaderVersion.match(/^(\d+)\./);
+        return plain ? parseInt(plain[1]) : 0;
     }
 
     _safeReaddir(dirPath) {

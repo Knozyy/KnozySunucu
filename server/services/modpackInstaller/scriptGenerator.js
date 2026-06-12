@@ -11,6 +11,17 @@ class ScriptGenerator {
         const maxRam = opts.maxRam || '4G';
         const minRam = opts.minRam || '2G';
 
+        if (startupMode === 'fabric') {
+            const jarName = opts.jarName && opts.jarName.startsWith('fabric-server-launch')
+                ? opts.jarName : 'fabric-server-launch.jar';
+            return `#!/bin/bash
+# Fabric Sunucu Başlatma Scripti
+# Knozy Sunucu Paneli tarafından oluşturuldu
+cd "$(dirname "$0")"
+java -Xmx${maxRam} -Xms${minRam} -jar ${jarName} nogui
+`;
+        }
+
         if (startupMode === 'new') {
             const label = loader === 'neoforge' ? 'NeoForge' : 'Forge';
             return `#!/bin/bash
@@ -41,6 +52,18 @@ java -Xmx${maxRam} -Xms${minRam} -jar ${jarName} nogui
     generateStartBat(loader, startupMode, opts = {}) {
         const maxRam = opts.maxRam || '4G';
         const minRam = opts.minRam || '2G';
+
+        if (startupMode === 'fabric') {
+            const jarName = opts.jarName && opts.jarName.startsWith('fabric-server-launch')
+                ? opts.jarName : 'fabric-server-launch.jar';
+            return `@echo off
+rem Fabric Sunucu Baslama Scripti
+rem Knozy Sunucu Paneli tarafindan olusturuldu
+cd /d "%~dp0"
+java -Xmx${maxRam} -Xms${minRam} -jar ${jarName} nogui
+pause
+`;
+        }
 
         if (startupMode === 'new') {
             const label = loader === 'neoforge' ? 'NeoForge' : 'Forge';

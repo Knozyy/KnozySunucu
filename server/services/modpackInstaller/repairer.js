@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const { randomUUID } = require('crypto');
 const scriptGenerator = require('./scriptGenerator');
 
@@ -128,21 +127,18 @@ eula=true
     }
 
     async _runForgeInstaller(installPath, installerJar, detectedInfo, log) {
-        if (!installerJar) throw new Error('Installer JAR belirtilmedi');
-
-        const JavaManager = require('../javaManager');
-        const jm = new JavaManager();
-        const javaPath = jm.getJavaPath(detectedInfo.requiredJava || 17) || 'java';
-        const installerPath = path.join(installPath, installerJar);
-
-        log(`Forge installer başlatılıyor: ${installerJar}`);
-        execSync(`"${javaPath}" -jar "${installerPath}" --installServer "${installPath}"`, {
-            cwd: installPath,
-            timeout: 300000,
+        // Yerel installer varsa onu kullanır; yoksa loader+sürümden indirir.
+        // Async spawn + 20 dk timeout — panel kilitlenmez, yavaş VDS'te yarıda kesilmez.
+        const loaderInstaller = require('./loaderInstaller');
+        await loaderInstaller.ensureLoaderInstalled({
+            installPath,
+            loader: detectedInfo.loader,
+            mcVersion: detectedInfo.mcVersion,
+            loaderVersion: detectedInfo.loaderVersion,
+            requiredJava: detectedInfo.requiredJava || 17,
+            localInstallerJar: installerJar || null,
+            log,
         });
-
-        try { fs.unlinkSync(installerPath); } catch { /* ignore */ }
-        log('Forge installer tamamlandı');
     }
 
     _generateJvmArgs(installPath, opts, log) {
@@ -190,6 +186,8 @@ eula=true
     _findMainJar(installPath) {
         try {
             const files = fs.readdirSync(installPath);
+            const fabricJar = files.find(f => /^fabric-server-launch(er)?\.jar$/.test(f));
+            if (fabricJar) return fabricJar;
             for (const file of files) {
                 if (!file.endsWith('.jar') || file.toLowerCase().includes('installer')) continue;
                 const lower = file.toLowerCase();
