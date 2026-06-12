@@ -607,16 +607,18 @@ class MinecraftService extends EventEmitter {
         } else if (tps != null) {
             mspt = tps >= 20 ? 50 : Math.round((1000 / Math.max(tps, 1)) * 10) / 10;
         }
+        const conn = this._getConnectionInfo();
         return {
             status: this.status,
             players: this.players,
             playerCount: this.players.length,
+            maxPlayers: conn.maxPlayers || 20,
             pid: this._javaPid || (this.process ? this.process.pid : null),
             processStats: this.processStats,
             maxRamGB: this.getEffectiveMaxRamGB(),
             tps,
             mspt,
-            connection: this._getConnectionInfo(),
+            connection: conn,
             startedAt: this._startedAt || null,
             uptimeSec: this._startedAt ? Math.floor((Date.now() - this._startedAt) / 1000) : 0,
         };
@@ -705,6 +707,7 @@ class MinecraftService extends EventEmitter {
             let port = this._serverConfig?.port || 25565;
             let motd = '';
             let whitelist = false;
+            let maxPlayers = 20;
             if (fs.existsSync(propsPath)) {
                 const content = fs.readFileSync(propsPath, 'utf-8');
                 const portMatch = content.match(/^server-port=(\d+)/m);
@@ -713,6 +716,8 @@ class MinecraftService extends EventEmitter {
                 if (motdMatch) motd = motdMatch[1].trim();
                 const wlMatch = content.match(/^white-list=(true|false)/m);
                 if (wlMatch) whitelist = wlMatch[1] === 'true';
+                const maxPlayersMatch = content.match(/^max-players=(\d+)/m);
+                if (maxPlayersMatch) maxPlayers = parseInt(maxPlayersMatch[1]);
             }
             // MC versiyonu — modpack veya log üzerinden
             let mcVersion = null, loader = null;
@@ -742,11 +747,11 @@ class MinecraftService extends EventEmitter {
                     if (low.includes('spigot') && low.endsWith('.jar'))     { loader = 'Spigot';    break; }
                 }
             } catch { /* ignore */ }
-            const info = { port, motd, whitelist, mcVersion, loader };
+            const info = { port, motd, whitelist, maxPlayers, mcVersion, loader };
             this._connInfoCache = { value: info, ts: Date.now() };
             return info;
         } catch {
-            const fallback = { port: 25565, motd: '', whitelist: false, mcVersion: null, loader: null };
+            const fallback = { port: 25565, motd: '', whitelist: false, maxPlayers: 20, mcVersion: null, loader: null };
             // Hatada da kısa süre önbelleğe al — sürekli başarısız I/O denemesini önle
             this._connInfoCache = { value: fallback, ts: Date.now() };
             return fallback;
