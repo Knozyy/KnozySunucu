@@ -596,6 +596,19 @@ class DiscordBotService {
         return { ok: !!(r && r.statusCode >= 200 && r.statusCode < 300) };
     }
 
+    /** Kullanıcıya özel mesaj (DM) gönder — DM kanalı aç + mesaj at.
+     *  Kullanıcı DM'leri kapalıysa Discord 403 döner → { ok:false }. */
+    async sendDirectMessage(userId, content) {
+        if (!userId || !content) return { ok: false, error: 'userId/content eksik' };
+        const ch = await this._discordApiBody('POST', '/users/@me/channels', { recipient_id: String(userId) });
+        if (!ch || ch.statusCode !== 200) return { ok: false, statusCode: ch?.statusCode, error: 'DM kanalı açılamadı' };
+        let channelId;
+        try { channelId = JSON.parse(ch.data).id; } catch { return { ok: false, error: 'DM kanal yanıtı çözülemedi' }; }
+        const msg = await this._discordApiBody('POST', `/channels/${channelId}/messages`, { content: String(content).slice(0, 1900) });
+        const ok = msg && msg.statusCode >= 200 && msg.statusCode < 300;
+        return { ok, statusCode: msg?.statusCode };
+    }
+
     // ── Üye rol ekle/çıkar (VIP sistemi kullanır) ─────────────────────────────
     async addMemberRole(userId, roleId, guildId) {
         const gid = guildId || await this.getPrimaryGuildId();

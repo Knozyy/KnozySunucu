@@ -314,6 +314,7 @@ function initDatabase() {
       expires_at INTEGER,                   -- epoch sn · NULL = süresiz
       status TEXT NOT NULL DEFAULT 'active',-- active | expired | revoked
       revoked_at INTEGER,
+      reminder_sent_at INTEGER,             -- bitiş hatırlatma DM'i gönderildi (epoch sn)
       note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -336,6 +337,12 @@ function initDatabase() {
     const vc = database.prepare("PRAGMA table_info(vip_packages)").all().map(c => c.name);
     if (!vc.includes('join_message')) database.exec('ALTER TABLE vip_packages ADD COLUMN join_message TEXT');
     if (!vc.includes('leave_message')) database.exec('ALTER TABLE vip_packages ADD COLUMN leave_message TEXT');
+  } catch (e) { /* tablo henüz yoksa sorun değil */ }
+
+  // Migration: vip_grants — bitiş hatırlatması (DM) takibi
+  try {
+    const gc = database.prepare("PRAGMA table_info(vip_grants)").all().map(c => c.name);
+    if (!gc.includes('reminder_sent_at')) database.exec('ALTER TABLE vip_grants ADD COLUMN reminder_sent_at INTEGER');
   } catch (e) { /* tablo henüz yoksa sorun değil */ }
 
   // Migration: lag_levers — relief_value/step modeli (eski min_value/step_down'dan backfill)

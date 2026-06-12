@@ -56,6 +56,7 @@ const SETTING_DEFAULTS = {
     lagExemptPct: 50,     // VIP lag-işaretleme eşiği +%X (LagGuard atıf muafiyeti)
     reservedSlots: 0,     // sunucu doluysa VIP'lere ayrılan slot (0 = kapalı)
     joinLeaveEnabled: 1,  // VIP giriş/çıkış duyuruları (0/1)
+    reminderDays: 3,      // bitişe bu kadar gün kala oyuncuya Discord DM (0 = kapalı)
 };
 
 class VipService {
@@ -276,6 +277,32 @@ class VipService {
         return { id: grantId, ...this.getGrant(grantId), applyDetail: applied.detail };
     }
 
+    /** VIP süresini uzat (+N gün). Süresiz grant uzatılamaz; süresi geçmişse bugünden başlar. */
+    extend(grantId, days) {
+        const g = this.getGrant(grantId);
+        if (!g) throw new Error('Kayıt bulunamadı');
+        if (g.status !== 'active') throw new Error('Yalnızca aktif VIP uzatılabilir');
+        const d = Number(days);
+        if (!Number.isFinite(d) || d <= 0) throw new Error('Geçerli gün sayısı gerekli');
+        if (g.expires_at == null) throw new Error('Süresiz VIP uzatılamaz (zaten süresiz)');
+        const base = Math.max(now(), Number(g.expires_at));
+        const newExpiry = base + Math.round(d * 86400);
+        // Yeni bitiş için hatırlatma yeniden gönderilebilsin
+        db().prepare('UPDATE vip_grants SET expires_at = ?, reminder_sent_at = NULL WHERE id = ?').run(newExpiry, grantId);
+        this._log(grantId, 'extend', g.package_name, g.mc_nick, g.user_id, `+${d} gün → ${new Date(newExpiry * 1000).toLocaleDateString('tr-TR')}`);
+        return this.getGrant(grantId);
+    }
+
+    /** Bir Discord kullanıcısının aktif VIP'leri (bot /vip + profil kartı için). */
+    byUser(userId) {
+        try {
+            return db().prepare(
+                "SELECT g.*, p.color FROM vip_grants g LEFT JOIN vip_packages p ON p.id = g.package_id " +
+                "WHERE g.status = 'active' AND g.user_id = ? ORDER BY g.expires_at IS NULL DESC, g.expires_at DESC"
+            ).all(String(userId));
+        } catch { return []; }
+    }
+
     /** VIP geri al (manuel veya süre bitince). server kapalıysa ve MC komutu varsa erteler. */
     async revoke(grantId, { by = 'admin', reason = 'manuel', viaExpiry = false } = {}) {
         const g = this.getGrant(grantId);
@@ -429,6 +456,30 @@ class VipService {
                     const res = await this.revoke(row.id, { by: 'system', reason: 'süre doldu', viaExpiry: true });
                     if (res.deferred) console.warn(`[VIP] grant#${row.id} bitişi ertelendi (sunucu kapalı).`);
                 } catch (e) { console.error(`[VIP] grant#${row.id} bitiş hatası:`, e.message); }
+            }
+
+            // Bitiş hatırlatması: bitişe ≤N gün kalan aktif VIP'lere bir kez Discord DM
+            const rd = this._settings.reminderDays;
+            if (rd > 0) {
+                const soon = db().prepare(
+                    `SELECT * FROM vip_grants WHERE status = 'active' AND user_id IS NOT NULL
+                     AND reminder_sent_at IS NULL AND expires_at IS NOT NULL
+                     AND expires_at > ? AND expires_at <= ?`
+                ).all(now(), now() + rd * 86400);
+                for (const g of soon) {
+                    try {
+                        const daysLeft = Math.max(1, Math.ceil((g.expires_at - now()) / 86400));
+                        const dateStr = new Date(g.expires_at * 1000).toLocaleDateString('tr-TR');
+                        const discordBotService = require('./discordBotService');
+                        const r = await discordBotService.sendDirectMessage(g.user_id,
+                            `👑 Merhaba! **${g.package_name}** VIP üyeliğin **${dateStr}** tarihinde (${daysLeft} gün sonra) sona erecek.\n` +
+                            `Yenilemek istersen sunucu yetkilileriyle iletişime geçebilirsin.`);
+                        // Tek deneme: DM kapalıysa da işaretle (her dakika spam olmasın)
+                        db().prepare('UPDATE vip_grants SET reminder_sent_at = ? WHERE id = ?').run(now(), g.id);
+                        this._log(g.id, 'reminder', g.package_name, g.mc_nick, g.user_id,
+                            r.ok ? `DM gönderildi (${daysLeft} gün kala)` : `DM BAŞARISIZ (${r.statusCode || r.error}) — kullanıcı DM'leri kapalı olabilir`);
+                    } catch (e) { console.error(`[VIP] hatırlatma hatası grant#${g.id}:`, e.message); }
+                }
             }
         } catch (err) { console.error('[VIP] Kontrol hatası:', err.message); }
     }

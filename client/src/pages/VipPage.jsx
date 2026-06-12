@@ -172,6 +172,11 @@ export default function VipPage() {
         onSuccess: () => { invalidate(); toast.success('VIP geri alındı'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Geri alınamadı'),
     });
+    const extend = useMutation({
+        mutationFn: ({ id, days }) => api.post(`/vip/grants/${id}/extend`, { days }),
+        onSuccess: () => { invalidate(); toast.success('Süre uzatıldı'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Uzatılamadı'),
+    });
 
     const wlFiltered = wl.filter(e => {
         const q = gSearch.toLowerCase();
@@ -269,6 +274,12 @@ export default function VipPage() {
                                         <span style={{ fontFamily: A.mono, fontSize: 12, color: A.text }}>{g.mc_nick || '—'}</span>
                                         <span style={{ fontSize: 11, color: A.faint }}>{g.user_id ? `<@${g.user_id}>` : ''}</span>
                                         <span style={{ marginLeft: 'auto', fontSize: 11, fontFamily: A.mono, color: A.dim }}>{fmtExpiry(g.expires_at)}</span>
+                                        {g.expires_at != null && (
+                                            <button onClick={() => {
+                                                const d = prompt(`${g.mc_nick || g.user_id} · ${g.package_name} kaç gün uzatılsın?`, '30');
+                                                if (d && Number(d) > 0) extend.mutate({ id: g.id, days: Number(d) });
+                                            }} style={{ ...btnGhost, color: A.ok, padding: '4px 10px' }} title="Süre uzat">+ Uzat</button>
+                                        )}
                                         <button onClick={() => { if (confirm(`${g.mc_nick || g.user_id} için ${g.package_name} VIP geri alınsın mı?`)) revoke.mutate(g.id); }} style={{ ...btnGhost, color: A.err, padding: '4px 10px' }}>Geri Al</button>
                                     </div>
                                 ))}
@@ -577,13 +588,14 @@ function TierPerkCard({ tier }) {
 function VipSettingsTab({ settings }) {
     const qc = useQueryClient();
     const [f, setF] = useState(null);
-    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1 };
+    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1, reminderDays: 3 };
     const set = (k, v) => setF({ ...cur, [k]: v });
     const save = useMutation({
         mutationFn: () => api.put('/vip/settings', {
             lagExemptPct: Number(cur.lagExemptPct) || 0,
             reservedSlots: Number(cur.reservedSlots) || 0,
             joinLeaveEnabled: cur.joinLeaveEnabled ? 1 : 0,
+            reminderDays: Number(cur.reminderDays) || 0,
         }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['vip-settings'] }); toast.success('Ayarlar kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
@@ -605,6 +617,14 @@ function VipSettingsTab({ settings }) {
                     Sunucu dolunca VIP olmayan yeni girenler kibarca kicklenir, son N slot VIP'lere kalır.{' '}
                     <b style={{ color: A.warn }}>Önemli:</b> server.properties'te <code style={{ fontFamily: A.mono }}>max-players</code>'ı
                     normal kapasite + rezerve kadar artırın (örn. 20 oyunculuk sunucu, 3 rezerve → max-players=23).
+                </p>
+            </Card>
+            <Card title="Bitiş Hatırlatması (Discord DM)">
+                <Cap style={{ display: 'block', marginBottom: 4 }}>Bitişe kaç gün kala DM gönderilsin? (0 = kapalı)</Cap>
+                <Input type="number" value={cur.reminderDays} onChange={e => set('reminderDays', e.target.value)} min={0} max={30} style={{ maxWidth: 140 }} />
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Süresi yaklaşan VIP'e <b style={{ color: A.dim }}>bir kez</b> özel mesaj (DM) atılır: paket adı, bitiş tarihi, kalan gün.
+                    Kullanıcının DM'leri kapalıysa gönderilemez (Log sekmesinde görünür). Süre uzatılınca yeni bitiş için tekrar hatırlatılır.
                 </p>
             </Card>
             <Card title="Giriş/Çıkış Duyuruları">

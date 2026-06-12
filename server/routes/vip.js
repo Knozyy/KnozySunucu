@@ -64,6 +64,20 @@ router.post('/grants', authMiddleware, requireRole('admin'), async (req, res) =>
         res.json({ message: 'VIP verildi', grant: r });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
+// Süre uzatma (+N gün)
+router.post('/grants/:id/extend', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const g = vipService.extend(parseInt(req.params.id), req.body?.days);
+        res.json({ message: 'Süre uzatıldı', grant: g });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Bir Discord kullanıcısının aktif VIP'leri (bot /vip + profil kartı)
+router.get('/by-user/:userId', authMiddleware, (req, res) => {
+    try { res.json({ grants: vipService.byUser(req.params.userId) }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/grants/:id/revoke', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         const r = await vipService.revoke(parseInt(req.params.id), { by: req.user?.username || 'admin', reason: req.body?.reason || 'manuel' });
