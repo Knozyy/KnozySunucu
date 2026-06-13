@@ -27,29 +27,34 @@ function profileJson() {
 // Sahte sahip çözücü: x<100 → Knozy claim'i; diğerleri wild (null)
 const fakeOwnerAt = (dim, x, z) => (x < 100 ? 'Knozy' : null);
 
-test('onlineMembersLabel: takım adı yerine online üyeleri verir (Ahmet-Mehmet)', () => {
-    const members = ['Ahmet', 'Mehmet', 'Veli'];
-    // Ahmet + Mehmet online (büyük/küçük harf duyarsız) → birleştirilir
-    assert.equal(probe.onlineMembersLabel(members, ['ahmet', 'MEHMET'], 'TakımX'), 'Ahmet-Mehmet');
-    // Tek online üye
-    assert.equal(probe.onlineMembersLabel(members, ['Veli'], 'TakımX'), 'Veli');
-    // Hiç online üye yok → takım adına (fallback) düşer
-    assert.equal(probe.onlineMembersLabel(members, ['Zeynep'], 'TakımX'), 'TakımX');
-    // Üye listesi yoksa fallback
-    assert.equal(probe.onlineMembersLabel([], ['Ahmet'], 'TakımX'), 'TakımX');
-    // Online liste boş → fallback
-    assert.equal(probe.onlineMembersLabel(members, [], 'TakımX'), 'TakımX');
+test('nearestOnlinePlayers: lag noktasına fiziksel en yakın oyuncuyu verir', () => {
+    const pos = {
+        kivilipvp_real: { x: 100, z: 100, dim: 'minecraft:overworld' },
+        XClarius: { x: 5000, z: 5000, dim: 'minecraft:overworld' },
+    };
+    // (110,110) kivilipvp_real'e ≈14 blok, XClarius çok uzak
+    assert.equal(probe.nearestOnlinePlayers(pos, 'minecraft:overworld', 110, 110), 'kivilipvp_real');
+    // Kimse eşik (64) içinde değil → null (takım fallback'i devreye girer)
+    assert.equal(probe.nearestOnlinePlayers(pos, 'minecraft:overworld', 3000, 3000), null);
+    // Farklı boyut → eşleşmez
+    assert.equal(probe.nearestOnlinePlayers(pos, 'minecraft:the_nether', 110, 110), null);
 });
 
-test('onlineMembersLabel: tekrarlı üyeler benzersizleştirilir + uzun liste kısaltılır', () => {
-    // SNBT tekrarı: aynı isim defalarca → tek kez (kivilipvp_real-kivilipvp_real... bug'ı)
-    const dup = Array(50).fill('kivilipvp_real');
-    assert.equal(probe.onlineMembersLabel(dup, ['kivilipvp_real'], 'X'), 'kivilipvp_real');
-    // 5 farklı online üye → ilk 3 + "+2"
-    const five = ['A', 'B', 'C', 'D', 'E'];
-    assert.equal(probe.onlineMembersLabel(five, ['a', 'b', 'c', 'd', 'e'], 'X'), 'A-B-C +2');
-    // Karışık tekrar + kısmi online → benzersiz online sıralı
-    assert.equal(probe.onlineMembersLabel(['Ahmet', 'Ahmet', 'Mehmet', 'Veli'], ['ahmet', 'mehmet'], 'X'), 'Ahmet-Mehmet');
+test('nearestOnlinePlayers: aynı bölgedeki birden çok oyuncu yakınlık sırasıyla birleşir', () => {
+    const pos = {
+        Ahmet: { x: 100, z: 100, dim: 'minecraft:overworld' },
+        Mehmet: { x: 120, z: 100, dim: 'minecraft:overworld' },
+    };
+    // (105,100): Ahmet (5 blok) < Mehmet (15 blok) → "Ahmet-Mehmet"
+    assert.equal(probe.nearestOnlinePlayers(pos, 'minecraft:overworld', 105, 100), 'Ahmet-Mehmet');
+    // Konum verisi yoksa null
+    assert.equal(probe.nearestOnlinePlayers({}, 'minecraft:overworld', 105, 100), null);
+});
+
+test('_joinNames: benzersizleştirir ve uzun listeyi kısaltır', () => {
+    assert.equal(probe._joinNames(Array(50).fill('kivilipvp_real')), 'kivilipvp_real');
+    assert.equal(probe._joinNames(['A', 'B', 'C', 'D', 'E']), 'A-B-C +2');
+    assert.equal(probe._joinNames([]), null);
 });
 
 test('attributeProfile v2: makine/canlı ayrımı + bütçe yüzdesi', () => {

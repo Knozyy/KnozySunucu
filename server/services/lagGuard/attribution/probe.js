@@ -28,29 +28,70 @@ class AttributionProbe {
 
     isBusy() { return this._busy; }
 
-    /**
-     * Lag yapan base'in sahip etiketi: takım adı yerine o takımın ONLINE
-     * üyelerini verir (birden fazlaysa "Ahmet-Mehmet"). Çevrimiçi üye yoksa
-     * fallback'e (takım display_name'i) düşer. Eşleştirme büyük/küçük harf duyarsız.
-     *
-     * NOT: FTB Teams SNBT'sinde aynı UUID birden çok kez geçebildiğinden üye
-     * listesi tekrarlı gelir → BENZERSİZLEŞTİRİLİR. Çok üyeli takımlarda etiket
-     * şişmesin diye en fazla MAX_NAMES isim gösterilir, kalanı "+N" olur.
-     */
-    onlineMembersLabel(memberNames, onlinePlayers, fallback = null) {
-        const MAX_NAMES = 3;
-        const onlineSet = new Set((onlinePlayers || []).map(p => String(p).toLowerCase()));
+    /** İsim listesini benzersizleştirip "A-B-C +N" biçiminde birleştirir (boşsa null). */
+    _joinNames(names, maxNames = 3) {
         const seen = new Set();
-        const online = [];
-        for (const n of (memberNames || [])) {
+        const uniq = [];
+        for (const n of (names || [])) {
             const key = String(n).toLowerCase();
-            if (!key || seen.has(key) || !onlineSet.has(key)) continue;
+            if (!key || seen.has(key)) continue;
             seen.add(key);
-            online.push(n);
+            uniq.push(n);
         }
-        if (!online.length) return fallback || null;
-        if (online.length <= MAX_NAMES) return online.join('-');
-        return `${online.slice(0, MAX_NAMES).join('-')} +${online.length - MAX_NAMES}`;
+        if (!uniq.length) return null;
+        if (uniq.length <= maxNames) return uniq.join('-');
+        return `${uniq.slice(0, maxNames).join('-')} +${uniq.length - maxNames}`;
+    }
+
+    /**
+     * Lag yapan koordinata FİZİKSEL olarak yakın online oyuncu(ları) döndürür
+     * (yakınlık sırasına göre, "Ahmet-Mehmet"). Takım üyeliğinden bağımsızdır:
+     * ally'sinin base'inde duran oyuncu o base'e atfedilir, kendi takımına değil.
+     * @param positions { nick: { x, z, dim } } — collectPlayerPositions çıktısı
+     * @returns string|null — eşik içinde oyuncu yoksa null (çağıran takım adına düşer)
+     */
+    nearestOnlinePlayers(positions, dim, blockX, blockZ, threshold = 64, maxNames = 3) {
+        if (!positions || blockX == null || blockZ == null) return null;
+        const near = [];
+        for (const nick of Object.keys(positions)) {
+            const p = positions[nick];
+            if (!p || p.x == null || p.z == null) continue;
+            if (p.dim && dim && p.dim !== dim) continue;
+            const d = Math.hypot(p.x - blockX, p.z - blockZ);
+            if (d <= threshold) near.push({ nick, d });
+        }
+        if (!near.length) return null;
+        near.sort((a, b) => a.d - b.d);
+        return this._joinNames(near.map(n => n.nick), maxNames);
+    }
+
+    /**
+     * Online oyuncuların X/Z/dim konumlarını sunucudan toplar
+     * (`data get entity <nick> Pos|Dimension` → log parse). Lag atfını fiziksel
+     * konuma dayandırmak için tarama anında çağrılır. Komut/erişim yoksa {} döner.
+     * @returns Promise<{ nick: { x, z, dim } }>
+     */
+    collectPlayerPositions(mc, timeoutMs = 4000) {
+        const players = (mc && mc.players) || [];
+        if (!players.length || typeof mc.sendCommand !== 'function') return Promise.resolve({});
+        const positions = {};
+        const posRe = /(\w{1,16}) has the following entity data: \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]/;
+        const dimRe = /(\w{1,16}) has the following entity data: "([a-z0-9_:]+)"/i;
+        return new Promise((resolve) => {
+            const onLine = (line) => {
+                const text = typeof line === 'string' ? line : ((line && (line.data || line.message)) || '');
+                if (!text) return;
+                const pm = text.match(posRe);
+                if (pm) { positions[pm[1]] = { ...(positions[pm[1]] || {}), x: Math.round(+pm[2]), z: Math.round(+pm[4]) }; return; }
+                const dm = text.match(dimRe);
+                if (dm) positions[dm[1]] = { ...(positions[dm[1]] || {}), dim: dm[2] };
+            };
+            try { mc.on('log', onLine); } catch { /* ignore */ }
+            for (const nick of players) {
+                try { mc.sendCommand(`data get entity ${nick} Pos`); mc.sendCommand(`data get entity ${nick} Dimension`); } catch { /* ignore */ }
+            }
+            setTimeout(() => { try { mc.off('log', onLine); } catch { /* ignore */ } resolve(positions); }, timeoutMs);
+        });
     }
 
     /**
@@ -59,7 +100,7 @@ class AttributionProbe {
      * Makine (blk) ve canlı (ent) maliyeti ayrı; wild (claimsiz) hiçbir sahibe yazılmaz.
      * @param ownerAt — test için enjekte edilebilir sahip çözücü (dim,x,z) → owner|null
      */
-    attributeProfile(json, serverPath, ownerAt = null, onlinePlayers = []) {
+    attributeProfile(json, serverPath, ownerAt = null, playerPositions = {}) {
         const d = (json && json.data) || {};
         const diag = (json && json.diagnostics) || {};
         const hotspots = [];
@@ -74,10 +115,12 @@ class AttributionProbe {
         }
         const total = hotspots.reduce((s, h) => s + h.rate, 0) || 1;
         const resolve = ownerAt || ((dim, x, z) => {
+            // 1) Fiziksel olarak yakın online oyuncu — en doğru sinyal (ally base'i ayrışır)
+            const nearby = this.nearestOnlinePlayers(playerPositions, dim, x, z);
+            if (nearby) return nearby;
+            // 2) Fallback: FTB claim takım adı (sahip uzakta/offline ise makineye atfet)
             const o = ftbChunks.ownerAt(serverPath, dim, x, z);
-            if (!o) return null;
-            // Takım adı yerine bu base'in takımında ONLINE olan üye(leri) göster
-            return this.onlineMembersLabel(o.owners, onlinePlayers, o.owner);
+            return o && o.owner ? o.owner : null;
         });
         const ownerOf = (h) => (h.x == null || h.z == null) ? null : resolve(h.dim, h.x, h.z);
 
@@ -160,8 +203,9 @@ class AttributionProbe {
                 return { ok: false, note: 'Observable veri çekilemedi: ' + e.message, url: prof.url };
             }
 
-            // 3) Atıf — online oyuncu listesiyle (sahip etiketinde online üyeleri öncele)
-            const attr = this.attributeProfile(json, serverPath, null, (mc && mc.players) || []);
+            // 3) Atıf — online oyuncu konumlarıyla (lag noktasına fiziksel yakın oyuncuyu öncele)
+            const playerPositions = await this.collectPlayerPositions(mc);
+            const attr = this.attributeProfile(json, serverPath, null, playerPositions);
             const ftb = ftbChunks.status(serverPath);
             if (!ftb.available) notes.push('FTB Chunks claim verisi yok → sahipler "claimsiz" görünür. ' + ftb.note);
             else if (!ftb.parsed) notes.push('FTB claim parse edilemedi (format farklı olabilir).');
