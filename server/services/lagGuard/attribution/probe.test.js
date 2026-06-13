@@ -41,6 +41,17 @@ test('onlineMembersLabel: takım adı yerine online üyeleri verir (Ahmet-Mehmet
     assert.equal(probe.onlineMembersLabel(members, [], 'TakımX'), 'TakımX');
 });
 
+test('onlineMembersLabel: tekrarlı üyeler benzersizleştirilir + uzun liste kısaltılır', () => {
+    // SNBT tekrarı: aynı isim defalarca → tek kez (kivilipvp_real-kivilipvp_real... bug'ı)
+    const dup = Array(50).fill('kivilipvp_real');
+    assert.equal(probe.onlineMembersLabel(dup, ['kivilipvp_real'], 'X'), 'kivilipvp_real');
+    // 5 farklı online üye → ilk 3 + "+2"
+    const five = ['A', 'B', 'C', 'D', 'E'];
+    assert.equal(probe.onlineMembersLabel(five, ['a', 'b', 'c', 'd', 'e'], 'X'), 'A-B-C +2');
+    // Karışık tekrar + kısmi online → benzersiz online sıralı
+    assert.equal(probe.onlineMembersLabel(['Ahmet', 'Ahmet', 'Mehmet', 'Veli'], ['ahmet', 'mehmet'], 'X'), 'Ahmet-Mehmet');
+});
+
 test('attributeProfile v2: makine/canlı ayrımı + bütçe yüzdesi', () => {
     const r = probe.attributeProfile(profileJson(), null, fakeOwnerAt);
     assert.equal(r.v, 2);

@@ -63,7 +63,8 @@ const ftbChunks = {
                 const scope = mm ? mm[1] : text;
                 let u; const re = new RegExp(UUID_RE.source, 'g');
                 while ((u = re.exec(scope))) members.push(u[0]);
-                teams[teamId.toLowerCase()] = { name: nameM ? nameM[1] : null, members };
+                // SNBT'de aynı UUID birden çok kez geçebilir (owner/member/rank) → benzersizleştir
+                teams[teamId.toLowerCase()] = { name: nameM ? nameM[1] : null, members: [...new Set(members)] };
             }
         }
         return teams;

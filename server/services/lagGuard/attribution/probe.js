@@ -32,11 +32,25 @@ class AttributionProbe {
      * Lag yapan base'in sahip etiketi: takım adı yerine o takımın ONLINE
      * üyelerini verir (birden fazlaysa "Ahmet-Mehmet"). Çevrimiçi üye yoksa
      * fallback'e (takım display_name'i) düşer. Eşleştirme büyük/küçük harf duyarsız.
+     *
+     * NOT: FTB Teams SNBT'sinde aynı UUID birden çok kez geçebildiğinden üye
+     * listesi tekrarlı gelir → BENZERSİZLEŞTİRİLİR. Çok üyeli takımlarda etiket
+     * şişmesin diye en fazla MAX_NAMES isim gösterilir, kalanı "+N" olur.
      */
     onlineMembersLabel(memberNames, onlinePlayers, fallback = null) {
+        const MAX_NAMES = 3;
         const onlineSet = new Set((onlinePlayers || []).map(p => String(p).toLowerCase()));
-        const online = (memberNames || []).filter(n => onlineSet.has(String(n).toLowerCase()));
-        return online.length ? online.join('-') : (fallback || null);
+        const seen = new Set();
+        const online = [];
+        for (const n of (memberNames || [])) {
+            const key = String(n).toLowerCase();
+            if (!key || seen.has(key) || !onlineSet.has(key)) continue;
+            seen.add(key);
+            online.push(n);
+        }
+        if (!online.length) return fallback || null;
+        if (online.length <= MAX_NAMES) return online.join('-');
+        return `${online.slice(0, MAX_NAMES).join('-')} +${online.length - MAX_NAMES}`;
     }
 
     /**
