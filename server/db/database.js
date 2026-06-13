@@ -398,6 +398,10 @@ function initDatabase() {
       // Son sağlık testi sonucu (JSON: {status, detail, at, durationSec})
       database.exec("ALTER TABLE installed_modpacks ADD COLUMN last_health TEXT");
     }
+    if (!colNames.includes('provider')) {
+      // Kaynak: 'curseforge' (varsayılan) | 'ftb' | 'manual'
+      database.exec("ALTER TABLE installed_modpacks ADD COLUMN provider TEXT DEFAULT 'curseforge'");
+    }
 
     const userCols = database.prepare("PRAGMA table_info(users)").all();
     const userColNames = userCols.map(c => c.name);
