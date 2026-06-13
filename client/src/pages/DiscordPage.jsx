@@ -1252,31 +1252,10 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
 function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, now, addRoleMutation, delRoleMutation, botSettings, botSettingsMutation }) {
     const [form, setForm] = useState({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' });
     const [showForm, setShowForm] = useState(false);
-    
-    // Preset Yönetimi Modalları
-    const [showPresets, setShowPresets] = useState(false);
-    const [presetType, setPresetType] = useState('guild'); // 'guild' veya 'role'
-    const [presetForm, setPresetForm] = useState({ name: '', id: '' });
 
+    // Roller artık Discord sunucusundan canlı geliyor (manuel kayıt kaldırıldı)
     const savedGuilds = botSettings?.savedGuilds || [];
     const savedRoles = botSettings?.savedRoles || [];
-
-    const handleAddPreset = () => {
-        if (!presetForm.name || !presetForm.id) return;
-        const key = presetType === 'guild' ? 'savedGuilds' : 'savedRoles';
-        const currentList = botSettings?.[key] || [];
-        botSettingsMutation.mutate({
-            [key]: [...currentList, { ...presetForm }]
-        });
-        setPresetForm({ name: '', id: '' });
-    };
-
-    const handleDeletePreset = (type, index) => {
-        const key = type === 'guild' ? 'savedGuilds' : 'savedRoles';
-        const currentList = [...(botSettings?.[key] || [])];
-        currentList.splice(index, 1);
-        botSettingsMutation.mutate({ [key]: currentList });
-    };
 
     const handleAdd = () => {
         addRoleMutation.mutate(form, {
@@ -1289,55 +1268,11 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
             <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Cap>{activeRoles.length} aktif · {expiredRoles.length} süresi dolmuş</Cap>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setShowPresets(v => !v)} style={btnGhost}>
-                        <I.Cog size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>KAYITLI PROFİLLER
-                    </button>
                     <button onClick={() => setShowForm(v => !v)} style={btnGhost}>
                         <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>YENİ EKLE
                     </button>
                 </div>
             </div>
-
-            {showPresets && (
-                <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <Cap>KAYITLI SUNUCU & ROL YÖNETİMİ</Cap>
-                    
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        <select style={{ ...inputStyle, width: 120 }} value={presetType} onChange={e => setPresetType(e.target.value)}>
-                            <option value="guild">Sunucu Ekle</option>
-                            <option value="role">Rol Ekle</option>
-                        </select>
-                        <input value={presetForm.name} onChange={e => setPresetForm(f => ({...f, name: e.target.value}))}
-                            style={{ ...inputStyle, flex: 1 }} placeholder="İsim (Örn: Ana Sunucu)"/>
-                        <input value={presetForm.id} onChange={e => setPresetForm(f => ({...f, id: e.target.value}))}
-                            style={{ ...inputStyle, flex: 1 }} placeholder="ID (Örn: 123456789)"/>
-                        <button onClick={handleAddPreset} disabled={!presetForm.name || !presetForm.id || botSettingsMutation.isPending} style={btnPrimary}>
-                            EKLE
-                        </button>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 20, marginTop: 10 }}>
-                        <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: A.text, marginBottom: 8 }}>Kayıtlı Sunucular</div>
-                            {savedGuilds.length === 0 ? <div style={{ fontSize: 11, color: A.faint }}>Kayıt yok.</div> : savedGuilds.map((g, i) => (
-                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '4px 8px', background: A.bg, marginBottom: 4, borderRadius: 2 }}>
-                                    <span><b>{g.name}</b> ({g.id})</span>
-                                    <button onClick={() => handleDeletePreset('guild', i)} style={{ background: 'none', border: 'none', color: A.err, cursor: 'pointer' }}><I.Trash size={10}/></button>
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: A.text, marginBottom: 8 }}>Kayıtlı Roller</div>
-                            {savedRoles.length === 0 ? <div style={{ fontSize: 11, color: A.faint }}>Kayıt yok.</div> : savedRoles.map((r, i) => (
-                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '4px 8px', background: A.bg, marginBottom: 4, borderRadius: 2 }}>
-                                    <span><b>{r.name}</b> ({r.id})</span>
-                                    <button onClick={() => handleDeletePreset('role', i)} style={{ background: 'none', border: 'none', color: A.err, cursor: 'pointer' }}><I.Trash size={10}/></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {showForm && (
                 <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
