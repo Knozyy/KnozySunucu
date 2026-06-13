@@ -388,6 +388,46 @@ export default function ConsolePage() {
                         </div>
                     </div>
 
+                    {/* Hazır komutlar — parametresizler direkt gönderilir,
+                        parametreliler (fill) komut kutusuna şablon doldurur */}
+                    {canCommand && (
+                        <div style={{
+                            display: 'flex', flexWrap: 'wrap', gap: 5,
+                            padding: '8px 12px', borderTop: `1px solid ${A.border}`,
+                            background: A.bgDeeper, flexShrink: 0,
+                        }}>
+                            {[
+                                { l: '☀️ Gündüz', c: 'time set day' },
+                                { l: '🌙 Gece', c: 'time set night' },
+                                { l: '☁️ Havayı Aç', c: 'weather clear' },
+                                { l: '🌧️ Yağmur', c: 'weather rain' },
+                                { l: '💾 Kaydet', c: 'save-all' },
+                                { l: '👥 Oyuncular', c: 'list' },
+                                { l: '💬 Renkli Mesaj', c: 'tellraw @a {"text":"Mesajınız","color":"gold","bold":true}', fill: true },
+                                { l: '📢 Ekran Başlığı', c: 'title @a title {"text":"Başlık","color":"yellow"}', fill: true },
+                                { l: '📝 Alt Başlık', c: 'title @a subtitle {"text":"Alt başlık"}', fill: true },
+                                { l: '🔔 ActionBar', c: 'title @a actionbar {"text":"Bildirim","color":"aqua"}', fill: true },
+                            ].map(q => (
+                                <button key={q.l} type="button" disabled={!canSend} title={q.c}
+                                    onClick={() => {
+                                        if (q.fill) { setCommand(q.c); cmdRef.current?.focus(); }
+                                        else if (canSend) { sendCommand(q.c); setCommandHistory(prev => [q.c, ...prev.slice(0, 49)]); }
+                                    }}
+                                    style={{
+                                        background: 'transparent', border: `1px solid ${A.border}`,
+                                        borderRadius: 4, padding: '4px 9px', fontSize: 11,
+                                        color: canSend ? A.text : A.faintest, fontFamily: A.sans,
+                                        cursor: canSend ? 'pointer' : 'not-allowed',
+                                        opacity: canSend ? 1 : 0.5, whiteSpace: 'nowrap',
+                                    }}
+                                    onMouseEnter={e => { if (canSend) e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.borderColor = A.border; }}>
+                                    {q.l}{q.fill ? ' …' : ''}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Komut giriş çubuğu */}
                     <form onSubmit={handleSubmit} style={{
                         display: 'flex', alignItems: 'center', gap: 0,
