@@ -89,6 +89,22 @@ class Detector {
             } catch { /* ignore */ }
         }
 
+        // 4. Yerel installer JAR adı (elle yüklenen forge/neoforge paketleri için
+        //    tek sinyal budur — installer henüz çalıştırılmamış, libraries/ yok)
+        for (const file of files) {
+            if (!file.endsWith('.jar') || !file.toLowerCase().includes('installer')) continue;
+            const lower = file.toLowerCase();
+            // forge-1.20.1-47.2.0-installer.jar | neoforge-21.1.77-installer.jar
+            if (lower.startsWith('neoforge-')) {
+                const m = file.match(/neoforge-([\d.]+(?:-[\d.]+)?)-installer/i);
+                if (m) return { loader: 'neoforge', loaderVersion: m[1] };
+            }
+            if (lower.startsWith('forge-')) {
+                const m = file.match(/forge-([\d.]+-[\d.]+)-installer/i);
+                if (m) return { loader: 'forge', loaderVersion: m[1] };
+            }
+        }
+
         return { loader: 'unknown', loaderVersion: null };
     }
 

@@ -449,4 +449,84 @@ router.post('/check-updates', authMiddleware, async (req, res) => {
     }
 });
 
+// ─── Elle Modpack (isim + akıllı dosya yükleme) ─────────────────────────────
+
+const manualPack = require('../services/modpackInstaller/manualPack');
+const os = require('os');
+
+// İsimle boş modpack profili oluştur
+router.post('/manual', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const { name } = req.body;
+        const result = manualPack.createEmptyPack(name);
+        res.json({ message: `"${result.name}" profili oluşturuldu`, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Profildeki mevcut dosyaların listesi (root + mods)
+router.get('/:id/files-list', authMiddleware, (req, res) => {
+    try {
+        const db = getDb();
+        const modpack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(parseInt(req.params.id));
+        if (!modpack?.install_path) return res.status(404).json({ error: 'Modpack bulunamadı' });
+        res.json(manualPack.listFiles(modpack.install_path));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Akıllı dosya yükleme (zip/jar/config) — diske yazıp tür sezerek yerleştir
+const fileUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, os.tmpdir()),
+        filename: (req, file, cb) => cb(null, `knozy-upload-${Date.now()}-${path.basename(file.originalname)}`),
+    }),
+    limits: { fileSize: 3 * 1024 * 1024 * 1024 }, // 3 GB (büyük server pack zip'leri)
+});
+router.post('/:id/files/upload', authMiddleware, requireRole('admin'), fileUpload.single('file'), (req, res) => {
+    let tmpPath = req.file?.path;
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' });
+        const db = getDb();
+        const modpack = db.prepare('SELECT install_path FROM installed_modpacks WHERE id = ?').get(parseInt(req.params.id));
+        if (!modpack?.install_path) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        const result = manualPack.placeFile(modpack.install_path, req.file.originalname, tmpPath);
+        res.json({ message: `${result.placed} → ${result.target}`, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (tmpPath) { try { fs.unlinkSync(tmpPath); } catch { /* ignore */ } }
+    }
+});
+
+// Çalıştırılabilir yap: yüklenen dosyaları finalizer ile tespit edip hazırla
+// (loader/Java/script/eula) — manuel paketler için "sistem algılayıp çalıştırsın".
+router.post('/:id/make-runnable', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const db = getDb();
+        const modpack = db.prepare('SELECT * FROM installed_modpacks WHERE id = ?').get(parseInt(req.params.id));
+        if (!modpack?.install_path) return res.status(404).json({ error: 'Modpack bulunamadı' });
+
+        const finalizer = require('../services/modpackInstaller/finalizer');
+        const result = await finalizer.finalizeInstall(modpack.install_path, {
+            maxRam: modpack.max_ram || process.env.MINECRAFT_MAX_RAM || '4G',
+            minRam: modpack.min_ram || process.env.MINECRAFT_MIN_RAM || '2G',
+            log: (msg) => console.log(`[ManualPack][finalize] ${msg}`),
+        });
+
+        db.prepare("UPDATE installed_modpacks SET status = 'installed' WHERE id = ?").run(modpack.id);
+
+        const warnText = result.warnings.length > 0 ? ` — Uyarılar: ${result.warnings.join(' | ')}` : '';
+        res.json({
+            message: `Paket çalıştırılabilir hale getirildi (${result.loader || 'loader yok'})${warnText}`,
+            ...result,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

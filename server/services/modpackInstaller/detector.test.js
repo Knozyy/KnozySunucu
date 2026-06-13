@@ -48,6 +48,23 @@ test('forge tespiti fabric eklemesinden etkilenmez', () => {
     assert.strictEqual(det.startupMode, 'new');
 });
 
+test('yerel forge installer jar adından loader tespit edilir (elle paket)', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'forge-1.20.1-47.2.0-installer.jar'), '', 'utf8');
+    const det = detector.detect(dir);
+    assert.strictEqual(det.loader, 'forge');
+    assert.strictEqual(det.loaderVersion, '1.20.1-47.2.0');
+    assert.strictEqual(det.startupMode, 'new');
+});
+
+test('yerel neoforge installer jar adından loader tespit edilir', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'neoforge-21.1.77-installer.jar'), '', 'utf8');
+    const det = detector.detect(dir);
+    assert.strictEqual(det.loader, 'neoforge');
+    assert.strictEqual(det.loaderVersion, '21.1.77');
+});
+
 // ── ScriptGenerator: Fabric ──────────────────────────────────────────────────
 
 test('fabric start.sh launcher jar ile üretilir', () => {

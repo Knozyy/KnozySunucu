@@ -398,6 +398,20 @@ class MinecraftService extends EventEmitter {
         const wasRunning  = this.status === 'running' || this.status === 'starting';
         const wasStopping = this.status === 'stopping';
 
+        this._setStoppedState();
+        this.emit('log', '[System] Sunucu kapandı.');
+
+        if (wasRunning && !wasStopping) {
+            this._handleCrash(-1);
+        }
+    }
+
+    /**
+     * Durumu "stopped"a çeker ve tüm izleyicileri/oturumları temizler.
+     * Çökme/oto-restart TETİKLEMEZ — bu yüzden hem normal kapanış (_onServerExited)
+     * hem de manuel durum tespiti (reconcileStatus) tarafından güvenle çağrılır.
+     */
+    _setStoppedState() {
         this.status       = 'stopped';
         this.players      = [];
         this._javaPid     = null;
@@ -420,11 +434,67 @@ class MinecraftService extends EventEmitter {
         this._stopLogTail();
 
         this.emit('status', this.status);
-        this.emit('log', '[System] Sunucu kapandı.');
+    }
 
-        if (wasRunning && !wasStopping) {
-            this._handleCrash(-1);
+    /**
+     * Panel durumunu OS gerçeğiyle senkronlar — "Durum Tespiti" butonu.
+     *
+     * Çözdüğü sorun: panel bir kez "stopped" sandığında status-watch döngüsü
+     * kendini durdurur; sunucu sonradan (çökme sonrası elle, ya da panelin
+     * gözden kaçırdığı bir süreçle) canlansa bile panel asla fark etmez →
+     * aç/kapat butonu kilitlenir, "kapatılıyor" mesajı takılı kalır.
+     *
+     * Bu metot gerçek süreci yoklar ve paneli ona göre düzeltir:
+     * - Süreç YAŞIYOR ama panel bilmiyorsa → bağlan (running + log/stats/watch)
+     * - Süreç YOK ama panel çalışıyor/kapanıyor sanıyorsa → temizle (stopped)
+     *
+     * @returns {{ before, after, changed, alive, pid, screenRunning }}
+     */
+    reconcileStatus() {
+        const before = this.status;
+        let pid = null;
+        let alive = false;
+
+        if (this._useScreen()) {
+            pid = this._findJavaPid();
+            alive = pid !== null;
+        } else {
+            alive = !!(this.process && this.process.pid && !this.process.killed);
+            pid = alive ? this.process.pid : null;
         }
+
+        if (alive) {
+            this._javaPid = pid;
+            // 'starting' meşru olabilir (log "Done!" görünce running'e geçer) — dokunma.
+            // Ama stopped/error/stopping iken süreç yaşıyorsa panel yanılıyor → düzelt.
+            if (this.status === 'stopped' || this.status === 'error' || this.status === 'stopping') {
+                this.status = 'running';
+                if (!this._startedAt) this._startedAt = this._processStartedAt(pid) || Date.now();
+                this.emit('status', this.status);
+                this._startLogTail(true);
+                this._startStatsTracking();
+                this._startStatusWatch();
+                this.addLog('[System] 🔄 Durum tespiti: çalışan sunucu bulundu, panel senkronlandı.');
+                setTimeout(() => { try { this.sendCommand('list'); } catch { /* ignore */ } }, 1500);
+            } else if (this._useScreen() && !this._statusCheckInterval) {
+                // Zaten running/starting görünüyor ama izleyici durmuşsa yeniden kur
+                this._startStatusWatch();
+            }
+        } else {
+            if (this.status !== 'stopped') {
+                this.addLog('[System] 🔄 Durum tespiti: çalışan süreç yok, durum "durduruldu" olarak düzeltildi.');
+                this._setStoppedState();
+            }
+        }
+
+        return {
+            before,
+            after: this.status,
+            changed: before !== this.status,
+            alive,
+            pid: this._javaPid,
+            screenRunning: this._useScreen() ? this._isScreenRunning() : null,
+        };
     }
 
     /** Çöküm tespiti ve oto-başlatma — her iki platformdan çağrılır */
@@ -1118,6 +1188,14 @@ class MinecraftService extends EventEmitter {
 
     stop() {
         if (this.status === 'stopped') throw new Error('Sunucu zaten durmuş');
+
+        // Panel "çalışıyor" sanıyor ama gerçekte süreç yoksa: 15sn boşa bekleyip
+        // "kapatılıyor"da takılma yerine durumu hemen düzelt (desync onarımı).
+        if (!this._isServerProcessAlive()) {
+            this.addLog('[System] Durdurma istendi ama çalışan süreç bulunamadı — durum düzeltildi.');
+            this._setStoppedState();
+            return;
+        }
 
         this.status = 'stopping';
         this.emit('status', this.status);

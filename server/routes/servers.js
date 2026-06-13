@@ -250,6 +250,21 @@ router.post('/auto-restart', authMiddleware, requireRole('admin'), (req, res) =>
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/servers/:id/reconcile — panel durumunu OS gerçeğiyle senkronla (Durum Tespiti)
+router.post('/:id/reconcile', authMiddleware, requireRole('admin'), (req, res) => {
+    try {
+        const serverRegistry = require('../services/serverRegistry');
+        const inst = serverRegistry.get(parseInt(req.params.id));
+        if (!inst) return res.status(404).json({ error: 'Sunucu bulunamadı' });
+        const result = inst.reconcileStatus();
+        const msg = result.changed
+            ? `Durum düzeltildi: ${result.before} → ${result.after}`
+            : `Durum zaten doğru: ${result.after}`;
+        logAudit(req.user?.username || 'admin', 'sunucu_durum_tespiti', inst._serverConfig?.name || '', req.ip);
+        res.json({ message: msg, ...result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/servers/:id/reset-crash-counter — çöküm döngüsü kilitlendiyse manuel sıfırla
 router.post('/:id/reset-crash-counter', authMiddleware, requireRole('admin'), (req, res) => {
     try {

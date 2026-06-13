@@ -107,6 +107,13 @@ export default function MainLayout() {
         onSuccess: () => { toast.success('Yeniden başlatılıyor...'); qc.invalidateQueries({ queryKey: ['servers-status-topbar'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
     });
+    // Durum Tespiti: panel ile gerçek sunucu durumu uyuşmazsa senkronlar
+    // (çökme sonrası elle açılan / butonun kilitlendiği durumları onarır).
+    const reconcileM = useMutation({
+        mutationFn: () => api.post(`/servers/${server.id}/reconcile`),
+        onSuccess: (res) => { toast.success(res.data?.message || 'Durum senkronlandı'); qc.invalidateQueries({ queryKey: ['servers-status-topbar'] }); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Hata'),
+    });
 
     // Görünür sayfalar (izne göre) + mevcut rota erişim denetimi
     const visiblePages = PAGES.filter(p => pageVisible(p, user, canAccess));
@@ -386,6 +393,12 @@ export default function MainLayout() {
                                 DURUYOR…
                             </span>
                         )}
+                        <button onClick={() => server.id && reconcileM.mutate()}
+                            disabled={!server.id || reconcileM.isPending}
+                            title="Durum Tespiti — panel ile gerçek sunucu durumunu senkronlar (buton kilitlenince kullanın)"
+                            style={{ ...btnGhost, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <I.Restart size={10}/>{reconcileM.isPending ? 'TESPİT…' : 'DURUM TESPİTİ'}
+                        </button>
                     </div>
 
                     <div className="hoodoo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>

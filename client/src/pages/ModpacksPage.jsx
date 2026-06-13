@@ -15,6 +15,16 @@ function formatSize(bytes) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// Ortak form yardımcıları (elle modpack modalları)
+const inputStyle = {
+    background: A.bg, border: `1px solid ${A.border}`,
+    color: A.text, fontFamily: A.sans, fontSize: 13,
+    padding: '9px 10px', borderRadius: 2, width: '100%', outline: 'none',
+};
+function fieldLabel(text) {
+    return <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>{text}</div>;
+}
+
 function formatFileDate(dateStr) {
     if (!dateStr) return '';
     return new Date(dateStr).toLocaleDateString('tr-TR');
@@ -81,6 +91,8 @@ export default function ModpacksPage() {
     const [repairModal, setRepairModal] = useState(null);
     const [repairPolling, setRepairPolling] = useState(false);
     const [terminalHint, setTerminalHint] = useState(null);
+    const [createManualOpen, setCreateManualOpen] = useState(false);
+    const [manualPackModal, setManualPackModal] = useState(null); // yönetilen elle paket
     const queryClient = useQueryClient();
     const navigate = useNavigate();
 
@@ -267,6 +279,18 @@ export default function ModpacksPage() {
         else activateMutation.mutate(modpack.id);
     };
 
+    const createManualMutation = useMutation({
+        mutationFn: (name) => api.post('/modpacks/manual', { name }).then(r => r.data),
+        onSuccess: (data) => {
+            toast.success(data.message || 'Profil oluşturuldu');
+            setCreateManualOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+            // Oluşturulan profili hemen dosya yönetimi modalında aç
+            setManualPackModal({ id: data.id, name: data.name });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Profil oluşturulamadı'),
+    });
+
     const checkUpdatesMutation = useMutation({
         mutationFn: () => api.post('/modpacks/check-updates').then(r => r.data),
         onSuccess: (data) => {
@@ -372,6 +396,10 @@ export default function ModpacksPage() {
                 )}
                 {activeTab === 'installed' && (
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button onClick={() => setCreateManualOpen(true)}
+                            style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                            <I.Plus size={11}/> ELLE OLUŞTUR
+                        </button>
                         <button onClick={() => checkUpdatesMutation.mutate()} disabled={checkUpdatesMutation.isPending}
                             style={{ ...btnGhost, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
                             {checkUpdatesMutation.isPending ? <Spinner size={11}/> : <I.Download size={11}/>} GÜNCELLEME DENETLE
@@ -569,6 +597,7 @@ export default function ModpacksPage() {
                             onChangeVersion={() => openUpdateVersionModal(modpack)}
                             onValidate={() => openValidationModal(modpack)}
                             onOpenTerminal={() => openTerminalForInstall(modpack.install_path)}
+                            onManageFiles={() => setManualPackModal({ id: modpack.id, name: modpack.name })}
                             installing={installMutation.isPending}
                             uninstalling={uninstallMutation.isPending}
                             activating={activateMutation.isPending}
@@ -597,6 +626,21 @@ export default function ModpacksPage() {
                     onClose={() => setEditingModpack(null)}
                     onSave={(settings) => updateSettingsMutation.mutate({ id: editingModpack.id, settings })}
                     saving={updateSettingsMutation.isPending}
+                />
+            )}
+
+            {createManualOpen && (
+                <CreateManualModal
+                    onClose={() => setCreateManualOpen(false)}
+                    onCreate={(name) => createManualMutation.mutate(name)}
+                    creating={createManualMutation.isPending}
+                />
+            )}
+
+            {manualPackModal && (
+                <ManualPackModal
+                    pack={manualPackModal}
+                    onClose={() => { setManualPackModal(null); queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] }); }}
                 />
             )}
 
@@ -671,7 +715,8 @@ export default function ModpacksPage() {
 }
 
 // ── Modpack kartı ────────────────────────────────────────────────────────
-function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, onOpenTerminal, installing, uninstalling, activating }) {
+function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, onSettings, onActivate, onChangeVersion, onValidate, onOpenTerminal, onManageFiles, installing, uninstalling, activating }) {
+    const isManual = modpack.provider === 'manual';
     return (
         <div style={{
             background: A.panel,
@@ -759,6 +804,12 @@ function ModpackCard({ modpack, isInstalled, isActive, onInstall, onUninstall, o
                             <button onClick={onActivate} disabled={activating}
                                 style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
                                 <I.Play size={10}/> AKTİF YAP
+                            </button>
+                        )}
+                        {isManual && (
+                            <button onClick={onManageFiles}
+                                style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '5px 10px' }}>
+                                <I.Download size={10}/> DOSYA EKLE
                             </button>
                         )}
                         <button onClick={onValidate}
@@ -968,6 +1019,138 @@ function MissingModsChip({ modpackId }) {
                 </Modal>
             )}
         </>
+    );
+}
+
+// ── Elle modpack oluştur (isim) ─────────────────────────────────────────────
+function CreateManualModal({ onClose, onCreate, creating }) {
+    const [name, setName] = useState('');
+    return (
+        <Modal onClose={onClose} maxWidth={440}>
+            <ModalHeader title="Elle Modpack Oluştur" onClose={onClose}/>
+            <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 12, color: A.faint, lineHeight: 1.5 }}>
+                    Boş bir modpack profili oluşturun. Sonra "Dosya Ekle" ile zip, server.jar,
+                    mod veya config yükleyin — sistem dosyaları otomatik yerleştirir.
+                </div>
+                <div>
+                    {fieldLabel('Modpack Adı')}
+                    <input type="text" value={name} autoFocus
+                        onChange={e => setName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onCreate(name.trim()); }}
+                        placeholder="Örn: Özel Survival Paketi" style={inputStyle}/>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                <button onClick={onClose} style={{ ...btnGhost, flex: 1 }}>İPTAL</button>
+                <button onClick={() => name.trim() && onCreate(name.trim())} disabled={!name.trim() || creating}
+                    style={{ ...btnPrimary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: !name.trim() ? 0.5 : 1 }}>
+                    {creating ? <Spinner size={12}/> : <I.Plus size={12}/>} OLUŞTUR
+                </button>
+            </div>
+        </Modal>
+    );
+}
+
+// ── Elle modpack dosya yönetimi (yükle + çalıştırılabilir yap) ──────────────
+function ManualPackModal({ pack, onClose }) {
+    const queryClient = useQueryClient();
+    const [uploading, setUploading] = useState(false);
+    const { data: files } = useQuery({
+        queryKey: ['manualFiles', pack.id],
+        queryFn: () => api.get(`/modpacks/${pack.id}/files-list`).then(r => r.data),
+        refetchInterval: uploading ? 1500 : false,
+    });
+
+    const uploadMutation = useMutation({
+        mutationFn: (file) => {
+            const fd = new FormData();
+            fd.append('file', file);
+            return api.post(`/modpacks/${pack.id}/files/upload`, fd).then(r => r.data);
+        },
+        onSuccess: (res) => {
+            toast.success(res.message || 'Yüklendi');
+            queryClient.invalidateQueries({ queryKey: ['manualFiles', pack.id] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Yükleme başarısız'),
+    });
+
+    const makeRunnableMutation = useMutation({
+        mutationFn: () => api.post(`/modpacks/${pack.id}/make-runnable`).then(r => r.data),
+        onSuccess: (res) => {
+            toast.success(res.message || 'Çalıştırılabilir hale getirildi', { duration: 6000 });
+            queryClient.invalidateQueries({ queryKey: ['manualFiles', pack.id] });
+            queryClient.invalidateQueries({ queryKey: ['modpackInstalled'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'İşlem başarısız'),
+    });
+
+    // Birden çok dosyayı sırayla yükle (büyük zip'lerde paralel yükleme riskli)
+    const handleFiles = async (fileList) => {
+        const arr = Array.from(fileList);
+        if (arr.length === 0) return;
+        setUploading(true);
+        for (const f of arr) {
+            try { await uploadMutation.mutateAsync(f); } catch { /* tekil hata toast'landı */ }
+        }
+        setUploading(false);
+    };
+
+    const rootFiles = files?.root || [];
+    const modFiles = files?.mods || [];
+
+    return (
+        <Modal onClose={onClose} maxWidth={620}>
+            <ModalHeader title={`Dosya Yönetimi — ${pack.name}`} onClose={onClose}/>
+            <div style={{ padding: 16, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Yükleme alanı */}
+                <label style={{
+                    border: `1.5px dashed ${A.border}`, borderRadius: 4, padding: '20px 16px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    cursor: uploading ? 'wait' : 'pointer', textAlign: 'center',
+                }}>
+                    {uploading ? <Spinner size={18}/> : <I.Download size={18} style={{ color: 'var(--accent)' }}/>}
+                    <div style={{ fontSize: 12.5, color: A.text }}>
+                        {uploading ? 'Yükleniyor…' : 'Dosya seç veya sürükle — zip / server.jar / mod / config'}
+                    </div>
+                    <div style={{ fontSize: 11, color: A.faint }}>
+                        Sistem türü algılayıp doğru yere koyar (zip açılır, mod → mods/, jar → kök)
+                    </div>
+                    <input type="file" multiple style={{ display: 'none' }} disabled={uploading}
+                        onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}/>
+                </label>
+
+                {/* Dosya listesi */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                        <Cap style={{ fontSize: 10 }}>Kök ({rootFiles.length})</Cap>
+                        <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {rootFiles.length === 0 ? <span style={{ fontSize: 11, color: A.faintest }}>boş</span>
+                                : rootFiles.map((f, i) => (
+                                    <div key={i} style={{ fontFamily: A.mono, fontSize: 10.5, color: A.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</div>
+                                ))}
+                        </div>
+                    </div>
+                    <div>
+                        <Cap style={{ fontSize: 10 }}>mods/ ({modFiles.length})</Cap>
+                        <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {modFiles.length === 0 ? <span style={{ fontSize: 11, color: A.faintest }}>boş</span>
+                                : modFiles.map((f, i) => (
+                                    <div key={i} style={{ fontFamily: A.mono, fontSize: 10.5, color: A.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</div>
+                                ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${A.border}` }}>
+                <button onClick={onClose} style={{ ...btnGhost, flex: 1 }}>KAPAT</button>
+                <button onClick={() => makeRunnableMutation.mutate()} disabled={makeRunnableMutation.isPending || uploading}
+                    title="Yüklenen dosyaları tespit edip Java/loader/script ile başlatılabilir hale getirir"
+                    style={{ ...btnPrimary, flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    {makeRunnableMutation.isPending ? <Spinner size={12}/> : <I.Play size={12}/>} ÇALIŞTIRILABİLİR YAP
+                </button>
+            </div>
+        </Modal>
     );
 }
 
