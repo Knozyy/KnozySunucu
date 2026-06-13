@@ -66,6 +66,31 @@ class AttributionProbe {
     }
 
     /**
+     * Bir koordinatın sahip etiketini DURUMSAL belirler (kullanıcı mantığı):
+     *   1) Claim sahibi takımın ONLINE üyeleri → base'in sorumlusu onlardır
+     *      (başka takımdan ziyaretçi o an base'de olsa bile lag ona yazılmaz).
+     *   2) Takımda online üye yoksa → o noktada FİZİKSEL duran oyuncu
+     *      (ziyaretçi/tetikleyici); kimse yoksa…
+     *   3) …takım adı (offline base) / claimsiz koordinatta null (wild).
+     * @param ownerResult ftbChunks.ownerAt çıktısı ({ team, owner, owners[] }) | null
+     * @param playerPositions { nick: { x?, z?, dim? } } — Object.keys = online oyuncular
+     */
+    ownerLabel(ownerResult, playerPositions, dim, x, z) {
+        const onlineNicks = new Set(Object.keys(playerPositions || {}).map(n => String(n).toLowerCase()));
+        const o = ownerResult;
+        // 1) Claim sahibi takımın online üyeleri
+        if (o && o.owners && o.owners.length) {
+            const teamOnline = this._joinNames(o.owners.filter(n => onlineNicks.has(String(n).toLowerCase())));
+            if (teamOnline) return teamOnline;
+        }
+        // 2) Takımda online yok → o noktaya fiziksel yakın oyuncu
+        const nearby = this.nearestOnlinePlayers(playerPositions, dim, x, z);
+        if (nearby) return nearby;
+        // 3) Takım adı (offline base) veya wild (null)
+        return o && o.owner ? o.owner : null;
+    }
+
+    /**
      * Online oyuncuların X/Z/dim konumlarını sunucudan toplar
      * (`data get entity <nick> Pos|Dimension` → log parse). Lag atfını fiziksel
      * konuma dayandırmak için tarama anında çağrılır. Komut/erişim yoksa {} döner.
@@ -75,6 +100,9 @@ class AttributionProbe {
         const players = (mc && mc.players) || [];
         if (!players.length || typeof mc.sendCommand !== 'function') return Promise.resolve({});
         const positions = {};
+        // Tüm online oyuncuları key olarak başlat: konum gelmese de takım-üye
+        // eşlemesi için "online mı?" bilgisi (Object.keys) kullanılabilsin.
+        for (const nick of players) positions[nick] = {};
         const posRe = /(\w{1,16}) has the following entity data: \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]/;
         const dimRe = /(\w{1,16}) has the following entity data: "([a-z0-9_:]+)"/i;
         return new Promise((resolve) => {
@@ -115,12 +143,8 @@ class AttributionProbe {
         }
         const total = hotspots.reduce((s, h) => s + h.rate, 0) || 1;
         const resolve = ownerAt || ((dim, x, z) => {
-            // 1) Fiziksel olarak yakın online oyuncu — en doğru sinyal (ally base'i ayrışır)
-            const nearby = this.nearestOnlinePlayers(playerPositions, dim, x, z);
-            if (nearby) return nearby;
-            // 2) Fallback: FTB claim takım adı (sahip uzakta/offline ise makineye atfet)
             const o = ftbChunks.ownerAt(serverPath, dim, x, z);
-            return o && o.owner ? o.owner : null;
+            return this.ownerLabel(o, playerPositions, dim, x, z);
         });
         const ownerOf = (h) => (h.x == null || h.z == null) ? null : resolve(h.dim, h.x, h.z);
 

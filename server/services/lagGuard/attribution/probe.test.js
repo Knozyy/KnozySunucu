@@ -57,6 +57,30 @@ test('_joinNames: benzersizleştirir ve uzun listeyi kısaltır', () => {
     assert.equal(probe._joinNames([]), null);
 });
 
+test('ownerLabel: durumsal atıf (takım online → fiziksel → takım adı)', () => {
+    const team = { team: 'uuid', owner: 'KiviTakım', owners: ['kivilipvp_real', 'vantedevs'] };
+
+    // 1) Takım üyesi (kivilipvp_real) online iken ZİYARETÇİ base'de olsa bile suçlu takım üyesi
+    const posWithVisitor = {
+        kivilipvp_real: { x: 100, z: 100, dim: 'minecraft:overworld' },
+        ziyaretci:      { x: 100, z: 100, dim: 'minecraft:overworld' },
+    };
+    assert.equal(probe.ownerLabel(team, posWithVisitor, 'minecraft:overworld', 100, 100), 'kivilipvp_real');
+
+    // 2) Takımda kimse online değil, ama ziyaretçi base'de → ziyaretçi (o chunk'taki kişi)
+    const posOnlyVisitor = { ziyaretci: { x: 100, z: 100, dim: 'minecraft:overworld' } };
+    assert.equal(probe.ownerLabel(team, posOnlyVisitor, 'minecraft:overworld', 100, 100), 'ziyaretci');
+
+    // 3) Takım offline + kimse yakında yok → takım adı (offline base)
+    const posFar = { biri: { x: 9000, z: 9000, dim: 'minecraft:overworld' } };
+    assert.equal(probe.ownerLabel(team, posFar, 'minecraft:overworld', 100, 100), 'KiviTakım');
+
+    // 4) Claimsiz (wild) koordinat + yakın oyuncu → o oyuncu
+    assert.equal(probe.ownerLabel(null, posOnlyVisitor, 'minecraft:overworld', 100, 100), 'ziyaretci');
+    // 5) Claimsiz + kimse yok → null (wild, kimseye yazılmaz)
+    assert.equal(probe.ownerLabel(null, posFar, 'minecraft:overworld', 100, 100), null);
+});
+
 test('attributeProfile v2: makine/canlı ayrımı + bütçe yüzdesi', () => {
     const r = probe.attributeProfile(profileJson(), null, fakeOwnerAt);
     assert.equal(r.v, 2);
