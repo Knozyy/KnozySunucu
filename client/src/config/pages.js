@@ -20,7 +20,6 @@ export const PAGES = [
     { key: 'modpacks',    path: '/modpacks',   label: 'Modpackler',   emoji: '📦', icon: I.Cube },
     { key: 'mods',        path: '/mods',       label: 'Modlar',       emoji: '🧩', icon: I.Stack },
     { key: 'scheduler',   path: '/scheduler',  label: 'Zamanlayıcı',  emoji: '⏰', icon: I.Clock },
-    { key: 'automation',  path: '/automation', label: 'Otomasyon',    emoji: '🤖', icon: I.Power },
     { key: 'backup',      path: '/backup',     label: 'Yedek',        emoji: '💾', icon: I.Archive },
     { key: 'discord',     path: '/discord',    label: 'Discord Bot',  emoji: '🎮', icon: I.Chat },
     { key: 'lagguard',    path: '/lag-guard',  label: 'Lag Koruması', emoji: '🛡️', icon: I.Signal },

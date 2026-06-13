@@ -183,33 +183,6 @@ class DiscordBotService {
         this._writeJson('rcon_queue.json', []);
     }
 
-    // ── Status messages ───────────────────────────────────────────────────────
-
-    getStatusMessages() {
-        return this._readJson('status_messages.json', {});
-    }
-
-    saveStatusMessages(data) {
-        this._writeJson('status_messages.json', data);
-    }
-
-    addStatusMessage(serverName, message) {
-        const data = this.getStatusMessages();
-        if (!data[serverName]) data[serverName] = [];
-        data[serverName].push(message);
-        this.saveStatusMessages(data);
-        return data[serverName].length - 1;
-    }
-
-    removeStatusMessage(serverName, index) {
-        const data = this.getStatusMessages();
-        if (!data[serverName]) throw new Error('Sunucu adı bulunamadı');
-        if (index < 0 || index >= data[serverName].length) throw new Error('Geçersiz indeks');
-        const removed = data[serverName].splice(index, 1)[0];
-        this.saveStatusMessages(data);
-        return removed;
-    }
-
     // ── Dashboard config ──────────────────────────────────────────────────────
 
     getDashboardConfig() {

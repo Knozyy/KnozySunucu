@@ -13,7 +13,6 @@ export const PAGES = [
     { id: 'page-backup',      label: 'Yedekleme',    description: 'Sunucu yedekleri',        path: '/backup',      icon: 'Archive'   },
     { id: 'page-settings',    label: 'Ayarlar',      description: 'Sunucu ayarları',         path: '/settings',    icon: 'Cog'       },
     { id: 'page-discord',     label: 'Discord',      description: 'Discord entegrasyonu',    path: '/discord',     icon: 'Globe'     },
-    { id: 'page-automation',  label: 'Otomasyon',    description: 'Otomasyon kuralları',     path: '/automation',  icon: 'Wrench'    },
     { id: 'page-performance', label: 'Performans',   description: 'CPU / RAM izleme',        path: '/performance', icon: 'Signal'    },
     { id: 'page-lagguard',    label: 'Lag Koruması', description: 'TPS/MSPT izleme & throttle', path: '/lag-guard', icon: 'Signal'    },
     { id: 'page-vip',         label: 'VIP',          description: 'VIP paket & üyelik yönetimi', path: '/vip',     icon: 'Crown'     },

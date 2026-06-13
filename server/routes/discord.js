@@ -437,41 +437,6 @@ router.post('/sync-whitelist-to-mc', authMiddleware, requireRole('admin'), async
     }
 });
 
-// ── Status messages ───────────────────────────────────────────────────────────
-
-// GET /api/discord/status-messages
-router.get('/status-messages', authMiddleware, (req, res) => {
-    try {
-        res.json({ messages: discordBotService.getStatusMessages() });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// POST /api/discord/status-messages
-router.post('/status-messages', authMiddleware, requireRole('admin'), (req, res) => {
-    try {
-        const { serverName, message } = req.body;
-        if (!serverName || !message) return res.status(400).json({ error: 'serverName ve message gerekli' });
-        discordBotService.addStatusMessage(serverName.trim(), message.trim());
-        res.json({ message: 'Mesaj eklendi' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// DELETE /api/discord/status-messages — serverName + index ile sil
-router.delete('/status-messages', authMiddleware, requireRole('admin'), (req, res) => {
-    try {
-        const { serverName, index } = req.body;
-        if (!serverName || index === undefined) return res.status(400).json({ error: 'serverName ve index gerekli' });
-        const removed = discordBotService.removeStatusMessage(serverName, parseInt(index));
-        res.json({ message: 'Mesaj silindi', removed });
-    } catch (e) {
-        res.status(400).json({ error: e.message });
-    }
-});
-
 // ── Webhook Bildirimleri ──────────────────────────────────────────────────────
 
 const webhookService = require('../services/webhookService');

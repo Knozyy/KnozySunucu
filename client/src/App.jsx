@@ -19,7 +19,6 @@ import WorldsPage from '@/pages/WorldsPage';
 import SchedulerPage from '@/pages/SchedulerPage';
 import TerminalPage from '@/pages/TerminalPage';
 import DiscordPage from '@/pages/DiscordPage';
-import AutomationPage from '@/pages/AutomationPage';
 import PerformancePage from '@/pages/PerformancePage';
 import LagGuardPage from '@/pages/LagGuardPage';
 import VipPage from '@/pages/VipPage';
@@ -89,7 +88,6 @@ function AppInner() {
           <Route path="backup" element={<BackupPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="discord" element={<DiscordPage />} />
-          <Route path="automation" element={<AutomationPage />} />
           <Route path="performance" element={<PerformancePage />} />
           <Route path="lag-guard" element={<LagGuardPage />} />
           <Route path="vip" element={<VipPage />} />

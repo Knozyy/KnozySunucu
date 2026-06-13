@@ -262,11 +262,6 @@ export default function DiscordPage() {
         refetchInterval: activeTab === 'rcon-queue' ? 15000 : false,
     });
 
-    const { data: statusMsgData, isLoading: statusMsgLoading } = useQuery({
-        queryKey: ['discord-status-messages'],
-        queryFn: () => api.get('/discord/status-messages').then(r => r.data),
-        enabled: activeTab === 'status-messages',
-    });
 
     const { data: historyData } = useQuery({
         queryKey: ['discord-history'],
@@ -334,16 +329,6 @@ export default function DiscordPage() {
         onSuccess: () => { toast.success('RCON kuyruğu temizlendi.'); queryClient.invalidateQueries({ queryKey: ['discord-rcon-queue'] }); },
         onError: (e) => toast.error(e.response?.data?.error || 'Temizlenemedi'),
     });
-    const addStatusMsgMutation = useMutation({
-        mutationFn: ({ serverName, message }) => api.post('/discord/status-messages', { serverName, message }),
-        onSuccess: () => { toast.success('Mesaj eklendi.'); queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] }); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Eklenemedi'),
-    });
-    const delStatusMsgMutation = useMutation({
-        mutationFn: ({ serverName, index }) => api.delete('/discord/status-messages', { data: { serverName, index } }),
-        onSuccess: () => { toast.success('Mesaj silindi.'); queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] }); },
-        onError: (e) => toast.error(e.response?.data?.error || 'Silinemedi'),
-    });
 
     // ── Filtered whitelist ────────────────────────────────────────────────────
 
@@ -371,7 +356,6 @@ export default function DiscordPage() {
         { key: 'timed-roles',     label: 'Süreli Roller',    icon: I.Clock },
         { key: 'donations',       label: 'Bağış Sistemi',    icon: I.Heart },
         { key: 'rcon-queue',      label: 'RCON Kuyruğu',     icon: I.Stack },
-        { key: 'status-messages', label: 'Durum Mesajları',  icon: I.Chat },
         { key: 'night-guard',     label: 'Gece Koruması',    icon: I.Alert },
         { key: 'webhook',         label: 'Webhook',          icon: I.Send },
         { key: 'settings',        label: 'Ayarlar (Bot Yetki & Kanallar)', icon: I.Cog },
@@ -686,12 +670,6 @@ export default function DiscordPage() {
                     onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-rcon-queue'] })}/>
             )}
 
-            {/* ══ Durum Mesajları ══ */}
-            {activeTab === 'status-messages' && (
-                <StatusMessagesTab statusMsgData={statusMsgData} statusMsgLoading={statusMsgLoading}
-                    addStatusMsgMutation={addStatusMsgMutation} delStatusMsgMutation={delStatusMsgMutation}
-                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['discord-status-messages'] })}/>
-            )}
 
             {/* ══ Gece Koruması ══ */}
             {activeTab === 'night-guard' && <NightGuardTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
@@ -1518,77 +1496,6 @@ function RconQueueTab({ queueData, queueLoading, clearQueueMutation, onRefresh }
                             {item.attempts !== undefined && <span>Deneme: {item.attempts}</span>}
                             {item.timestamp && <span>{new Date(item.timestamp).toLocaleString('tr-TR')}</span>}
                         </div>
-                    </div>
-                ))}
-            </div>
-        </>
-    );
-}
-
-// ── Durum Mesajları ──────────────────────────────────────────────────────────
-
-function StatusMessagesTab({ statusMsgData, statusMsgLoading, addStatusMsgMutation, delStatusMsgMutation, onRefresh }) {
-    const messages = statusMsgData?.messages || {};
-    const serverNames = Object.keys(messages);
-    const [serverName, setServerName] = useState('');
-    const [newMsg, setNewMsg] = useState('');
-
-    const effectiveServer = serverName.trim() || (serverNames[0] || '');
-
-    return (
-        <>
-            <div style={{ ...card, padding: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: A.text, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <I.Chat size={13} style={{ color: A.faint }}/>Dönen Durum Mesajları
-                    </div>
-                    <button onClick={onRefresh} style={btnGhost}><I.Restart size={11}/></button>
-                </div>
-                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
-                    Bot her 15 saniyede bu mesajlar arasında geçiş yapar. Aktif oyuncu sayısı da dahil edilir.
-                </p>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <input type="text" value={serverName} onChange={e => setServerName(e.target.value)}
-                        placeholder={serverNames[0] || "Sunucu adı (config.py'deki)"}
-                        style={{ ...inputStyle, width: 160 }}/>
-                    <input type="text" value={newMsg} onChange={e => setNewMsg(e.target.value)}
-                        placeholder="Yeni durum mesajı..."
-                        style={{ ...inputStyle, flex: 1, minWidth: 200, fontFamily: A.sans }}
-                        onKeyDown={e => { if (e.key === 'Enter' && effectiveServer && newMsg) addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') }); }}/>
-                    <button onClick={() => addStatusMsgMutation.mutate({ serverName: effectiveServer, message: newMsg }, { onSuccess: () => setNewMsg('') })}
-                        disabled={addStatusMsgMutation.isPending || !effectiveServer || !newMsg.trim()}
-                        style={btnPrimary}>
-                        <I.Plus size={11} style={{ marginRight: 4, verticalAlign: -1 }}/>
-                        {addStatusMsgMutation.isPending ? 'EKLE...' : 'EKLE'}
-                    </button>
-                </div>
-            </div>
-
-            <div style={card}>
-                {statusMsgLoading ? (
-                    <div style={{ padding: 32, textAlign: 'center', color: A.faint, fontSize: 12 }}>Yükleniyor...</div>
-                ) : serverNames.length === 0 ? (
-                    <div style={{ padding: 40, textAlign: 'center', color: A.faint }}>
-                        <I.Chat size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
-                        <p style={{ margin: 0, fontSize: 12 }}>Durum mesajı yok. Yukarıdan ekleyebilirsiniz.</p>
-                    </div>
-                ) : serverNames.map(srv => (
-                    <div key={srv}>
-                        <div style={{
-                            padding: '8px 16px', background: A.bgDeeper, borderBottom: `1px solid ${A.border}`,
-                        }}>
-                            <Cap style={{ fontFamily: A.mono }}>{srv}</Cap>
-                        </div>
-                        {(messages[srv] || []).map((msg, idx) => (
-                            <Row key={idx} last={idx === messages[srv].length - 1}>
-                                <span style={{ fontSize: 10.5, color: A.faint, fontFamily: A.mono, width: 20 }}>{idx + 1}.</span>
-                                <span style={{ flex: 1, fontSize: 12, color: A.text }}>{msg}</span>
-                                <button onClick={() => delStatusMsgMutation.mutate({ serverName: srv, index: idx })}
-                                    style={{ ...btnGhost, padding: '4px 8px', color: A.err, borderColor: 'rgba(248,113,113,0.25)' }}>
-                                    <I.Trash size={11}/>
-                                </button>
-                            </Row>
-                        ))}
                     </div>
                 ))}
             </div>
