@@ -243,6 +243,20 @@ export default function DiscordPage() {
         if (botSettings?.status_text) setStatusTextInput(botSettings.status_text);
     }, [botSettings]);
 
+    // Roller Discord sunucusundan CANLI çekilir (manuel "kayıtlı rol" yerine).
+    // botSettings.savedRoles bu canlı listeyle override edilir; böylece tüm rol
+    // seçicileri (Süreli Roller, Bağış, Ayarlar) gerçek sunucu rollerini gösterir.
+    const { data: liveRolesData } = useQuery({
+        queryKey: ['discord-guild-roles'],
+        queryFn: () => api.get('/vip/roles').then(r => r.data),
+        staleTime: 60000,
+    });
+    const settingsWithRoles = useMemo(() => {
+        const live = liveRolesData?.roles || [];
+        if (!live.length) return botSettings;
+        return { ...botSettings, savedRoles: live };
+    }, [botSettings, liveRolesData]);
+
     const { data: wlData, isLoading: wlLoading } = useQuery({
         queryKey: ['discord-whitelist'],
         queryFn: () => api.get('/discord/whitelist').then(r => r.data),
@@ -657,11 +671,11 @@ export default function DiscordPage() {
                 <TimedRolesTab rolesLoading={rolesLoading} timedRoles={timedRoles}
                     activeRoles={activeRoles} expiredRoles={expiredRoles} now={now}
                     addRoleMutation={addRoleMutation} delRoleMutation={delRoleMutation}
-                    botSettings={botSettings} botSettingsMutation={botSettingsMutation} />
+                    botSettings={settingsWithRoles} botSettingsMutation={botSettingsMutation} />
             )}
 
             {/* ══ Bağış Sistemi ══ */}
-            {activeTab === 'donations' && <DonationsTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
+            {activeTab === 'donations' && <DonationsTab botSettings={settingsWithRoles} botSettingsMutation={botSettingsMutation}/>}
 
             {/* ══ RCON Kuyruğu ══ */}
             {activeTab === 'rcon-queue' && (
@@ -678,7 +692,7 @@ export default function DiscordPage() {
             {activeTab === 'webhook' && <WebhookTab/>}
 
             {/* ══ Ayarlar ══ */}
-            {activeTab === 'settings' && <SettingsTab botSettings={botSettings} botSettingsMutation={botSettingsMutation}/>}
+            {activeTab === 'settings' && <SettingsTab botSettings={settingsWithRoles} botSettingsMutation={botSettingsMutation}/>}
 
             {/* ══ Test İşlemleri ══ */}
             {activeTab === 'test-actions' && <TestActionsTab/>}
