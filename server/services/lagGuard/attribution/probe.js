@@ -29,12 +29,23 @@ class AttributionProbe {
     isBusy() { return this._busy; }
 
     /**
+     * Lag yapan base'in sahip etiketi: takım adı yerine o takımın ONLINE
+     * üyelerini verir (birden fazlaysa "Ahmet-Mehmet"). Çevrimiçi üye yoksa
+     * fallback'e (takım display_name'i) düşer. Eşleştirme büyük/küçük harf duyarsız.
+     */
+    onlineMembersLabel(memberNames, onlinePlayers, fallback = null) {
+        const onlineSet = new Set((onlinePlayers || []).map(p => String(p).toLowerCase()));
+        const online = (memberNames || []).filter(n => onlineSet.has(String(n).toLowerCase()));
+        return online.length ? online.join('-') : (fallback || null);
+    }
+
+    /**
      * Observable JSON'unu sahip/hotspot/tür atıfına çevirir (saf fonksiyon) — v2.
      * v2: görece "toplamın %X'i" YOK; mutlak ms + 50ms tick bütçesi yüzdesi var.
      * Makine (blk) ve canlı (ent) maliyeti ayrı; wild (claimsiz) hiçbir sahibe yazılmaz.
      * @param ownerAt — test için enjekte edilebilir sahip çözücü (dim,x,z) → owner|null
      */
-    attributeProfile(json, serverPath, ownerAt = null) {
+    attributeProfile(json, serverPath, ownerAt = null, onlinePlayers = []) {
         const d = (json && json.data) || {};
         const diag = (json && json.diagnostics) || {};
         const hotspots = [];
@@ -50,7 +61,9 @@ class AttributionProbe {
         const total = hotspots.reduce((s, h) => s + h.rate, 0) || 1;
         const resolve = ownerAt || ((dim, x, z) => {
             const o = ftbChunks.ownerAt(serverPath, dim, x, z);
-            return o && o.owner ? o.owner : null;
+            if (!o) return null;
+            // Takım adı yerine bu base'in takımında ONLINE olan üye(leri) göster
+            return this.onlineMembersLabel(o.owners, onlinePlayers, o.owner);
         });
         const ownerOf = (h) => (h.x == null || h.z == null) ? null : resolve(h.dim, h.x, h.z);
 
@@ -133,8 +146,8 @@ class AttributionProbe {
                 return { ok: false, note: 'Observable veri çekilemedi: ' + e.message, url: prof.url };
             }
 
-            // 3) Atıf
-            const attr = this.attributeProfile(json, serverPath);
+            // 3) Atıf — online oyuncu listesiyle (sahip etiketinde online üyeleri öncele)
+            const attr = this.attributeProfile(json, serverPath, null, (mc && mc.players) || []);
             const ftb = ftbChunks.status(serverPath);
             if (!ftb.available) notes.push('FTB Chunks claim verisi yok → sahipler "claimsiz" görünür. ' + ftb.note);
             else if (!ftb.parsed) notes.push('FTB claim parse edilemedi (format farklı olabilir).');

@@ -27,6 +27,20 @@ function profileJson() {
 // Sahte sahip çözücü: x<100 → Knozy claim'i; diğerleri wild (null)
 const fakeOwnerAt = (dim, x, z) => (x < 100 ? 'Knozy' : null);
 
+test('onlineMembersLabel: takım adı yerine online üyeleri verir (Ahmet-Mehmet)', () => {
+    const members = ['Ahmet', 'Mehmet', 'Veli'];
+    // Ahmet + Mehmet online (büyük/küçük harf duyarsız) → birleştirilir
+    assert.equal(probe.onlineMembersLabel(members, ['ahmet', 'MEHMET'], 'TakımX'), 'Ahmet-Mehmet');
+    // Tek online üye
+    assert.equal(probe.onlineMembersLabel(members, ['Veli'], 'TakımX'), 'Veli');
+    // Hiç online üye yok → takım adına (fallback) düşer
+    assert.equal(probe.onlineMembersLabel(members, ['Zeynep'], 'TakımX'), 'TakımX');
+    // Üye listesi yoksa fallback
+    assert.equal(probe.onlineMembersLabel([], ['Ahmet'], 'TakımX'), 'TakımX');
+    // Online liste boş → fallback
+    assert.equal(probe.onlineMembersLabel(members, [], 'TakımX'), 'TakımX');
+});
+
 test('attributeProfile v2: makine/canlı ayrımı + bütçe yüzdesi', () => {
     const r = probe.attributeProfile(profileJson(), null, fakeOwnerAt);
     assert.equal(r.v, 2);
