@@ -714,7 +714,7 @@ const DEFAULT_DONATION_CONFIG = {
     enabled: false,
     donateListUrl: '',
     publicDonateUrl: '',
-    codePrefix: 'KNZ',
+    codePrefix: 'HOODOO',
     claimTtlHours: 72,
     minNotifyAmount: 50,
     incentivePercent: 0,
@@ -782,7 +782,7 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
                 claimTtlHours: Number(form.claimTtlHours) || 72,
                 minNotifyAmount: Number(form.minNotifyAmount) || 0,
                 incentivePercent: Number(form.incentivePercent) || 0,
-                codePrefix: (form.codePrefix || 'KNZ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'KNZ',
+                codePrefix: (form.codePrefix || 'HOODOO').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'HOODOO',
                 packages: form.packages.map(p => ({
                     ...p,
                     price: Number(p.price) || 0,
@@ -836,10 +836,10 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
                             {fieldHint('Örn. %10 → 30 gün yerine 33 gün verilir.')}
                         </div>
                         <div>
-                            {fieldLabel('Kod Öneki')}
+                            {fieldLabel('Marka Kelimesi')}
                             <input type="text" value={form.codePrefix} onChange={e => set('codePrefix', e.target.value)}
-                                placeholder="KNZ" style={inputStyle}/>
-                            {fieldHint('Bağış mesajındaki kod: ÖNEK-XXXX')}
+                                placeholder="HOODOO" style={inputStyle}/>
+                            {fieldHint('Kod bu kelime + doğal bir takıdan oluşur (örn. "hoodoo kavemi") — satın alma kodu gibi durmaz.')}
                         </div>
                         <div>
                             {fieldLabel('Kod Geçerliliği (saat)')}
