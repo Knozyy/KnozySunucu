@@ -117,7 +117,7 @@ router.get('/online', authMiddleware, (req, res) => {
         // Online oyuncular için playtime özet
         const stmt = db.prepare(`
             SELECT username,
-                   COALESCE(SUM(duration_seconds), 0) AS total_seconds,
+                   COALESCE(SUM(MIN(COALESCE(duration_seconds,0), 86400)), 0) AS total_seconds,
                    COUNT(*) AS session_count
             FROM player_sessions
             WHERE username = ? AND duration_seconds IS NOT NULL
@@ -179,7 +179,7 @@ router.get('/stats', authMiddleware, (req, res) => {
             SELECT
                 username,
                 COUNT(*) AS session_count,
-                SUM(COALESCE(duration_seconds, 0)) AS total_seconds,
+                SUM(MIN(COALESCE(duration_seconds, 0), 86400)) AS total_seconds,
                 MAX(joined_at) AS last_seen
             FROM player_sessions
             GROUP BY username
@@ -227,7 +227,7 @@ router.post('/stats/archive', authMiddleware, requireRole('admin'), (req, res) =
             SELECT
                 username,
                 COUNT(*) AS session_count,
-                SUM(COALESCE(duration_seconds, 0)) AS total_seconds
+                SUM(MIN(COALESCE(duration_seconds, 0), 86400)) AS total_seconds
             FROM player_sessions
             GROUP BY username
         `).all();
@@ -319,7 +319,7 @@ router.get('/profile/:username', authMiddleware, async (req, res) => {
         const sessionStats = db.prepare(`
             SELECT
                 COUNT(*) AS session_count,
-                SUM(COALESCE(duration_seconds, 0)) AS total_seconds,
+                SUM(MIN(COALESCE(duration_seconds, 0), 86400)) AS total_seconds,
                 MIN(joined_at) AS first_seen,
                 MAX(joined_at) AS last_seen
             FROM player_sessions WHERE username = ?

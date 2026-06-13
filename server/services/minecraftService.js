@@ -6,6 +6,14 @@ const { getDb } = require('../db/database');
 const { cleanConsoleLine } = require('../utils/text');
 const { parseLoginIp } = require('../utils/logParse');
 
+// Tek bir oyuncu oturumu gerçekçi olarak 24 saati aşmaz. Aşan değerler
+// "left the game" kaçırılmış / panel restart olmuş kapanmamış oturumlardır;
+// kapatırken bu tavana sıkıştırılır (istatistikleri 70sa/gün gibi bozmasın).
+const MAX_SESSION_SECONDS = 24 * 60 * 60;
+function clampSessionSeconds(ms) {
+    return Math.min(Math.max(0, Math.round(ms / 1000)), MAX_SESSION_SECONDS);
+}
+
 class MinecraftService extends EventEmitter {
     /**
      * @param {Object} serverConfig - DB'deki `servers` kaydı (id zorunlu)
@@ -280,9 +288,17 @@ class MinecraftService extends EventEmitter {
             this.emit('playerJoin', joinMatch[1]); // VIP duyuru/rezerve-slot için
             try {
                 const db = getDb();
+                const now = Date.now();
+                // Aynı oyuncunun kapanmamış önceki oturumu varsa ("left the game"
+                // kaçırılmış / panel restart olmuş olabilir) cap'li kapat — aksi halde
+                // joined_at çok eski kalıp devasa süre üretir (örn. 1 günde 70 saat).
+                const stale = db.prepare('SELECT id, joined_at FROM player_sessions WHERE username = ? AND left_at IS NULL').all(joinMatch[1]);
+                const closeStale = db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?');
+                for (const s of stale) closeStale.run(now, clampSessionSeconds(now - s.joined_at), s.id);
+
                 const ip = this._pendingIp?.[joinMatch[1]] || null;
                 db.prepare('INSERT INTO player_sessions (username, joined_at, ip_address) VALUES (?, ?, ?)')
-                    .run(joinMatch[1], Date.now(), ip);
+                    .run(joinMatch[1], now, ip);
                 if (this._pendingIp) delete this._pendingIp[joinMatch[1]];
             } catch { /* ignore */ }
         }
@@ -297,7 +313,7 @@ class MinecraftService extends EventEmitter {
                 if (open) {
                     const now = Date.now();
                     db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?')
-                        .run(now, Math.round((now - open.joined_at) / 1000), open.id);
+                        .run(now, clampSessionSeconds(now - open.joined_at), open.id);
                 }
             } catch { /* ignore */ }
         }
@@ -396,7 +412,7 @@ class MinecraftService extends EventEmitter {
             const now = Date.now();
             const open = db.prepare('SELECT id, joined_at FROM player_sessions WHERE left_at IS NULL').all();
             const stmt = db.prepare('UPDATE player_sessions SET left_at = ?, duration_seconds = ? WHERE id = ?');
-            for (const s of open) stmt.run(now, Math.round((now - s.joined_at) / 1000), s.id);
+            for (const s of open) stmt.run(now, clampSessionSeconds(now - s.joined_at), s.id);
         } catch { /* ignore */ }
 
         this._stopStatsTracking();

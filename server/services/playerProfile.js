@@ -23,7 +23,7 @@ function findAltAccounts(db, username) {
 function getPlaytimeDaily(db, username) {
   const rows = db.prepare(`
     SELECT CAST(joined_at / 86400000 AS INTEGER) AS day,
-           SUM(COALESCE(duration_seconds,0)) AS seconds
+           SUM(MIN(COALESCE(duration_seconds,0), 86400)) AS seconds
     FROM player_sessions
     WHERE username = ?
     GROUP BY day ORDER BY day ASC
