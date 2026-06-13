@@ -483,18 +483,51 @@ class MinecraftService extends EventEmitter {
         this._scheduleAutoRestart(1);
     }
 
+    /** Sunucu süreci (Java) hâlâ yaşıyor mu? — restart çakışması/zombie önleme. */
+    _isServerProcessAlive() {
+        if (this._useScreen()) return this._findJavaPid() !== null;
+        return !!(this.process && this.process.pid && !this.process.killed);
+    }
+
     /**
-     * Otomatik restart'ı tetikler. Başarısız olursa tekrar dener (max 3 deneme).
+     * Sunucunun TAM kapanmasını bekler: Java süreci ölene (save flush dahil) ve
+     * dünya kilidi serbest kalana kadar. Sabit süre beklemek yerine gerçek durumu
+     * yokladığından "10sn'de save bitmeden yeniden açma → takılma/zombie" sorununu
+     * çözer. Süre dolarsa zombie süreci zorla temizler. Event loop'u bloklamaz.
+     */
+    async _waitForFullStop(maxMs = 120000) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < maxMs) {
+            if (!this._isServerProcessAlive()) break;
+            await new Promise(r => setTimeout(r, 1500));
+        }
+        if (this._isServerProcessAlive()) {
+            // Süre doldu ama hâlâ yaşıyor → takılı/zombie süreç, zorla temizle
+            this.addLog('[AutoRestart] ⚠️ Süreç beklenen sürede kapanmadı — zorla sonlandırılıyor (zombie temizliği, CPU/RAM kurtarma).');
+            this._forceKill();
+            await new Promise(r => setTimeout(r, 3000));
+        }
+        // Son save flush + dünya session.lock'unun serbest kalması için güvenlik payı
+        await new Promise(r => setTimeout(r, 4000));
+        return !this._isServerProcessAlive();
+    }
+
+    /**
+     * Otomatik restart'ı tetikler. Sabit gecikme yerine sunucunun GERÇEKTEN
+     * kapanmasını bekler; başarısız olursa tekrar dener (max 3 deneme).
      */
     _scheduleAutoRestart(attempt) {
         const MAX_ATTEMPTS = 3;
-        const delaySec = attempt === 1 ? 10 : (attempt === 2 ? 20 : 45);
+        this.addLog(`[AutoRestart] 🔄 Sunucunun tam kapanması bekleniyor, sonra başlatılacak (deneme ${attempt}/${MAX_ATTEMPTS})…`);
+        this.emit('log', `[AutoRestart] 🔄 Tam kapanış bekleniyor (deneme ${attempt}/${MAX_ATTEMPTS})…`);
 
-        this.addLog(`[AutoRestart] 🔄 ${delaySec}sn içinde başlatılacak (deneme ${attempt}/${MAX_ATTEMPTS})`);
-        this.emit('log', `[AutoRestart] 🔄 ${delaySec}sn içinde başlatma denemesi ${attempt}/${MAX_ATTEMPTS}…`);
-
-        setTimeout(() => {
+        (async () => {
+            const clean = await this._waitForFullStop();
             if (this._shuttingDown) return;
+            if (!clean || this._isServerProcessAlive()) {
+                this.addLog('[AutoRestart] ❌ Süreç temizlenemedi — restart iptal, manuel müdahale gerekebilir.');
+                return;
+            }
             if (this.status !== 'stopped') {
                 this.addLog(`[AutoRestart] Sunucu durumu '${this.status}' — restart iptal edildi.`);
                 return;
@@ -507,13 +540,13 @@ class MinecraftService extends EventEmitter {
                 this.addLog(`[AutoRestart] ❌ start() başarısız: ${err.message}`);
                 this.emit('log', `[AutoRestart] ❌ start() başarısız (deneme ${attempt}): ${err.message}`);
                 if (attempt < MAX_ATTEMPTS) {
-                    this._scheduleAutoRestart(attempt + 1);
+                    setTimeout(() => this._scheduleAutoRestart(attempt + 1), 15000);
                 } else {
                     const msg = `[AutoRestart] 🔴 ${MAX_ATTEMPTS} deneme başarısız — manuel müdahale gerekiyor.`;
                     this.addLog(msg); this.emit('log', msg);
                 }
             }
-        }, delaySec * 1000);
+        })();
     }
 
     /** Sayaçları sıfırla — manuel start veya admin reset için */
@@ -883,6 +916,12 @@ class MinecraftService extends EventEmitter {
         if (this.status === 'running' || this.status === 'starting') {
             throw new Error('Sunucu zaten çalışıyor');
         }
+        // status 'stopped' görünse bile önceki Java süreci hâlâ kapanıyorsa
+        // (save/lock) yeni süreç başlatma — çakışma, takılma, modpack'in kendini
+        // açması ve zombie CPU/RAM israfını önler.
+        if (this._isServerProcessAlive()) {
+            throw new Error('Önceki sunucu süreci hâlâ kapanıyor — birkaç saniye sonra tekrar deneyin');
+        }
         // Yeni modpack/yapılandırma uygulanmış olabilir — önbelleği tazele
         this._invalidateInfoCache();
 
@@ -1145,9 +1184,12 @@ class MinecraftService extends EventEmitter {
                 if (status !== 'stopped') return;
                 this.off('status', onStatus);
                 if (timer) { clearTimeout(timer); timer = null; }
-                setTimeout(() => {
+                // Sabit 2sn yerine Java'nın gerçekten ölmesini + dünya kilidinin
+                // serbest kalmasını bekle (save tamamlanmadan açıp takılmasın).
+                (async () => {
+                    await this._waitForFullStop();
                     try { this.start(); resolve(); } catch (err) { reject(err); }
-                }, 2000);
+                })();
             };
             this.on('status', onStatus);
 
