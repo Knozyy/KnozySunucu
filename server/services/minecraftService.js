@@ -79,8 +79,19 @@ class MinecraftService extends EventEmitter {
             const serverPath = this.getServerPath();
             // Sunucu yoluna göre ara — her sunucu kendi path'inden tanınır
             const result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-            const pids = result.split('\n').filter(Boolean).map(Number);
-            return pids.length > 0 ? pids[0] : null;
+            const pids = result.split('\n').filter(Boolean).map(Number).filter(Number.isFinite);
+            if (!pids.length) return null;
+            // KRİTİK: yalnızca GERÇEK java sürecini kabul et. screen/bash/tail gibi
+            // serverPath'i komut satırında taşıyan yardımcı süreçler de pgrep'e takılır;
+            // bunlar java ölse de "süreç hâlâ yaşıyor" yanılgısı verip kapanma/restart'ı
+            // sonsuza dek takıyordu. comm == java filtresi bunu keser.
+            for (const pid of pids) {
+                try {
+                    const comm = execSync(`ps -o comm= -p ${pid} 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+                    if (/^java/i.test(comm)) return pid;
+                } catch { /* ignore */ }
+            }
+            return null;
         } catch { return null; }
     }
 
