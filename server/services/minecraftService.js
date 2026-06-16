@@ -77,10 +77,47 @@ class MinecraftService extends EventEmitter {
     _findJavaPid() {
         try {
             const serverPath = this.getServerPath();
-            // Sunucu yoluna göre ara — her sunucu kendi path'inden tanınır
+            
+            // Eğer screen kullanılıyorsa, screen ismi ile java sürecini recursive olarak bulmaya çalış
+            if (this._useScreen()) {
+                try {
+                    const screenNameEscaped = this._screenName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const screenCmd = `screen -ls | grep -E "\\.${screenNameEscaped}\\s" | awk '{print $1}' | cut -d. -f1`;
+                    const screenPidStr = execSync(screenCmd, { encoding: 'utf8', timeout: 3000 }).trim();
+                    const screenPid = parseInt(screenPidStr, 10);
+                    
+                    if (screenPid && !isNaN(screenPid)) {
+                        const findJavaChild = (parentPid) => {
+                            try {
+                                const childrenOut = execSync(`pgrep -P ${parentPid} || true`, { encoding: 'utf8' }).trim();
+                                if (!childrenOut) return null;
+                                const childPids = childrenOut.split('\n').map(Number).filter(Number.isFinite);
+                                
+                                for (const childPid of childPids) {
+                                    const comm = execSync(`ps -o comm= -p ${childPid} 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+                                    if (/^java/i.test(comm)) {
+                                        return childPid;
+                                    }
+                                    const grandChild = findJavaChild(childPid);
+                                    if (grandChild) return grandChild;
+                                }
+                            } catch { /* ignore */ }
+                            return null;
+                        };
+                        
+                        const javaPid = findJavaChild(screenPid);
+                        if (javaPid) return javaPid;
+                    }
+                } catch (screenErr) {
+                    console.error('[MinecraftService] Screen child process lookup failed:', screenErr.message);
+                }
+            }
+
+            // Fallback: Eski pgrep -f yöntemi — her sunucu kendi path'inden tanınır
             const result = execSync(`pgrep -f "${serverPath}" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
             const pids = result.split('\n').filter(Boolean).map(Number).filter(Number.isFinite);
             if (!pids.length) return null;
+            
             // KRİTİK: yalnızca GERÇEK java sürecini kabul et. screen/bash/tail gibi
             // serverPath'i komut satırında taşıyan yardımcı süreçler de pgrep'e takılır;
             // bunlar java ölse de "süreç hâlâ yaşıyor" yanılgısı verip kapanma/restart'ı
