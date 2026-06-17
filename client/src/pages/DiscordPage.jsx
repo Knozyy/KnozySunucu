@@ -1253,9 +1253,27 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
     const [form, setForm] = useState({ user_id: '', guild_id: '', role_id: '', durationDays: '', durationHours: '' });
     const [showForm, setShowForm] = useState(false);
 
-    // Roller artık Discord sunucusundan canlı geliyor (manuel kayıt kaldırıldı)
+    // Canlı sunucu listesini çek
+    const { data: liveGuildsData } = useQuery({
+        queryKey: ['discord-live-guilds'],
+        queryFn: () => api.get('/discord/guilds').then(r => r.data),
+        enabled: showForm, // Sadece form açıkken çeksin
+    });
+    const liveGuilds = liveGuildsData?.guilds || [];
+
+    // Seçilen sunucunun canlı rollerini çek
+    const { data: liveRolesData } = useQuery({
+        queryKey: ['discord-live-roles', form.guild_id],
+        queryFn: () => api.get(`/discord/guilds/${form.guild_id}/roles`).then(r => r.data),
+        enabled: !!form.guild_id,
+    });
+    const liveRoles = liveRolesData?.roles || [];
+
     const savedGuilds = botSettings?.savedGuilds || [];
     const savedRoles = botSettings?.savedRoles || [];
+
+    const guildsList = liveGuilds.length ? liveGuilds : savedGuilds;
+    const rolesList = liveRoles.length ? liveRoles : (form.guild_id ? [] : savedRoles);
 
     const handleAdd = () => {
         addRoleMutation.mutate(form, {
@@ -1286,11 +1304,11 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                         <div>
                             <div style={{ fontSize: 10, color: A.faint, marginBottom: 4 }}>Sunucu (Guild) Seçin veya Yazın</div>
                             <div style={{ display: 'flex', gap: 4 }}>
-                                <select style={{ ...inputStyle, flex: 1 }} value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}>
+                                <select style={{ ...inputStyle, flex: 1 }} value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value, role_id: '' }))}>
                                     <option value="">-- Özel ID Girin --</option>
-                                    {savedGuilds.map((g, i) => <option key={i} value={g.id}>{g.name} ({g.id})</option>)}
+                                    {guildsList.map((g, i) => <option key={i} value={g.id}>{g.name} ({g.id})</option>)}
                                 </select>
-                                <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value }))}
+                                <input value={form.guild_id} onChange={e => setForm(f => ({ ...f, guild_id: e.target.value, role_id: '' }))}
                                     style={{ ...inputStyle, flex: 1 }} placeholder="ID yazın"/>
                             </div>
                         </div>
@@ -1299,7 +1317,7 @@ function TimedRolesTab({ rolesLoading, timedRoles, activeRoles, expiredRoles, no
                             <div style={{ display: 'flex', gap: 4 }}>
                                 <select style={{ ...inputStyle, flex: 1 }} value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}>
                                     <option value="">-- Özel ID Girin --</option>
-                                    {savedRoles.map((r, i) => <option key={i} value={r.id}>{r.name} ({r.id})</option>)}
+                                    {rolesList.map((r, i) => <option key={i} value={r.id}>{r.name} ({r.id})</option>)}
                                 </select>
                                 <input value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}
                                     style={{ ...inputStyle, flex: 1 }} placeholder="ID yazın"/>
