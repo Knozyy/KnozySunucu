@@ -573,4 +573,24 @@ router.post('/bot-command', authMiddleware, requireRole('admin'), (req, res) => 
     }
 });
 
+// GET /api/discord/guilds
+router.get('/guilds', authMiddleware, async (req, res) => {
+    try {
+        const guilds = await discordBotService.listGuilds();
+        res.json({ guilds });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/discord/guilds/:guildId/roles
+router.get('/guilds/:guildId/roles', authMiddleware, async (req, res) => {
+    try {
+        const roles = await discordBotService.listGuildRoles(req.params.guildId);
+        res.json({ roles });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 module.exports = router;
