@@ -19,7 +19,7 @@
 | Home sayısı | 10 | 20 | 35 | `ftbessentials.home.max` |
 | Home bekleme (cooldown) | 30 | 10 | 0 | `ftbessentials.home.cooldown` |
 | `/back` | ✓ | ✓ | ✓ | `command.back` |
-| `/rtp` (rastgele ışınla) | — | ✓ | ✓ | `command.rtp` |
+| `/tpr` (rastgele ışınla) | — | ✓ | ✓ | `command.moonlight.tpr` |
 | `/enderchest` | — | — | ✓ | `command.enderchest` |
 | Claim chunk (mutlak toplam) | 750 | 1200 | 2000 | `ftbchunks.max_claimed` |
 | Force-load chunk (mutlak) | 80 | 120 | 200 | `ftbchunks.max_force_loaded` |
@@ -27,12 +27,14 @@
 | Duyuru (verince, 1 kez) | ✓ | ✓ | ✓ | *(panel `say` komutu)* |
 
 > **Çıkarılan perkler (bilerek):** `/tpa`, günlük kit, `/heal` `/feed`, `/fly`. Daha adil bir VIP için dışarıda bırakıldı. İleride istenirse aynı yöntemle eklenir.
+>
+> **Pakete özel not (rastgele ışınla):** Bu modpack'te `command.rtp` (FTB Essentials `/rtp`) **yok**; rastgele ışınlama **Moonlight** modundan `/tpr` ile gelir → node `command.moonlight.tpr`. Panelin hazır **rtp** anahtarı `command.rtp` yazar ve burada işe yaramaz; `command.moonlight.tpr`'yi elle eklemen gerekir (panel şema dışı node'ları korur). Başka bir pakette `/rtp` varsa eski `command.rtp` geçerlidir — kendi `/ftbranks refresh_readme` çıktında hangisi varsa onu kullan.
 
 ---
 
 ## Adım 1 — `ranks.snbt`'ye 3 rütbe ekle (sunucuda, bir kez)
 
-Dosya: **`config/ftbranks/ranks.snbt`**
+Dosya: **`<dünya>/serverconfig/ftbranks/ranks.snbt`** (modern FTB Ranks — dünya save'ine özel, örn. `world/serverconfig/ftbranks/ranks.snbt`). Eski sürümlerde genel **`config/ftbranks/ranks.snbt`** olabilir. Panel her iki yeri de otomatik kontrol eder.
 Mevcut `ranks: { ... }` bloğunun **içine**, varsayılan rütbenin (genelde `player`/`member`) **yanına** aşağıdaki üç bloğu ekle:
 
 ```snbt
@@ -54,7 +56,7 @@ Mevcut `ranks: { ... }` bloğunun **içine**, varsayılan rütbenin (genelde `pl
 		"ftbessentials.home.max": 20
 		"ftbessentials.home.cooldown": 10
 		"command.back": true
-		"command.rtp": true
+		"command.moonlight.tpr": true
 		"ftbchunks.max_claimed": 1200
 		"ftbchunks.max_force_loaded": 120
 	}
@@ -66,7 +68,7 @@ Mevcut `ranks: { ... }` bloğunun **içine**, varsayılan rütbenin (genelde `pl
 		"ftbessentials.home.max": 35
 		"ftbessentials.home.cooldown": 0
 		"command.back": true
-		"command.rtp": true
+		"command.moonlight.tpr": true
 		"command.enderchest": true
 		"ftbchunks.max_claimed": 2000
 		"ftbchunks.max_force_loaded": 200

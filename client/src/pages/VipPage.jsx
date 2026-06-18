@@ -67,13 +67,13 @@ const TIER_PRESETS = [
     },
     {
         rank: 'vip_plus', name: 'VIP+', color: '#2ecc71', duration_days: 30,
-        perks: ['Renkli isim [VIP+]', '20 home', 'Home bekleme: 10', '/back', '/rtp', 'Claim: 1200', 'Force-load: 120'],
+        perks: ['Renkli isim [VIP+]', '20 home', 'Home bekleme: 10', '/back', '/tpr', 'Claim: 1200', 'Force-load: 120'],
         grant: ['ftbranks add {nick} vip_plus', 'say {nick} artik VIP+ oldu!'],
         revoke: ['ftbranks remove {nick} vip_plus'],
     },
     {
         rank: 'mvp', name: 'MVP', color: '#f1c40f', duration_days: 30,
-        perks: ['Renkli isim [MVP]', '35 home', 'Home bekleme: 0', '/back', '/rtp', '/enderchest', 'Claim: 2000', 'Force-load: 200'],
+        perks: ['Renkli isim [MVP]', '35 home', 'Home bekleme: 0', '/back', '/tpr', '/enderchest', 'Claim: 2000', 'Force-load: 200'],
         grant: ['ftbranks add {nick} mvp', 'say {nick} artik MVP oldu!'],
         revoke: ['ftbranks remove {nick} mvp'],
     },
@@ -98,10 +98,17 @@ function presetByGrant(grantCommands) {
 
 // "Perkler" sekmesi form varsayılanları (blok YOKsa ön-doldurma; rehberle birebir).
 const TIER_PERK_DEFAULTS = {
-    vip:      { nameFormat: '&b[VIP] {name}&r',  homeMax: 10, homeCooldown: 30, back: true, rtp: false, enderchest: false, maxClaimed: 750,  maxForceLoaded: 80 },
-    vip_plus: { nameFormat: '&a[VIP+] {name}&r', homeMax: 20, homeCooldown: 10, back: true, rtp: true,  enderchest: false, maxClaimed: 1200, maxForceLoaded: 120 },
-    mvp:      { nameFormat: '&6[MVP] {name}&r',  homeMax: 35, homeCooldown: 0,  back: true, rtp: true,  enderchest: true,  maxClaimed: 2000, maxForceLoaded: 200 },
+    vip:      { nameFormat: '&b[VIP] {name}&r',  homeMax: 10, homeCooldown: 30, back: true, tpr: false, enderchest: false, maxClaimed: 750,  maxForceLoaded: 80 },
+    vip_plus: { nameFormat: '&a[VIP+] {name}&r', homeMax: 20, homeCooldown: 10, back: true, tpr: true,  enderchest: false, maxClaimed: 1200, maxForceLoaded: 120 },
+    mvp:      { nameFormat: '&6[MVP] {name}&r',  homeMax: 35, homeCooldown: 0,  back: true, tpr: true,  enderchest: true,  maxClaimed: 2000, maxForceLoaded: 200 },
 };
+
+// "Perkler" sekmesindeki tek-node komut toggle'ları (sunucu ranksFile.MANAGED bool alanlarıyla eşleşir).
+const PERK_TOGGLES = [
+    ['back', '/back'], ['tpr', '/tpr (rastgele ışınla)'], ['rtp', '/rtp (FTB Ess.)'], ['enderchest', '/enderchest'],
+    ['spawn', '/spawn'], ['hat', '/hat'], ['nickname', '/nickname'], ['near', '/near'], ['waystones', '/waystones (menü)'],
+    ['craftingTable', 'Craft masası'], ['anvil', 'Örs'], ['smithing', 'Smithing'], ['stonecutter', 'Taş kesici'], ['trashcan', 'Çöp kutusu'],
+];
 
 function fmtExpiry(sec) {
     if (!sec) return 'Süresiz';
@@ -116,6 +123,7 @@ export default function VipPage() {
     const qc = useQueryClient();
     const [tab, setTab] = useState('grants');
     const [editPkg, setEditPkg] = useState(null);
+    const [perkTier, setPerkTier] = useState(null); // preset kartından perk düzenleme modalı {rank,name,color}
     // grant form
     const [gPkg, setGPkg] = useState('');
     const [gPlayer, setGPlayer] = useState(null); // {userId, mcNick, label}
@@ -203,13 +211,14 @@ export default function VipPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                     <Card title="Aktif VIP"><Num size={22}>{stats?.activeGrants ?? 0}</Num></Card>
+                    <Card title="Yakında dolan (7g)"><Num size={22} style={{ color: stats?.expiringSoon ? A.warn : undefined }}>{stats?.expiringSoon ?? 0}</Num></Card>
                     <Card title="Paket"><Num size={22}>{stats?.packages ?? 0}</Num></Card>
                 </div>
             </div>
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'settings', label: 'Ayarlar', icon: I.Cog }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
+                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'chunks', label: 'FTB Ayarları', icon: I.Stack }, { id: 'settings', label: 'Ayarlar', icon: I.Cog }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
                         color: tab === t.id ? '#fff' : A.dim, fontSize: 12, fontWeight: 500, padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -295,7 +304,7 @@ export default function VipPage() {
                     {/* Hazır kademeler — perkler ranks.snbt'de tanımlı, panel sadece rütbe ekler/çıkarır */}
                     <Card title="Hazır Kademeler">
                         <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
-                            Tek tıkla VIP / VIP+ / MVP paketini oluştur. Perkler sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code> dosyasında tanımlıdır — kurulum için bkz. <code style={{ fontFamily: A.mono, color: A.dim }}>.planning/2026-06-08-vip-perk-rehberi.md</code>. (ranks.snbt'yi panelden düzenleme yakında.)
+                            Tek tıkla VIP / VIP+ / MVP paketini oluştur. Aşağıdaki maddeler önerilen varsayılandır; gerçek perkleri kart üzerindeki <b style={{ color: A.dim }}>Perkleri Düzenle</b> ile sunucunun <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'sinde değiştirebilirsin. Kurulum: <code style={{ fontFamily: A.mono, color: A.dim }}>.planning/2026-06-08-vip-perk-rehberi.md</code>.
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
                             {TIER_PRESETS.map(t => {
@@ -314,12 +323,16 @@ export default function VipPage() {
                                                 </li>
                                             ))}
                                         </ul>
-                                        {ex ? (
-                                            <button onClick={() => openPackage(ex)} style={{ ...btnGhost, marginTop: 'auto' }}>Düzenle (var)</button>
-                                        ) : (
-                                            <button onClick={() => setEditPkg({ ...EMPTY_PKG, name: t.name, color: t.color, duration_days: t.duration_days, grant_commands: t.grant.join('\n'), revoke_commands: t.revoke.join('\n') })}
-                                                style={{ ...btnPrimary, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Plus size={12} /> Oluştur</button>
-                                        )}
+                                        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            {ex ? (
+                                                <button onClick={() => openPackage(ex)} style={btnGhost}>Düzenle (var)</button>
+                                            ) : (
+                                                <button onClick={() => setEditPkg({ ...EMPTY_PKG, name: t.name, color: t.color, duration_days: t.duration_days, grant_commands: t.grant.join('\n'), revoke_commands: t.revoke.join('\n') })}
+                                                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Plus size={12} /> Oluştur</button>
+                                            )}
+                                            <button onClick={() => setPerkTier({ rank: t.rank, name: t.name, color: t.color })}
+                                                style={{ ...btnGhost, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Wrench size={12} /> Perkleri Düzenle</button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -357,6 +370,15 @@ export default function VipPage() {
             {/* PERKLER (ranks.snbt editörü) */}
             {tab === 'perks' && <PerksTab />}
 
+            {/* GENEL FTB AYARLARI (Chunks + Essentials + Teams) */}
+            {tab === 'chunks' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <ChunksConfigTab />
+                    <EssentialsConfigTab />
+                    <TeamsConfigTab />
+                </div>
+            )}
+
             {/* AYARLAR */}
             {tab === 'settings' && <VipSettingsTab settings={settingsData?.settings} />}
 
@@ -384,6 +406,7 @@ export default function VipPage() {
             )}
 
             {editPkg && <PackageModal pkg={editPkg} onClose={() => setEditPkg(null)} onSave={(p) => savePkg.mutate(p)} saving={savePkg.isPending} />}
+            {perkTier && <PerkEditModal rank={perkTier.rank} label={perkTier.name} color={perkTier.color} onClose={() => setPerkTier(null)} />}
         </div>
     );
 }
@@ -510,7 +533,10 @@ function PerksTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Card title="Kademe Perkleri (ranks.snbt)">
                 <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                    Perkleri buradan düzenle → Kaydet → sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Her kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                    Perkleri buradan düzenle → Kaydet → sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Her kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                </p>
+                <p style={{ fontSize: 10, color: A.faint, margin: '6px 0 0' }}>
+                    Listede olmayan perkler (örn. <code style={{ fontFamily: A.mono, color: A.dim }}>/tpa</code> — 4 düğüm ister, ya da günlük kit <code style={{ fontFamily: A.mono, color: A.dim }}>ftbessentials.give_me_kit.&lt;ad&gt;</code>) elle <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye eklenebilir; panel şema dışı düğümleri silmeden korur.
                 </p>
                 {data && !data.fileFound && (
                     <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
@@ -525,15 +551,15 @@ function PerksTab() {
     );
 }
 
-function TierPerkCard({ tier }) {
+// Perk düzenleme formu — Perkler sekmesi kartında ve preset kartı modalında ortak kullanılır.
+function TierPerkEditor({ tier, onSaved }) {
     const qc = useQueryClient();
-    const preset = TIER_PRESETS.find(t => t.rank === tier.rank);
     // Blok varsa dosyadaki gerçek durumu göster; yoksa preset varsayılanlarıyla ön-doldur.
     const seed = tier.exists && tier.perks ? {
         nameFormat: tier.perks.nameFormat ?? '',
         homeMax: tier.perks.homeMax ?? '', homeCooldown: tier.perks.homeCooldown ?? '',
-        back: !!tier.perks.back, rtp: !!tier.perks.rtp, enderchest: !!tier.perks.enderchest,
         maxClaimed: tier.perks.maxClaimed ?? '', maxForceLoaded: tier.perks.maxForceLoaded ?? '',
+        ...Object.fromEntries(PERK_TOGGLES.map(([k]) => [k, !!tier.perks[k]])),
     } : { ...(TIER_PERK_DEFAULTS[tier.rank] || {}) };
     const [f, setF] = useState(seed);
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
@@ -544,22 +570,16 @@ function TierPerkCard({ tier }) {
             perks: {
                 nameFormat: f.nameFormat || null,
                 homeMax: numOrNull(f.homeMax), homeCooldown: numOrNull(f.homeCooldown),
-                back: !!f.back, rtp: !!f.rtp, enderchest: !!f.enderchest,
                 maxClaimed: numOrNull(f.maxClaimed), maxForceLoaded: numOrNull(f.maxForceLoaded),
+                ...Object.fromEntries(PERK_TOGGLES.map(([k]) => [k, !!f[k]])),
             },
         }).then(r => r.data),
-        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); },
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); onSaved?.(); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
 
     return (
-        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: preset?.color || 'var(--accent)' }} />
-                <span style={{ fontWeight: 600 }}>{tier.label || tier.rank}</span>
-                <Pill color={tier.exists ? A.ok : A.faint}>{tier.exists ? 'tanımlı' : 'yok — kaydedince oluşturulur'}</Pill>
-                <code style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{tier.rank}</code>
-            </div>
+        <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div><Cap style={{ display: 'block', marginBottom: 4 }}>İsim formatı ({'{name}'} yer tutucu · &amp;b renk)</Cap>
                     <Input value={f.nameFormat || ''} onChange={e => set('nameFormat', e.target.value)} placeholder="&b[VIP] {name}&r" /></div>
@@ -569,8 +589,8 @@ function TierPerkCard({ tier }) {
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Claim chunk</Cap><Input type="number" value={f.maxClaimed ?? ''} onChange={e => set('maxClaimed', e.target.value)} /></div>
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Force-load chunk</Cap><Input type="number" value={f.maxForceLoaded ?? ''} onChange={e => set('maxForceLoaded', e.target.value)} /></div>
                 </div>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
-                    {[['back', '/back'], ['rtp', '/rtp'], ['enderchest', '/enderchest']].map(([k, lbl]) => (
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
+                    {PERK_TOGGLES.map(([k, lbl]) => (
                         <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
                             <input type="checkbox" checked={!!f[k]} onChange={e => set(k, e.target.checked)} /> {lbl}
                         </label>
@@ -580,7 +600,211 @@ function TierPerkCard({ tier }) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                 <button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
             </div>
+        </>
+    );
+}
+
+function TierPerkCard({ tier }) {
+    const preset = TIER_PRESETS.find(t => t.rank === tier.rank);
+    return (
+        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: preset?.color || 'var(--accent)' }} />
+                <span style={{ fontWeight: 600 }}>{tier.label || tier.rank}</span>
+                <Pill color={tier.exists ? A.ok : A.faint}>{tier.exists ? 'tanımlı' : 'yok — kaydedince oluşturulur'}</Pill>
+                <code style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{tier.rank}</code>
+            </div>
+            <TierPerkEditor tier={tier} />
         </div>
+    );
+}
+
+// Preset kartından açılan perk düzenleme modalı (Perkler sekmesindeki editörün aynısı).
+function PerkEditModal({ rank, label, color, onClose }) {
+    const { data, isLoading } = useQuery({ queryKey: ['vip-ranks-perks'], queryFn: () => api.get('/vip/ranks-perks').then(r => r.data) });
+    const tier = data?.tiers?.find(t => t.rank === rank);
+    return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: color || 'var(--accent)' }} />
+                    <h3 style={{ margin: 0, fontSize: 16 }}>{label} — Perkler</h3>
+                    <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{rank}</code>
+                    <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}><I.X size={16} /></button>
+                </div>
+                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                    Sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                </p>
+                {isLoading ? <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>
+                    : !data?.fileFound ? (
+                        <div style={{ padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                            ranks.snbt bulunamadı{data?.path ? ` (${data.path})` : ''}. Sunucuda FTB Ranks kurulu/çalışmış olmalı; kurulum için bkz. <code style={{ fontFamily: A.mono }}>.planning/2026-06-08-vip-perk-rehberi.md</code>.
+                        </div>
+                    ) : tier ? <TierPerkEditor tier={tier} onSaved={onClose} />
+                        : <p style={{ fontSize: 12, color: A.faint }}>Kademe verisi bulunamadı.</p>}
+            </div>
+        </div>
+    );
+}
+
+// ── Genel FTB Chunks ayarları sekmesi (ftbchunks-server.snbt) ──────────────
+function ChunksConfigTab() {
+    const qc = useQueryClient();
+    const { data, isLoading } = useQuery({ queryKey: ['vip-chunks-config'], queryFn: () => api.get('/vip/chunks-config').then(r => r.data) });
+    const [f, setF] = useState(null);
+    const s = data?.settings || {};
+    const cur = f || {
+        maxClaimedChunks: s.maxClaimedChunks ?? '',
+        maxForceLoadedChunks: s.maxForceLoadedChunks ?? '',
+        disableProtection: !!s.disableProtection,
+        noWilderness: !!s.noWilderness,
+        pvpMode: s.pvpMode || 'always',
+    };
+    const set = (k, v) => setF({ ...cur, [k]: v });
+    const save = useMutation({
+        mutationFn: () => api.put('/vip/chunks-config', { settings: {
+            maxClaimedChunks: cur.maxClaimedChunks === '' ? null : Number(cur.maxClaimedChunks),
+            maxForceLoadedChunks: cur.maxForceLoadedChunks === '' ? null : Number(cur.maxForceLoadedChunks),
+            disableProtection: !!cur.disableProtection,
+            noWilderness: !!cur.noWilderness,
+            pvpMode: cur.pvpMode || 'always',
+        } }).then(r => r.data),
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-chunks-config'] }); setF(null); toast.success(d.note || 'Kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    if (isLoading) return <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>;
+    return (
+        <Card title="Genel FTB Chunks Ayarları (ftbchunks-world.snbt)">
+            <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                Sunucu geneli <strong>varsayılan</strong> claim limitleri ve koruma. VIP kademelerindeki <code style={{ fontFamily: A.mono, color: A.dim }}>Claim chunk</code> / <code style={{ fontFamily: A.mono, color: A.dim }}>Force-load chunk</code> değerleri bu varsayılanları oyuncu bazında <strong>ezer</strong> — VIP limitleri buradakinin üstünde olmalı. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+            </p>
+            <div style={{ marginTop: 8, fontSize: 11, color: A.warn }}>
+                ⚠️ FTB Chunks ayarları canlı yenilenmez — değişiklik için sunucuyu <strong>yeniden başlat</strong>. (Dosya <code style={{ fontFamily: A.mono }}>config/</code> altındaysa modpack güncellemesinde üzerine yazılabilir.)
+            </div>
+            {data && !data.fileFound && (
+                <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                    ftbchunks-world.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Chunks kurulu/çalışmış olmalı.
+                </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12, maxWidth: 440 }}>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan claim chunk</Cap>
+                    <Input type="number" value={cur.maxClaimedChunks} onChange={e => set('maxClaimedChunks', e.target.value)} placeholder="örn. 500" /></div>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan force-load chunk</Cap>
+                    <Input type="number" value={cur.maxForceLoadedChunks} onChange={e => set('maxForceLoadedChunks', e.target.value)} placeholder="örn. 25" /></div>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>PvP modu (claim içinde)</Cap>
+                    <select value={cur.pvpMode} onChange={e => set('pvpMode', e.target.value)} style={selStyle}>
+                        <option value="always">always (her zaman açık)</option>
+                        <option value="never">never (kapalı)</option>
+                        <option value="per_team">per_team (takım karar verir)</option>
+                    </select>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.disableProtection} onChange={e => set('disableProtection', e.target.checked)} /> Korumayı kapat (disable_protection)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.noWilderness} onChange={e => set('noWilderness', e.target.checked)} /> Sadece claim'de inşa (no_wilderness)
+                </label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => save.mutate()} disabled={save.isPending || !data?.fileFound} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+            </div>
+        </Card>
+    );
+}
+
+// ── Genel FTB Essentials ayarları (ftbessentials.snbt) ─────────────────────
+const EF_NUMS = [
+    ['homeMax', 'Home sayısı (varsayılan)'], ['homeCooldown', 'Home bekleme (sn)'],
+    ['backMax', '/back konum sayısı'], ['backCooldown', '/back bekleme (sn)'],
+    ['rtpCooldown', '/rtp bekleme (sn)'], ['rtpMaxDistance', '/rtp max mesafe'], ['rtpMinDistance', '/rtp min mesafe'],
+];
+const EF_TOGGLES = [
+    ['cmdEnderchest', '/enderchest'], ['cmdHat', '/hat'], ['cmdNear', '/near'], ['cmdNick', '/nick'],
+    ['cmdTrashcan', '/trashcan'], ['cmdCrafting', '/crafting'], ['cmdAnvil', '/anvil'], ['cmdSmithing', '/smithing'], ['cmdStonecutter', '/stonecutter'],
+];
+function EssentialsConfigTab() {
+    const qc = useQueryClient();
+    const { data, isLoading } = useQuery({ queryKey: ['vip-essentials-config'], queryFn: () => api.get('/vip/essentials-config').then(r => r.data) });
+    const [f, setF] = useState(null);
+    const s = data?.settings || {};
+    const cur = f || {
+        ...Object.fromEntries(EF_NUMS.map(([k]) => [k, s[k] ?? ''])),
+        ...Object.fromEntries(EF_TOGGLES.map(([k]) => [k, !!s[k]])),
+    };
+    const set = (k, v) => setF({ ...cur, [k]: v });
+    const save = useMutation({
+        mutationFn: () => api.put('/vip/essentials-config', { settings: {
+            ...Object.fromEntries(EF_NUMS.map(([k]) => [k, cur[k] === '' ? null : Number(cur[k])])),
+            ...Object.fromEntries(EF_TOGGLES.map(([k]) => [k, !!cur[k]])),
+        } }).then(r => r.data),
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-essentials-config'] }); setF(null); toast.success(d.note || 'Kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    if (isLoading) return null;
+    return (
+        <Card title="Genel FTB Essentials Ayarları (ftbessentials.snbt)">
+            <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                Sunucu geneli teleport limit/bekleme ayarları ve komut aç/kapa. <b style={{ color: A.warn }}>Not:</b> FTB Ranks kurulu değilken bunlar <b>herkese</b> geçerlidir (VIP'e özel değil). Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır; canlı yenilenmez, sunucu yeniden başlatılmalı.
+            </p>
+            {data && !data.fileFound && (
+                <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                    ftbessentials.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Essentials kurulu/çalışmış olmalı.
+                </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 12 }}>
+                {EF_NUMS.map(([k, lbl]) => (
+                    <div key={k}><Cap style={{ display: 'block', marginBottom: 4 }}>{lbl}</Cap>
+                        <Input type="number" value={cur[k]} onChange={e => set(k, e.target.value)} /></div>
+                ))}
+            </div>
+            <Cap style={{ display: 'block', margin: '14px 0 6px' }}>Komut aç/kapa (misc)</Cap>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                {EF_TOGGLES.map(([k, lbl]) => (
+                    <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!cur[k]} onChange={e => set(k, e.target.checked)} /> {lbl}
+                    </label>
+                ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => save.mutate()} disabled={save.isPending || !data?.fileFound} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+            </div>
+        </Card>
+    );
+}
+
+// ── FTB Teams ayarları (ftbteams-server.snbt) ──────────────────────────────
+function TeamsConfigTab() {
+    const qc = useQueryClient();
+    const { data, isLoading } = useQuery({ queryKey: ['vip-teams-config'], queryFn: () => api.get('/vip/teams-config').then(r => r.data) });
+    const [f, setF] = useState(null);
+    const s = data?.settings || {};
+    const cur = f || { limitedLives: s.limitedLives ?? '' };
+    const save = useMutation({
+        mutationFn: () => api.put('/vip/teams-config', { settings: { limitedLives: cur.limitedLives === '' ? null : Number(cur.limitedLives) } }).then(r => r.data),
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-teams-config'] }); setF(null); toast.success(d.note || 'Kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    if (isLoading) return null;
+    return (
+        <Card title="FTB Teams Ayarları (ftbteams-server.snbt)">
+            <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                Parti can hakkı. <code style={{ fontFamily: A.mono, color: A.dim }}>0</code> = sınırsız. Canlı yenilenmez, sunucu yeniden başlatılmalı; kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+            </p>
+            {data && !data.fileFound && (
+                <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                    ftbteams-server.snbt bulunamadı{data.path ? ` (${data.path})` : ''}.
+                </div>
+            )}
+            <div style={{ marginTop: 12, maxWidth: 220 }}>
+                <Cap style={{ display: 'block', marginBottom: 4 }}>Limitli can (limited_lives)</Cap>
+                <Input type="number" value={cur.limitedLives} onChange={e => setF({ ...cur, limitedLives: e.target.value })} placeholder="0" />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => save.mutate()} disabled={save.isPending || !data?.fileFound} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+            </div>
+        </Card>
     );
 }
 
@@ -588,7 +812,7 @@ function TierPerkCard({ tier }) {
 function VipSettingsTab({ settings }) {
     const qc = useQueryClient();
     const [f, setF] = useState(null);
-    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1, reminderDays: 3 };
+    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1, reminderDays: 3, autoReplace: 1 };
     const set = (k, v) => setF({ ...cur, [k]: v });
     const save = useMutation({
         mutationFn: () => api.put('/vip/settings', {
@@ -596,6 +820,7 @@ function VipSettingsTab({ settings }) {
             reservedSlots: Number(cur.reservedSlots) || 0,
             joinLeaveEnabled: cur.joinLeaveEnabled ? 1 : 0,
             reminderDays: Number(cur.reminderDays) || 0,
+            autoReplace: cur.autoReplace ? 1 : 0,
         }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['vip-settings'] }); toast.success('Ayarlar kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
@@ -634,6 +859,15 @@ function VipSettingsTab({ settings }) {
                 </label>
                 <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
                     Mesaj metinleri paket başına ayarlanır (Paketler → Düzenle → Giriş/Çıkış mesajı). Boş bırakılan paket duyuru yapmaz.
+                </p>
+            </Card>
+            <Card title="Otomatik Upgrade/Downgrade">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.autoReplace} onChange={e => set('autoReplace', e.target.checked ? 1 : 0)} />
+                    <span style={{ fontSize: 12 }}>Yeni VIP verince oyuncunun diğer aktif VIP'lerini otomatik geri al</span>
+                </label>
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Açıkken bir oyuncuya VIP+ verirsen mevcut VIP otomatik geri alınır (tek aktif VIP). Aynı paket tekrar verilirse dokunulmaz — süre için <b style={{ color: A.dim }}>Uzat</b> kullan. Kapalıyken birden fazla VIP üst üste kalabilir.
                 </p>
             </Card>
             <div><button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Ayarları Kaydet'}</button></div>

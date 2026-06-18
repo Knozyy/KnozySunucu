@@ -11,6 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
 const ranksFile = require('./vip/ranksFile');
+const chunksFile = require('./vip/ftbChunksFile');
+const essentialsFile = require('./vip/ftbEssentialsFile');
+const teamsFile = require('./vip/ftbTeamsFile');
 
 // Panelden yönetilen FTB Ranks kademeleri (eksik blok oluşturulurken meta) — VipPage presetleriyle eşleşir.
 const TIER_META = {
@@ -57,6 +60,7 @@ const SETTING_DEFAULTS = {
     reservedSlots: 0,     // sunucu doluysa VIP'lere ayrılan slot (0 = kapalı)
     joinLeaveEnabled: 1,  // VIP giriş/çıkış duyuruları (0/1)
     reminderDays: 3,      // bitişe bu kadar gün kala oyuncuya Discord DM (0 = kapalı)
+    autoReplace: 1,       // VIP verince aynı oyuncunun diğer aktif VIP'lerini otomatik geri al (upgrade/downgrade) (0/1)
 };
 
 class VipService {
@@ -134,6 +138,15 @@ class VipService {
                 "SELECT * FROM vip_grants WHERE status = 'active' AND LOWER(mc_nick) = ? ORDER BY id DESC LIMIT 1"
             ).get(String(nick).toLowerCase()) || null;
         } catch { return null; }
+    }
+    /** Bir oyuncunun (Discord id veya MC nick) tüm aktif grant'ları — upgrade/downgrade için. */
+    _activeGrantsForPlayer(userId, mcNick) {
+        const clauses = [], params = [];
+        if (userId) { clauses.push('user_id = ?'); params.push(String(userId)); }
+        if (mcNick) { clauses.push('LOWER(mc_nick) = ?'); params.push(String(mcNick).toLowerCase()); }
+        if (!clauses.length) return [];
+        try { return db().prepare(`SELECT * FROM vip_grants WHERE status = 'active' AND (${clauses.join(' OR ')})`).all(...params); }
+        catch { return []; }
     }
 
     // ── Giriş/Çıkış duyuruları + rezerve slot ───────────────────────────────
@@ -265,6 +278,14 @@ class VipService {
         const days = durationDays != null && durationDays !== '' ? Number(durationDays) : pkg.duration_days;
         const expiresAt = days > 0 ? now() + Math.round(days * 86400) : null;
 
+        // Otomatik değiştirme (upgrade/downgrade): aynı oyuncunun diğer aktif VIP'lerini geri al → tek aktif VIP.
+        if (this._settings.autoReplace) {
+            for (const og of this._activeGrantsForPlayer(userId, mcNick)) {
+                if (og.package_id === pkg.id) continue; // aynı paket → dokunma (süre için 'extend' kullanılır)
+                try { await this.revoke(og.id, { by: grantedBy || 'system', reason: `değiştirme → ${pkg.name}` }); } catch { /* ignore */ }
+            }
+        }
+
         const res = db().prepare(`INSERT INTO vip_grants
             (package_id, package_name, user_id, mc_nick, granted_by, granted_at, expires_at, status, note)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`).run(
@@ -273,6 +294,7 @@ class VipService {
         const grantId = res.lastInsertRowid;
 
         const applied = await this._applyGrant(pkg, { userId, mcNick });
+        if (applied.mcPending) db().prepare('UPDATE vip_grants SET mc_pending = 1 WHERE id = ?').run(grantId);
         this._log(grantId, 'grant', pkg.name, mcNick, userId, applied.detail);
         return { id: grantId, ...this.getGrant(grantId), applyDetail: applied.detail };
     }
@@ -331,7 +353,46 @@ class VipService {
     _mcInstance() { try { return require('./serverRegistry').getDefault(); } catch { return null; } }
     _mcRunning() { const i = this._mcInstance(); return !!(i && i.status === 'running'); }
     _serverPath() { const i = this._mcInstance(); try { return i?.getServerPath ? i.getServerPath() : null; } catch { return null; } }
-    _ranksPath() { const sp = this._serverPath(); return sp ? path.join(sp, 'config', 'ftbranks', 'ranks.snbt') : null; }
+    // server.properties'ten dünya klasörü adı (level-name). Okunamazsa "world".
+    _levelName() {
+        try {
+            const sp = this._serverPath();
+            const m = sp && fs.readFileSync(path.join(sp, 'server.properties'), 'utf-8')
+                .match(/^level-name\s*=\s*(.+)$/m);
+            if (m) return m[1].trim();
+        } catch { /* ignore */ }
+        return 'world';
+    }
+    // FTB serverconfig dosyaları sürüme göre dünya save'inde (world/serverconfig) veya genel config'te
+    // olabilir. Bir alt yol için olası adayları üretir (öncelik: dünyaya özel → world → genel config).
+    _serverConfigCandidates(...sub) {
+        const sp = this._serverPath();
+        if (!sp) return [];
+        const level = this._levelName();
+        return [
+            path.join(sp, level, 'serverconfig', ...sub),   // modern: dünyaya özel
+            path.join(sp, 'world', 'serverconfig', ...sub), // level-name okunamazsa
+            path.join(sp, 'config', ...sub),                // eski/genel
+        ];
+    }
+    // Var olan ilk adayı döndür; hiçbiri yoksa en olası yolu (hata mesajı doğru yeri göstersin).
+    // requireBody: yalnızca gövdesi `{` içeren GERÇEK config'i seç (FTB Essentials'ın "taşındı" stub'unu atla).
+    _resolveConfigPath(cands, { requireBody = false } = {}) {
+        let firstExisting = null;
+        for (const c of cands) {
+            try {
+                if (!fs.existsSync(c)) continue;
+                if (firstExisting == null) firstExisting = c;
+                if (!requireBody) return c;
+                if (fs.readFileSync(c, 'utf-8').includes('{')) return c;
+            } catch { /* ignore */ }
+        }
+        return firstExisting || cands[0] || null;
+    }
+    _ranksPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbranks', 'ranks.snbt')); }
+    _chunksConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbchunks-world.snbt')); }
+    _essentialsConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbessentials.snbt'), { requireBody: true }); }
+    _teamsConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbteams-server.snbt'), { requireBody: true }); }
 
     // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
     /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
@@ -396,8 +457,82 @@ class VipService {
         return null;
     }
 
+    // ── Genel FTB Chunks ayarları (ftbchunks-server.snbt — sunucu geneli varsayılanları) ──
+    /** Varsayılan claim / force-load limitlerini oku. */
+    readChunksConfig() {
+        const p = this._chunksConfigPath();
+        const found = !!(p && fs.existsSync(p));
+        let settings = { maxClaimedChunks: null, maxForceLoadedChunks: null };
+        if (found) { try { settings = chunksFile.readSettings(fs.readFileSync(p, 'utf-8')); } catch { /* ignore */ } }
+        return { fileFound: found, path: p, serverRunning: this._mcRunning(), settings };
+    }
+
+    /** FTB Chunks genel ayarlarını yaz: yedek + yazma-doğrulama. (Hot-reload yok — sunucu yeniden başlatılmalı.) */
+    saveChunksConfig(settings) {
+        if (!settings || typeof settings !== 'object') throw new Error('settings gerekli');
+        const p = this._chunksConfigPath();
+        if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
+        if (!fs.existsSync(p)) throw new Error(`ftbchunks-world.snbt bulunamadı: ${p} — sunucuda FTB Chunks kurulu/çalışmış olmalı.`);
+
+        const raw = fs.readFileSync(p, 'utf-8');
+        const next = chunksFile.writeSettings(raw, settings);
+
+        try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
+        fs.writeFileSync(p, next, 'utf-8');
+
+        // Yazma doğrulaması — geri oku, verilen değerler gerçekten yazıldı mı? (anahtar dosyada yoksa atlanır)
+        const after = chunksFile.readSettings(fs.readFileSync(p, 'utf-8'));
+        const revert = (field) => { try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ } throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`); };
+        for (const [field, def] of Object.entries(chunksFile.MANAGED)) {
+            if (!(field in settings) || after[field] === null) continue;
+            const w = settings[field];
+            if (def.type === 'int') {
+                const ok = w != null && w !== '' && Number.isFinite(Number(w));
+                if (ok && Number(after[field]) !== Number(w)) revert(field);
+            } else if (def.type === 'bool') {
+                if (Boolean(after[field]) !== Boolean(w)) revert(field);
+            } else { // enum
+                if (w && def.values.includes(String(w)) && after[field] !== String(w)) revert(field);
+            }
+        }
+        return { ok: true, path: p, note: 'Yazıldı. FTB Chunks ayarları canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
+    }
+
+    // ── Genel SNBT config okuma/kaydetme (FTB Essentials, FTB Teams) ─────────
+    _readSnbtConfig(p, mod) {
+        const found = !!(p && fs.existsSync(p));
+        let settings = {};
+        if (found) { try { settings = mod.readSettings(fs.readFileSync(p, 'utf-8')); } catch { /* ignore */ } }
+        return { fileFound: found, path: p, serverRunning: this._mcRunning(), settings };
+    }
+    /** Yedek + yazma + doğrulama (int/bool/enum). Anahtar dosyada yoksa atlanır. */
+    _saveSnbtConfig(p, mod, settings, fname) {
+        if (!settings || typeof settings !== 'object') throw new Error('settings gerekli');
+        if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
+        if (!fs.existsSync(p)) throw new Error(`${fname} bulunamadı: ${p} — sunucuda ilgili mod kurulu/çalışmış olmalı.`);
+        const raw = fs.readFileSync(p, 'utf-8');
+        const next = mod.writeSettings(raw, settings);
+        try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
+        fs.writeFileSync(p, next, 'utf-8');
+        const after = mod.readSettings(fs.readFileSync(p, 'utf-8'));
+        const revert = (field) => { try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ } throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`); };
+        for (const [field, def] of Object.entries(mod.MANAGED)) {
+            if (!(field in settings) || after[field] === null) continue;
+            const w = settings[field];
+            if (def.type === 'int') { const ok = w != null && w !== '' && Number.isFinite(Number(w)); if (ok && Number(after[field]) !== Number(w)) revert(field); }
+            else if (def.type === 'bool') { if (Boolean(after[field]) !== Boolean(w)) revert(field); }
+            else if (def.type === 'enum') { if (w && def.values?.includes(String(w)) && after[field] !== String(w)) revert(field); }
+        }
+        return { ok: true, path: p, note: 'Yazıldı. Ayarlar canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
+    }
+    readEssentialsConfig() { return this._readSnbtConfig(this._essentialsConfigPath(), essentialsFile); }
+    saveEssentialsConfig(settings) { return this._saveSnbtConfig(this._essentialsConfigPath(), essentialsFile, settings, 'ftbessentials.snbt'); }
+    readTeamsConfig() { return this._readSnbtConfig(this._teamsConfigPath(), teamsFile); }
+    saveTeamsConfig(settings) { return this._saveSnbtConfig(this._teamsConfigPath(), teamsFile, settings, 'ftbteams-server.snbt'); }
+
     async _applyGrant(pkg, { userId, mcNick }) {
         const parts = [];
+        let mcPending = false;
         // 1) Discord rolü
         if (pkg.discord_role_id && userId) {
             try {
@@ -406,7 +541,7 @@ class VipService {
                 parts.push(r.ok ? 'rol verildi' : `rol HATA(${r.statusCode || r.error})`);
             } catch (e) { parts.push(`rol HATA: ${e.message}`); }
         }
-        // 2) MC komutları
+        // 2) MC komutları — sunucu kapalıysa beklemeye al (sunucu açılınca _check uygular)
         const cmds = parseCmds(pkg.grant_commands);
         if (cmds.length && mcNick) {
             if (this._mcRunning()) {
@@ -414,9 +549,9 @@ class VipService {
                 let n = 0;
                 for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId, packageName: pkg.name })); n++; } catch { /* ignore */ } }
                 parts.push(`${n}/${cmds.length} MC komutu`);
-            } else parts.push('MC komutları ERTELENDİ (sunucu kapalı)');
+            } else { mcPending = true; parts.push('MC komutları ERTELENDİ (sunucu kapalı) — açılınca uygulanacak'); }
         }
-        return { detail: parts.join(' · ') || 'kayıt oluşturuldu' };
+        return { detail: parts.join(' · ') || 'kayıt oluşturuldu', mcPending };
     }
 
     async _applyRevoke(pkg, { userId, mcNick }) {
@@ -458,6 +593,26 @@ class VipService {
                 } catch (e) { console.error(`[VIP] grant#${row.id} bitiş hatası:`, e.message); }
             }
 
+            // Bekleyen verme: sunucu kapalıyken verilen VIP'lerin grant MC komutlarını sunucu açılınca uygula
+            if (this._mcRunning()) {
+                const pending = db().prepare(
+                    "SELECT * FROM vip_grants WHERE status = 'active' AND mc_pending = 1 AND mc_nick IS NOT NULL"
+                ).all();
+                for (const g of pending) {
+                    try {
+                        const pkg = g.package_id ? this.getPackage(g.package_id) : null;
+                        const cmds = pkg ? parseCmds(pkg.grant_commands) : [];
+                        if (cmds.length) {
+                            const inst = this._mcInstance();
+                            let n = 0;
+                            for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick: g.mc_nick, userId: g.user_id, packageName: pkg.name })); n++; } catch { /* ignore */ } }
+                            this._log(g.id, 'grant_apply', g.package_name, g.mc_nick, g.user_id, `${n}/${cmds.length} MC komutu (ertelenen verme uygulandı)`);
+                        }
+                        db().prepare('UPDATE vip_grants SET mc_pending = 0 WHERE id = ?').run(g.id);
+                    } catch (e) { console.error(`[VIP] bekleyen verme hatası grant#${g.id}:`, e.message); }
+                }
+            }
+
             // Bitiş hatırlatması: bitişe ≤N gün kalan aktif VIP'lere bir kez Discord DM
             const rd = this._settings.reminderDays;
             if (rd > 0) {
@@ -489,8 +644,16 @@ class VipService {
         try {
             const active = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'active'").get().n;
             const pkgs = db().prepare('SELECT COUNT(*) n FROM vip_packages WHERE enabled = 1').get().n;
-            return { activeGrants: active, packages: pkgs };
-        } catch { return { activeGrants: 0, packages: 0 }; }
+            const expiringSoon = db().prepare(
+                "SELECT COUNT(*) n FROM vip_grants WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?"
+            ).get(now(), now() + 7 * 86400).n;
+            const expired = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'expired'").get().n;
+            const revoked = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'revoked'").get().n;
+            const byPackage = db().prepare(
+                "SELECT COALESCE(package_name, '(silinmiş)') name, COUNT(*) n FROM vip_grants WHERE status = 'active' GROUP BY package_name ORDER BY n DESC"
+            ).all();
+            return { activeGrants: active, packages: pkgs, expiringSoon, expired, revoked, byPackage };
+        } catch { return { activeGrants: 0, packages: 0, expiringSoon: 0, expired: 0, revoked: 0, byPackage: [] }; }
     }
 }
 

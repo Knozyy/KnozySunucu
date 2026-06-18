@@ -15,8 +15,19 @@ const MANAGED = {
     homeMax:        { key: 'ftbessentials.home.max',      type: 'int' },
     homeCooldown:   { key: 'ftbessentials.home.cooldown', type: 'int' },
     back:           { key: 'command.back',                type: 'bool' },
-    rtp:            { key: 'command.rtp',                  type: 'bool' },
+    rtp:            { key: 'command.rtp',                  type: 'bool' },  // FTB Essentials /rtp (her pakette yok)
+    tpr:            { key: 'command.moonlight.tpr',        type: 'bool' },  // Moonlight /tpr (rastgele ışınla)
     enderchest:     { key: 'command.enderchest',          type: 'bool' },
+    spawn:          { key: 'command.spawn',                type: 'bool' },
+    hat:            { key: 'command.hat',                  type: 'bool' },
+    nickname:       { key: 'command.nickname',             type: 'bool' },
+    craftingTable:  { key: 'command.open.crafting',        type: 'bool' },  // taşınabilir craft masası
+    anvil:          { key: 'command.open.anvil',           type: 'bool' },
+    smithing:       { key: 'command.open.smithing',        type: 'bool' },
+    stonecutter:    { key: 'command.open.stonecutter',     type: 'bool' },
+    trashcan:       { key: 'command.trashcan',             type: 'bool' },
+    near:           { key: 'command.near',                 type: 'bool' },  // yakındaki oyuncular
+    waystones:      { key: 'command.waystones.gui',        type: 'bool' },  // /waystones menüsü
     maxClaimed:     { key: 'ftbchunks.max_claimed',       type: 'int' },
     maxForceLoaded: { key: 'ftbchunks.max_force_loaded',  type: 'int' },
 };
@@ -29,8 +40,11 @@ function lineRe(key) {
     return new RegExp(`^([ \\t]*)(?:"${k}"|${k})[ \\t]*:[ \\t]*(.*?)[ \\t]*$`, 'm');
 }
 
+// Boş perk seti — MANAGED'dan türetilir (yeni alan eklenince otomatik dahil olur).
 function emptyPerks() {
-    return { nameFormat: null, homeMax: null, homeCooldown: null, back: false, rtp: false, enderchest: false, maxClaimed: null, maxForceLoaded: null };
+    const p = {};
+    for (const [field, def] of Object.entries(MANAGED)) p[field] = def.type === 'bool' ? false : null;
+    return p;
 }
 
 // "..." → içerik (snbt string kaçışlarını çöz). Tırnaksızsa olduğu gibi döner.
