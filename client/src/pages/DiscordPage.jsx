@@ -722,15 +722,16 @@ function fieldHint(text) {
     return <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>{text}</div>;
 }
 
-function DonationPackageItem({ p, index, liveGuilds, setPkg, delPkg, vipPackages, savedRoles }) {
+function DonationPackageItem({ p, index, liveGuilds, setPkg, delPkg, vipPackages, savedRoles, defaultGuildId }) {
+    const targetGuildId = p.guildId || defaultGuildId || '';
     // Seçilen sunucunun canlı rollerini çek
     const { data: liveRolesData } = useQuery({
-        queryKey: ['discord-live-roles', p.guildId],
-        queryFn: () => api.get(`/discord/guilds/${p.guildId}/roles`).then(r => r.data),
-        enabled: !!p.guildId,
+        queryKey: ['discord-live-roles', targetGuildId],
+        queryFn: () => api.get(`/discord/guilds/${targetGuildId}/roles`).then(r => r.data),
+        enabled: !!targetGuildId,
     });
     const liveRoles = liveRolesData?.roles || [];
-    const rolesList = liveRoles.length ? liveRoles : (p.guildId ? [] : savedRoles);
+    const rolesList = liveRoles.length ? liveRoles : (targetGuildId ? [] : savedRoles);
 
     return (
         <div style={{ ...card, background: A.bg, padding: 14 }}>
@@ -996,6 +997,7 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
                             delPkg={delPkg}
                             vipPackages={vipPackages}
                             savedRoles={savedRoles}
+                            defaultGuildId={botSettings?.default_guild_id}
                         />
                     ))}
                 </div>
