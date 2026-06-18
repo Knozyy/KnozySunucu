@@ -331,7 +331,30 @@ class VipService {
     _mcInstance() { try { return require('./serverRegistry').getDefault(); } catch { return null; } }
     _mcRunning() { const i = this._mcInstance(); return !!(i && i.status === 'running'); }
     _serverPath() { const i = this._mcInstance(); try { return i?.getServerPath ? i.getServerPath() : null; } catch { return null; } }
-    _ranksPath() { const sp = this._serverPath(); return sp ? path.join(sp, 'config', 'ftbranks', 'ranks.snbt') : null; }
+    // server.properties'ten dünya klasörü adı (level-name). Okunamazsa "world".
+    _levelName() {
+        try {
+            const sp = this._serverPath();
+            const m = sp && fs.readFileSync(path.join(sp, 'server.properties'), 'utf-8')
+                .match(/^level-name\s*=\s*(.+)$/m);
+            if (m) return m[1].trim();
+        } catch { /* ignore */ }
+        return 'world';
+    }
+    // FTB Ranks ranks.snbt — sürüme göre dünya save'inde (world/serverconfig)
+    // veya genel config'te olabilir. Var olan ilk yolu döndür.
+    _ranksPath() {
+        const sp = this._serverPath();
+        if (!sp) return null;
+        const level = this._levelName();
+        const candidates = [
+            path.join(sp, level, 'serverconfig', 'ftbranks', 'ranks.snbt'),   // modern: dünyaya özel
+            path.join(sp, 'world', 'serverconfig', 'ftbranks', 'ranks.snbt'), // level-name okunamazsa
+            path.join(sp, 'config', 'ftbranks', 'ranks.snbt'),                // eski/genel
+        ];
+        for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch { /* ignore */ } }
+        return candidates[0]; // hiçbiri yoksa en olası yolu döndür (hata mesajı doğru yeri göstersin)
+    }
 
     // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
     /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
