@@ -273,6 +273,21 @@ class VipService {
         if (!pkg) throw new Error('Paket bulunamadı');
         userId = userId ? String(userId).trim() : null;
         mcNick = mcNick ? String(mcNick).trim() : null;
+
+        // Discord ID'si varsa ama Minecraft nick'i yoksa whitelist'ten otomatik çek
+        if (!mcNick && userId) {
+            try {
+                const discordBotService = require('./discordBotService');
+                const wl = discordBotService.getWhitelist() || {};
+                const foundNick = wl[String(userId)];
+                if (foundNick) {
+                    mcNick = foundNick;
+                }
+            } catch (e) {
+                console.error('[VIP] Whitelist mcNick cozme hatası:', e.message);
+            }
+        }
+
         if (!userId && !mcNick) throw new Error('En az Discord kullanıcı veya MC nick gerekli');
 
         const days = durationDays != null && durationDays !== '' ? Number(durationDays) : pkg.duration_days;
@@ -332,12 +347,26 @@ class VipService {
         const pkg = g.package_id ? this.getPackage(g.package_id) : null;
         const revokeCmds = pkg ? parseCmds(pkg.revoke_commands) : [];
 
+        let mcNick = g.mc_nick ? String(g.mc_nick).trim() : null;
+        if (!mcNick && g.user_id) {
+            try {
+                const discordBotService = require('./discordBotService');
+                const wl = discordBotService.getWhitelist() || {};
+                const foundNick = wl[String(g.user_id)];
+                if (foundNick) {
+                    mcNick = foundNick;
+                }
+            } catch (e) {
+                console.error('[VIP] Revoke sirasinda whitelist mcNick cozme hatası:', e.message);
+            }
+        }
+
         // MC komutu gerekiyor ama sunucu kapalıysa: ERTELE (atomik kalsın, sonra tekrar denenir)
-        if (revokeCmds.length && g.mc_nick && !this._mcRunning()) {
+        if (revokeCmds.length && mcNick && !this._mcRunning()) {
             return { deferred: true, reason: 'mc_kapali' };
         }
 
-        const detail = await this._applyRevoke(pkg, { userId: g.user_id, mcNick: g.mc_nick });
+        const detail = await this._applyRevoke(pkg, { userId: g.user_id, mcNick });
         db().prepare("UPDATE vip_grants SET status = ?, revoked_at = ? WHERE id = ?")
             .run(viaExpiry ? 'expired' : 'revoked', now(), grantId);
         this._log(grantId, viaExpiry ? 'expire' : 'revoke', g.package_name, g.mc_nick, g.user_id, `${reason} · ${detail}`);
