@@ -186,6 +186,17 @@ export default function VipPage() {
         onError: (e) => toast.error(e.response?.data?.error || 'Uzatılamadı'),
     });
 
+    const syncVips = useMutation({
+        mutationFn: () => api.post('/vip/sync').then(r => r.data),
+        onSuccess: (data) => {
+            invalidate();
+            qc.invalidateQueries({ queryKey: ['discord-guild-roles'] });
+            qc.invalidateQueries({ queryKey: ['discord-timed-roles'] });
+            toast.success(data.message || 'VIP senkronizasyonu tamamlandı');
+        },
+        onError: (e) => toast.error(e.response?.data?.error || 'Senkronizasyon başarısız'),
+    });
+
     const wlFiltered = wl.filter(e => {
         const q = gSearch.toLowerCase();
         return !q || (e.mcNick || '').toLowerCase().includes(q) || (e.discordName || e.username || '').toLowerCase().includes(q);
@@ -202,12 +213,19 @@ export default function VipPage() {
 
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: A.sans, color: A.text }}>
+            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            
             {/* Başlık */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div>
                     <Cap>Üyelik Yönetimi</Cap>
                     <h1 style={{ fontSize: 22, fontWeight: 600, margin: '4px 0 2px' }}>VIP Sistemi</h1>
                     <p style={{ fontSize: 12, color: A.dim, margin: 0 }}>Çoklu paket · Discord rolü + Minecraft komutları · süreli, otomatik bitiş.</p>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                        <button onClick={() => syncVips.mutate()} disabled={syncVips.isPending} style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 11 }}>
+                            <I.Restart size={12} style={{ animation: syncVips.isPending ? 'hoodoo-spin 0.8s linear infinite' : 'none' }} /> {syncVips.isPending ? 'Senkronize Ediliyor...' : 'Discord Rollerinden Senkronize Et'}
+                        </button>
+                    </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                     <Card title="Aktif VIP"><Num size={22}>{stats?.activeGrants ?? 0}</Num></Card>

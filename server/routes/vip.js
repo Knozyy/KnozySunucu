@@ -122,6 +122,16 @@ router.put('/teams-config', authMiddleware, requireRole('admin'), (req, res) => 
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Manuel Senkronizasyon ──
+router.post('/sync', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const result = await vipService.sync();
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Log ──
 router.get('/log', authMiddleware, (req, res) => {
     try { res.json({ log: vipService.log(parseInt(req.query.limit) || 100) }); } catch (e) { res.status(500).json({ error: e.message }); }

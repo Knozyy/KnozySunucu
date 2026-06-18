@@ -668,6 +668,123 @@ class VipService {
         } catch (err) { console.error('[VIP] Kontrol hatası:', err.message); }
     }
 
+    /** Discord VIP rollerini yerel veritabanı ve Minecraft ile senkronize et. */
+    async sync() {
+        const discordBotService = require('./discordBotService');
+        const guildId = await discordBotService.getPrimaryGuildId();
+        if (!guildId) throw new Error('Birincil Discord sunucusu ayarlanmamış.');
+
+        const packages = this.listPackages();
+        const vipPackages = packages.filter(p => p.enabled && p.discord_role_id);
+        if (vipPackages.length === 0) {
+            return { added: 0, removed: 0, updated: 0, message: 'Aktif veya Discord rolü tanımlı VIP paketi bulunamadı.' };
+        }
+
+        const members = await discordBotService.fetchGuildMembers(guildId);
+        if (!members || members.length === 0) {
+            throw new Error('Discord sunucu üyeleri çekilemedi. Bot çalışıyor mu?');
+        }
+
+        const whitelist = discordBotService.getWhitelist() || {};
+        const activeGrants = db().prepare("SELECT * FROM vip_grants WHERE status = 'active'").all();
+
+        let added = 0;
+        let removed = 0;
+        let updated = 0;
+
+        // Discord'daki rolleri baz alarak ekleme/güncelleme işlemleri
+        const processedUserIds = new Set();
+
+        for (const member of members) {
+            if (!member.user || member.user.bot) continue;
+            const userId = String(member.user.id);
+            const memberRoleIds = member.roles || [];
+
+            // Bu üyenin sahip olduğu VIP rolleriyle eşleşen paketleri bul
+            const matchedPkgs = vipPackages.filter(p => memberRoleIds.includes(p.discord_role_id));
+            
+            if (matchedPkgs.length > 0) {
+                // En yüksek sort_order'a (veya ID'ye) sahip paketi seç
+                matchedPkgs.sort((a, b) => (b.sort_order || 0) - (a.sort_order || 0));
+                const targetPkg = matchedPkgs[0];
+
+                processedUserIds.add(userId);
+
+                // Bu kullanıcının veritabanındaki aktif grant durumunu kontrol et
+                const existingGrant = activeGrants.find(g => String(g.user_id) === userId);
+
+                if (existingGrant) {
+                    if (Number(existingGrant.package_id) !== Number(targetPkg.id)) {
+                        // Farklı paket -> Eski paketi revoke et, yeni paketi ver
+                        try {
+                            await this.revoke(existingGrant.id, { by: 'sync', reason: `Senkronizasyon: ${targetPkg.name} paketine geçiş` });
+                            const mcNick = existingGrant.mc_nick || whitelist[userId] || null;
+                            await this.grant({
+                                packageId: targetPkg.id,
+                                userId,
+                                mcNick,
+                                durationDays: targetPkg.duration_days,
+                                grantedBy: 'sync',
+                                note: 'Discord rol senkronizasyonu ile otomatik güncellendi'
+                            });
+                            updated++;
+                        } catch (err) {
+                            console.error(`[VIP Sync] Paket güncelleme hatası (user:${userId}):`, err.message);
+                        }
+                    }
+                } else {
+                    // Veritabanında aktif grant yok ama Discord'da rolü var -> Yeni VIP ver
+                    const mcNick = whitelist[userId] || null;
+                    try {
+                        await this.grant({
+                            packageId: targetPkg.id,
+                            userId,
+                            mcNick,
+                            durationDays: targetPkg.duration_days,
+                            grantedBy: 'sync',
+                            note: 'Discord rol senkronizasyonu ile otomatik eklendi'
+                        });
+                        added++;
+                    } catch (err) {
+                        console.error(`[VIP Sync] VIP ekleme hatası (user:${userId}):`, err.message);
+                    }
+                }
+            }
+        }
+
+        // Veritabanında aktif olup Discord'da rolü olmayanları temizleme (yalnızca Discord ID'si olanlar için)
+        for (const g of activeGrants) {
+            if (!g.user_id) continue; // Discord ID'si yoksa elle girilmiştir, dokunma
+            const userId = String(g.user_id);
+
+            // Eğer bu kullanıcı yukarıda işlenmediyse (yani Discord'da VIP rolü kalmadıysa)
+            if (!processedUserIds.has(userId)) {
+                // Discord'da gerçekten bu rolün olmadığını doğrulamak için üyenin sunucuda olup olmadığına bak
+                const member = members.find(m => m.user && String(m.user.id) === userId);
+                
+                // Üye sunucudaysa ve VIP rolü yoksa, ya da üye sunucudan çıkmışsa
+                if (!member || !member.roles || !vipPackages.some(p => member.roles.includes(p.discord_role_id))) {
+                    try {
+                        await this.revoke(g.id, { by: 'sync', reason: 'Senkronizasyon: Discord rolü kaldırılmış' });
+                        removed++;
+                    } catch (err) {
+                        console.error(`[VIP Sync] VIP kaldırma hatası (grant:${g.id}):`, err.message);
+                    }
+                }
+            }
+        }
+
+        // Süre kontrolünü ve bekleyen komutları da tetikle
+        await this._check();
+
+        return {
+            added,
+            removed,
+            updated,
+            message: `Senkronizasyon tamamlandı: ${added} yeni VIP eklendi, ${removed} VIP kaldırıldı, ${updated} VIP güncellendi.`
+        };
+    }
+
     // ── Durum (panel başlık kartı) ──────────────────────────────────────────
     stats() {
         try {

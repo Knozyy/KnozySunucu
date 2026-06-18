@@ -540,6 +540,33 @@ class DiscordBotService {
         });
     }
 
+    /** Discord API'sinden sunucunun tüm üyelerini sayfalayarak çeker. */
+    async fetchGuildMembers(guildId) {
+        const gid = guildId || await this.getPrimaryGuildId();
+        if (!gid) return [];
+
+        let allMembers = [];
+        let after = null;
+        const limit = 1000;
+
+        for (let i = 0; i < 10; i++) { // En fazla 10000 üye çek (rate-limit koruması)
+            let path = `/guilds/${gid}/members?limit=${limit}`;
+            if (after) {
+                path += `&after=${after}`;
+            }
+            const chunk = await this._discordApiGet(path);
+            if (!Array.isArray(chunk) || chunk.length === 0) {
+                break;
+            }
+            allMembers = allMembers.concat(chunk);
+            if (chunk.length < limit) {
+                break;
+            }
+            after = String(chunk[chunk.length - 1].user.id);
+        }
+        return allMembers;
+    }
+
     /** Bir guild'in METİN kanalları (lag panosu kanal seçici için). */
     async listGuildChannels(guildId) {
         if (!guildId) return [];
