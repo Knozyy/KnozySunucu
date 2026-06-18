@@ -104,6 +104,24 @@ router.put('/chunks-config', authMiddleware, requireRole('admin'), (req, res) =>
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Genel FTB Essentials ayarları (ftbessentials.snbt) ──
+router.get('/essentials-config', authMiddleware, (req, res) => {
+    try { res.json(vipService.readEssentialsConfig()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/essentials-config', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json({ message: 'FTB Essentials ayarları kaydedildi', ...vipService.saveEssentialsConfig(req.body?.settings || {}) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ── FTB Teams ayarları (ftbteams-server.snbt) ──
+router.get('/teams-config', authMiddleware, (req, res) => {
+    try { res.json(vipService.readTeamsConfig()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/teams-config', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json({ message: 'FTB Teams ayarları kaydedildi', ...vipService.saveTeamsConfig(req.body?.settings || {}) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Log ──
 router.get('/log', authMiddleware, (req, res) => {
     try { res.json({ log: vipService.log(parseInt(req.query.limit) || 100) }); } catch (e) { res.status(500).json({ error: e.message }); }

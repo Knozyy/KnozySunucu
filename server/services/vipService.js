@@ -12,6 +12,8 @@ const path = require('path');
 const { getDb } = require('../db/database');
 const ranksFile = require('./vip/ranksFile');
 const chunksFile = require('./vip/ftbChunksFile');
+const essentialsFile = require('./vip/ftbEssentialsFile');
+const teamsFile = require('./vip/ftbTeamsFile');
 
 // Panelden yönetilen FTB Ranks kademeleri (eksik blok oluşturulurken meta) — VipPage presetleriyle eşleşir.
 const TIER_META = {
@@ -374,12 +376,23 @@ class VipService {
         ];
     }
     // Var olan ilk adayı döndür; hiçbiri yoksa en olası yolu (hata mesajı doğru yeri göstersin).
-    _resolveConfigPath(cands) {
-        for (const c of cands) { try { if (fs.existsSync(c)) return c; } catch { /* ignore */ } }
-        return cands[0] || null;
+    // requireBody: yalnızca gövdesi `{` içeren GERÇEK config'i seç (FTB Essentials'ın "taşındı" stub'unu atla).
+    _resolveConfigPath(cands, { requireBody = false } = {}) {
+        let firstExisting = null;
+        for (const c of cands) {
+            try {
+                if (!fs.existsSync(c)) continue;
+                if (firstExisting == null) firstExisting = c;
+                if (!requireBody) return c;
+                if (fs.readFileSync(c, 'utf-8').includes('{')) return c;
+            } catch { /* ignore */ }
+        }
+        return firstExisting || cands[0] || null;
     }
     _ranksPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbranks', 'ranks.snbt')); }
     _chunksConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbchunks-world.snbt')); }
+    _essentialsConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbessentials.snbt'), { requireBody: true }); }
+    _teamsConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbteams-server.snbt'), { requireBody: true }); }
 
     // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
     /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
@@ -484,6 +497,38 @@ class VipService {
         }
         return { ok: true, path: p, note: 'Yazıldı. FTB Chunks ayarları canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
     }
+
+    // ── Genel SNBT config okuma/kaydetme (FTB Essentials, FTB Teams) ─────────
+    _readSnbtConfig(p, mod) {
+        const found = !!(p && fs.existsSync(p));
+        let settings = {};
+        if (found) { try { settings = mod.readSettings(fs.readFileSync(p, 'utf-8')); } catch { /* ignore */ } }
+        return { fileFound: found, path: p, serverRunning: this._mcRunning(), settings };
+    }
+    /** Yedek + yazma + doğrulama (int/bool/enum). Anahtar dosyada yoksa atlanır. */
+    _saveSnbtConfig(p, mod, settings, fname) {
+        if (!settings || typeof settings !== 'object') throw new Error('settings gerekli');
+        if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
+        if (!fs.existsSync(p)) throw new Error(`${fname} bulunamadı: ${p} — sunucuda ilgili mod kurulu/çalışmış olmalı.`);
+        const raw = fs.readFileSync(p, 'utf-8');
+        const next = mod.writeSettings(raw, settings);
+        try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
+        fs.writeFileSync(p, next, 'utf-8');
+        const after = mod.readSettings(fs.readFileSync(p, 'utf-8'));
+        const revert = (field) => { try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ } throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`); };
+        for (const [field, def] of Object.entries(mod.MANAGED)) {
+            if (!(field in settings) || after[field] === null) continue;
+            const w = settings[field];
+            if (def.type === 'int') { const ok = w != null && w !== '' && Number.isFinite(Number(w)); if (ok && Number(after[field]) !== Number(w)) revert(field); }
+            else if (def.type === 'bool') { if (Boolean(after[field]) !== Boolean(w)) revert(field); }
+            else if (def.type === 'enum') { if (w && def.values?.includes(String(w)) && after[field] !== String(w)) revert(field); }
+        }
+        return { ok: true, path: p, note: 'Yazıldı. Ayarlar canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
+    }
+    readEssentialsConfig() { return this._readSnbtConfig(this._essentialsConfigPath(), essentialsFile); }
+    saveEssentialsConfig(settings) { return this._saveSnbtConfig(this._essentialsConfigPath(), essentialsFile, settings, 'ftbessentials.snbt'); }
+    readTeamsConfig() { return this._readSnbtConfig(this._teamsConfigPath(), teamsFile); }
+    saveTeamsConfig(settings) { return this._saveSnbtConfig(this._teamsConfigPath(), teamsFile, settings, 'ftbteams-server.snbt'); }
 
     async _applyGrant(pkg, { userId, mcNick }) {
         const parts = [];
