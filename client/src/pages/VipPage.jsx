@@ -123,6 +123,7 @@ export default function VipPage() {
     const qc = useQueryClient();
     const [tab, setTab] = useState('grants');
     const [editPkg, setEditPkg] = useState(null);
+    const [perkTier, setPerkTier] = useState(null); // preset kartından perk düzenleme modalı {rank,name,color}
     // grant form
     const [gPkg, setGPkg] = useState('');
     const [gPlayer, setGPlayer] = useState(null); // {userId, mcNick, label}
@@ -303,7 +304,7 @@ export default function VipPage() {
                     {/* Hazır kademeler — perkler ranks.snbt'de tanımlı, panel sadece rütbe ekler/çıkarır */}
                     <Card title="Hazır Kademeler">
                         <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
-                            Tek tıkla VIP / VIP+ / MVP paketini oluştur. Perkler sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code> dosyasında tanımlıdır — kurulum için bkz. <code style={{ fontFamily: A.mono, color: A.dim }}>.planning/2026-06-08-vip-perk-rehberi.md</code>. (ranks.snbt'yi panelden düzenleme yakında.)
+                            Tek tıkla VIP / VIP+ / MVP paketini oluştur. Aşağıdaki maddeler önerilen varsayılandır; gerçek perkleri kart üzerindeki <b style={{ color: A.dim }}>Perkleri Düzenle</b> ile sunucunun <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'sinde değiştirebilirsin. Kurulum: <code style={{ fontFamily: A.mono, color: A.dim }}>.planning/2026-06-08-vip-perk-rehberi.md</code>.
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
                             {TIER_PRESETS.map(t => {
@@ -322,12 +323,16 @@ export default function VipPage() {
                                                 </li>
                                             ))}
                                         </ul>
-                                        {ex ? (
-                                            <button onClick={() => openPackage(ex)} style={{ ...btnGhost, marginTop: 'auto' }}>Düzenle (var)</button>
-                                        ) : (
-                                            <button onClick={() => setEditPkg({ ...EMPTY_PKG, name: t.name, color: t.color, duration_days: t.duration_days, grant_commands: t.grant.join('\n'), revoke_commands: t.revoke.join('\n') })}
-                                                style={{ ...btnPrimary, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Plus size={12} /> Oluştur</button>
-                                        )}
+                                        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            {ex ? (
+                                                <button onClick={() => openPackage(ex)} style={btnGhost}>Düzenle (var)</button>
+                                            ) : (
+                                                <button onClick={() => setEditPkg({ ...EMPTY_PKG, name: t.name, color: t.color, duration_days: t.duration_days, grant_commands: t.grant.join('\n'), revoke_commands: t.revoke.join('\n') })}
+                                                    style={{ ...btnPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Plus size={12} /> Oluştur</button>
+                                            )}
+                                            <button onClick={() => setPerkTier({ rank: t.rank, name: t.name, color: t.color })}
+                                                style={{ ...btnGhost, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><I.Wrench size={12} /> Perkleri Düzenle</button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -395,6 +400,7 @@ export default function VipPage() {
             )}
 
             {editPkg && <PackageModal pkg={editPkg} onClose={() => setEditPkg(null)} onSave={(p) => savePkg.mutate(p)} saving={savePkg.isPending} />}
+            {perkTier && <PerkEditModal rank={perkTier.rank} label={perkTier.name} color={perkTier.color} onClose={() => setPerkTier(null)} />}
         </div>
     );
 }
@@ -539,9 +545,9 @@ function PerksTab() {
     );
 }
 
-function TierPerkCard({ tier }) {
+// Perk düzenleme formu — Perkler sekmesi kartında ve preset kartı modalında ortak kullanılır.
+function TierPerkEditor({ tier, onSaved }) {
     const qc = useQueryClient();
-    const preset = TIER_PRESETS.find(t => t.rank === tier.rank);
     // Blok varsa dosyadaki gerçek durumu göster; yoksa preset varsayılanlarıyla ön-doldur.
     const seed = tier.exists && tier.perks ? {
         nameFormat: tier.perks.nameFormat ?? '',
@@ -562,18 +568,12 @@ function TierPerkCard({ tier }) {
                 ...Object.fromEntries(PERK_TOGGLES.map(([k]) => [k, !!f[k]])),
             },
         }).then(r => r.data),
-        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); },
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); onSaved?.(); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
 
     return (
-        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: preset?.color || 'var(--accent)' }} />
-                <span style={{ fontWeight: 600 }}>{tier.label || tier.rank}</span>
-                <Pill color={tier.exists ? A.ok : A.faint}>{tier.exists ? 'tanımlı' : 'yok — kaydedince oluşturulur'}</Pill>
-                <code style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{tier.rank}</code>
-            </div>
+        <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div><Cap style={{ display: 'block', marginBottom: 4 }}>İsim formatı ({'{name}'} yer tutucu · &amp;b renk)</Cap>
                     <Input value={f.nameFormat || ''} onChange={e => set('nameFormat', e.target.value)} placeholder="&b[VIP] {name}&r" /></div>
@@ -593,6 +593,49 @@ function TierPerkCard({ tier }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                 <button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+            </div>
+        </>
+    );
+}
+
+function TierPerkCard({ tier }) {
+    const preset = TIER_PRESETS.find(t => t.rank === tier.rank);
+    return (
+        <div style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 4, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: preset?.color || 'var(--accent)' }} />
+                <span style={{ fontWeight: 600 }}>{tier.label || tier.rank}</span>
+                <Pill color={tier.exists ? A.ok : A.faint}>{tier.exists ? 'tanımlı' : 'yok — kaydedince oluşturulur'}</Pill>
+                <code style={{ marginLeft: 'auto', fontSize: 10, color: A.faint, fontFamily: A.mono }}>{tier.rank}</code>
+            </div>
+            <TierPerkEditor tier={tier} />
+        </div>
+    );
+}
+
+// Preset kartından açılan perk düzenleme modalı (Perkler sekmesindeki editörün aynısı).
+function PerkEditModal({ rank, label, color, onClose }) {
+    const { data, isLoading } = useQuery({ queryKey: ['vip-ranks-perks'], queryFn: () => api.get('/vip/ranks-perks').then(r => r.data) });
+    const tier = data?.tiers?.find(t => t.rank === rank);
+    return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} style={{ background: A.panel, border: `1px solid ${A.border}`, borderRadius: 6, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: color || 'var(--accent)' }} />
+                    <h3 style={{ margin: 0, fontSize: 16 }}>{label} — Perkler</h3>
+                    <code style={{ fontSize: 10, color: A.faint, fontFamily: A.mono }}>{rank}</code>
+                    <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: A.faint }}><I.X size={16} /></button>
+                </div>
+                <p style={{ fontSize: 11, color: A.faint, margin: '0 0 12px' }}>
+                    Sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                </p>
+                {isLoading ? <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>
+                    : !data?.fileFound ? (
+                        <div style={{ padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                            ranks.snbt bulunamadı{data?.path ? ` (${data.path})` : ''}. Sunucuda FTB Ranks kurulu/çalışmış olmalı; kurulum için bkz. <code style={{ fontFamily: A.mono }}>.planning/2026-06-08-vip-perk-rehberi.md</code>.
+                        </div>
+                    ) : tier ? <TierPerkEditor tier={tier} onSaved={onClose} />
+                        : <p style={{ fontSize: 12, color: A.faint }}>Kademe verisi bulunamadı.</p>}
             </div>
         </div>
     );
