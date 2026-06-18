@@ -67,13 +67,13 @@ const TIER_PRESETS = [
     },
     {
         rank: 'vip_plus', name: 'VIP+', color: '#2ecc71', duration_days: 30,
-        perks: ['Renkli isim [VIP+]', '20 home', 'Home bekleme: 10', '/back', '/rtp', 'Claim: 1200', 'Force-load: 120'],
+        perks: ['Renkli isim [VIP+]', '20 home', 'Home bekleme: 10', '/back', '/tpr', 'Claim: 1200', 'Force-load: 120'],
         grant: ['ftbranks add {nick} vip_plus', 'say {nick} artik VIP+ oldu!'],
         revoke: ['ftbranks remove {nick} vip_plus'],
     },
     {
         rank: 'mvp', name: 'MVP', color: '#f1c40f', duration_days: 30,
-        perks: ['Renkli isim [MVP]', '35 home', 'Home bekleme: 0', '/back', '/rtp', '/enderchest', 'Claim: 2000', 'Force-load: 200'],
+        perks: ['Renkli isim [MVP]', '35 home', 'Home bekleme: 0', '/back', '/tpr', '/enderchest', 'Claim: 2000', 'Force-load: 200'],
         grant: ['ftbranks add {nick} mvp', 'say {nick} artik MVP oldu!'],
         revoke: ['ftbranks remove {nick} mvp'],
     },
@@ -98,10 +98,17 @@ function presetByGrant(grantCommands) {
 
 // "Perkler" sekmesi form varsayılanları (blok YOKsa ön-doldurma; rehberle birebir).
 const TIER_PERK_DEFAULTS = {
-    vip:      { nameFormat: '&b[VIP] {name}&r',  homeMax: 10, homeCooldown: 30, back: true, rtp: false, enderchest: false, maxClaimed: 750,  maxForceLoaded: 80 },
-    vip_plus: { nameFormat: '&a[VIP+] {name}&r', homeMax: 20, homeCooldown: 10, back: true, rtp: true,  enderchest: false, maxClaimed: 1200, maxForceLoaded: 120 },
-    mvp:      { nameFormat: '&6[MVP] {name}&r',  homeMax: 35, homeCooldown: 0,  back: true, rtp: true,  enderchest: true,  maxClaimed: 2000, maxForceLoaded: 200 },
+    vip:      { nameFormat: '&b[VIP] {name}&r',  homeMax: 10, homeCooldown: 30, back: true, tpr: false, enderchest: false, maxClaimed: 750,  maxForceLoaded: 80 },
+    vip_plus: { nameFormat: '&a[VIP+] {name}&r', homeMax: 20, homeCooldown: 10, back: true, tpr: true,  enderchest: false, maxClaimed: 1200, maxForceLoaded: 120 },
+    mvp:      { nameFormat: '&6[MVP] {name}&r',  homeMax: 35, homeCooldown: 0,  back: true, tpr: true,  enderchest: true,  maxClaimed: 2000, maxForceLoaded: 200 },
 };
+
+// "Perkler" sekmesindeki tek-node komut toggle'ları (sunucu ranksFile.MANAGED bool alanlarıyla eşleşir).
+const PERK_TOGGLES = [
+    ['back', '/back'], ['tpr', '/tpr (rastgele ışınla)'], ['rtp', '/rtp (FTB Ess.)'], ['enderchest', '/enderchest'],
+    ['spawn', '/spawn'], ['hat', '/hat'], ['nickname', '/nickname'],
+    ['craftingTable', 'Craft masası'], ['anvil', 'Örs'], ['smithing', 'Smithing'], ['stonecutter', 'Taş kesici'], ['trashcan', 'Çöp kutusu'],
+];
 
 function fmtExpiry(sec) {
     if (!sec) return 'Süresiz';
@@ -209,7 +216,7 @@ export default function VipPage() {
 
             {/* Sekmeler */}
             <div style={{ display: 'flex', borderBottom: `1px solid ${A.border}`, gap: 4 }}>
-                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'settings', label: 'Ayarlar', icon: I.Cog }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
+                {[{ id: 'grants', label: 'VIP Ver & Aktif', icon: I.Crown }, { id: 'packages', label: 'Paketler', icon: I.Stack }, { id: 'perks', label: 'Perkler', icon: I.Wrench }, { id: 'chunks', label: 'FTB Chunks', icon: I.Stack }, { id: 'settings', label: 'Ayarlar', icon: I.Cog }, { id: 'log', label: 'Log', icon: I.Clock }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{
                         background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
                         color: tab === t.id ? '#fff' : A.dim, fontSize: 12, fontWeight: 500, padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -356,6 +363,9 @@ export default function VipPage() {
 
             {/* PERKLER (ranks.snbt editörü) */}
             {tab === 'perks' && <PerksTab />}
+
+            {/* GENEL FTB CHUNKS AYARLARI */}
+            {tab === 'chunks' && <ChunksConfigTab />}
 
             {/* AYARLAR */}
             {tab === 'settings' && <VipSettingsTab settings={settingsData?.settings} />}
@@ -510,7 +520,10 @@ function PerksTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Card title="Kademe Perkleri (ranks.snbt)">
                 <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                    Perkleri buradan düzenle → Kaydet → sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>config/ftbranks/ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Her kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                    Perkleri buradan düzenle → Kaydet → sunucudaki <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye yazılır{data?.serverRunning ? ' + otomatik ftbranks reload' : ' (sunucu kapalı — açılınca uygulanır)'}. Her kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                </p>
+                <p style={{ fontSize: 10, color: A.faint, margin: '6px 0 0' }}>
+                    Listede olmayan perkler (örn. <code style={{ fontFamily: A.mono, color: A.dim }}>/tpa</code> — 4 düğüm ister, ya da günlük kit <code style={{ fontFamily: A.mono, color: A.dim }}>ftbessentials.give_me_kit.&lt;ad&gt;</code>) elle <code style={{ fontFamily: A.mono, color: A.dim }}>ranks.snbt</code>'ye eklenebilir; panel şema dışı düğümleri silmeden korur.
                 </p>
                 {data && !data.fileFound && (
                     <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
@@ -532,8 +545,8 @@ function TierPerkCard({ tier }) {
     const seed = tier.exists && tier.perks ? {
         nameFormat: tier.perks.nameFormat ?? '',
         homeMax: tier.perks.homeMax ?? '', homeCooldown: tier.perks.homeCooldown ?? '',
-        back: !!tier.perks.back, rtp: !!tier.perks.rtp, enderchest: !!tier.perks.enderchest,
         maxClaimed: tier.perks.maxClaimed ?? '', maxForceLoaded: tier.perks.maxForceLoaded ?? '',
+        ...Object.fromEntries(PERK_TOGGLES.map(([k]) => [k, !!tier.perks[k]])),
     } : { ...(TIER_PERK_DEFAULTS[tier.rank] || {}) };
     const [f, setF] = useState(seed);
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
@@ -544,8 +557,8 @@ function TierPerkCard({ tier }) {
             perks: {
                 nameFormat: f.nameFormat || null,
                 homeMax: numOrNull(f.homeMax), homeCooldown: numOrNull(f.homeCooldown),
-                back: !!f.back, rtp: !!f.rtp, enderchest: !!f.enderchest,
                 maxClaimed: numOrNull(f.maxClaimed), maxForceLoaded: numOrNull(f.maxForceLoaded),
+                ...Object.fromEntries(PERK_TOGGLES.map(([k]) => [k, !!f[k]])),
             },
         }).then(r => r.data),
         onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-ranks-perks'] }); toast.success(d.reloaded ? 'Kaydedildi + reload' : 'Kaydedildi (sunucu açılınca uygulanır)'); },
@@ -569,8 +582,8 @@ function TierPerkCard({ tier }) {
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Claim chunk</Cap><Input type="number" value={f.maxClaimed ?? ''} onChange={e => set('maxClaimed', e.target.value)} /></div>
                     <div><Cap style={{ display: 'block', marginBottom: 4 }}>Force-load chunk</Cap><Input type="number" value={f.maxForceLoaded ?? ''} onChange={e => set('maxForceLoaded', e.target.value)} /></div>
                 </div>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
-                    {[['back', '/back'], ['rtp', '/rtp'], ['enderchest', '/enderchest']].map(([k, lbl]) => (
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
+                    {PERK_TOGGLES.map(([k, lbl]) => (
                         <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
                             <input type="checkbox" checked={!!f[k]} onChange={e => set(k, e.target.checked)} /> {lbl}
                         </label>
@@ -581,6 +594,49 @@ function TierPerkCard({ tier }) {
                 <button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
             </div>
         </div>
+    );
+}
+
+// ── Genel FTB Chunks ayarları sekmesi (ftbchunks-server.snbt) ──────────────
+function ChunksConfigTab() {
+    const qc = useQueryClient();
+    const { data, isLoading } = useQuery({ queryKey: ['vip-chunks-config'], queryFn: () => api.get('/vip/chunks-config').then(r => r.data) });
+    const [f, setF] = useState(null);
+    const s = data?.settings || {};
+    const cur = f || { maxClaimedChunks: s.maxClaimedChunks ?? '', maxForceLoadedChunks: s.maxForceLoadedChunks ?? '' };
+    const set = (k, v) => setF({ ...cur, [k]: v });
+    const save = useMutation({
+        mutationFn: () => api.put('/vip/chunks-config', { settings: {
+            maxClaimedChunks: cur.maxClaimedChunks === '' ? null : Number(cur.maxClaimedChunks),
+            maxForceLoadedChunks: cur.maxForceLoadedChunks === '' ? null : Number(cur.maxForceLoadedChunks),
+        } }).then(r => r.data),
+        onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-chunks-config'] }); setF(null); toast.success(d.note || 'Kaydedildi'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
+    });
+    if (isLoading) return <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>;
+    return (
+        <Card title="Genel FTB Chunks Ayarları (ftbchunks-server.snbt)">
+            <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
+                Sunucu geneli <strong>varsayılan</strong> claim limitleri. VIP kademelerindeki <code style={{ fontFamily: A.mono, color: A.dim }}>Claim chunk</code> / <code style={{ fontFamily: A.mono, color: A.dim }}>Force-load chunk</code> değerleri bunları oyuncu bazında <strong>ezer</strong> — VIP limitleri buradaki varsayılanın üstünde olmalı. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+            </p>
+            <div style={{ marginTop: 8, fontSize: 11, color: A.warn }}>
+                ⚠️ FTB Chunks sunucu ayarları canlı yenilenmez — değişiklik için sunucuyu <strong>yeniden başlat</strong>.
+            </div>
+            {data && !data.fileFound && (
+                <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
+                    ftbchunks-server.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Chunks kurulu/çalışmış olmalı.
+                </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12, maxWidth: 440 }}>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan claim chunk</Cap>
+                    <Input type="number" value={cur.maxClaimedChunks} onChange={e => set('maxClaimedChunks', e.target.value)} placeholder="örn. 500" /></div>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan force-load chunk</Cap>
+                    <Input type="number" value={cur.maxForceLoadedChunks} onChange={e => set('maxForceLoadedChunks', e.target.value)} placeholder="örn. 50" /></div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => save.mutate()} disabled={save.isPending || !data?.fileFound} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
+            </div>
+        </Card>
     );
 }
 

@@ -95,6 +95,15 @@ router.put('/ranks-perks/:rank', authMiddleware, requireRole('admin'), (req, res
     catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Genel FTB Chunks ayarları (ftbchunks-server.snbt) ──
+router.get('/chunks-config', authMiddleware, (req, res) => {
+    try { res.json(vipService.readChunksConfig()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/chunks-config', authMiddleware, requireRole('admin'), (req, res) => {
+    try { res.json({ message: 'FTB Chunks ayarları kaydedildi', ...vipService.saveChunksConfig(req.body?.settings || {}) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Log ──
 router.get('/log', authMiddleware, (req, res) => {
     try { res.json({ log: vipService.log(parseInt(req.query.limit) || 100) }); } catch (e) { res.status(500).json({ error: e.message }); }

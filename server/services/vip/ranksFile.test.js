@@ -138,10 +138,27 @@ test('writePerks: olmayan bloğu oluşturur', () => {
 });
 
 test('writePerks → readPerks round-trip', () => {
-    const perks = { nameFormat: '&6[MVP] {name}&r', homeMax: 35, homeCooldown: 0, back: true, rtp: true, enderchest: true, maxClaimed: 2000, maxForceLoaded: 200 };
+    const perks = {
+        nameFormat: '&6[MVP] {name}&r', homeMax: 35, homeCooldown: 0,
+        back: true, rtp: true, tpr: true, enderchest: true,
+        spawn: true, hat: false, nickname: true,
+        craftingTable: true, anvil: false, smithing: true, stonecutter: false, trashcan: true,
+        maxClaimed: 2000, maxForceLoaded: 200,
+    };
     const out = rf.writePerks(SAMPLE, 'mvp', perks, META.mvp);
     const r = rf.readPerks(out, 'mvp').perks;
     assert.deepEqual(r, perks);
+});
+
+test('writePerks: yeni tek-node perkler doğru anahtarı yazar', () => {
+    const out = rf.writePerks(SAMPLE, 'vip', { tpr: true, craftingTable: true, hat: true }, META.vip);
+    assert.match(out, /"command\.moonlight\.tpr": true/);
+    assert.match(out, /"command\.open\.crafting": true/);
+    assert.match(out, /"command\.hat": true/);
+    const p = rf.readPerks(out, 'vip').perks;
+    assert.equal(p.tpr, true);
+    assert.equal(p.craftingTable, true);
+    assert.equal(p.hat, true);
 });
 
 test('writePerks: nameFormat özel karakterleri korur', () => {

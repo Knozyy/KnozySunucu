@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
 const ranksFile = require('./vip/ranksFile');
+const chunksFile = require('./vip/ftbChunksFile');
 
 // Panelden yönetilen FTB Ranks kademeleri (eksik blok oluşturulurken meta) — VipPage presetleriyle eşleşir.
 const TIER_META = {
@@ -342,20 +343,25 @@ class VipService {
         } catch { /* ignore */ }
         return 'world';
     }
-    // FTB Ranks ranks.snbt — sürüme göre dünya save'inde (world/serverconfig)
-    // veya genel config'te olabilir. Var olan ilk yolu döndür.
-    _ranksPath() {
+    // FTB serverconfig dosyaları sürüme göre dünya save'inde (world/serverconfig) veya genel config'te
+    // olabilir. Bir alt yol için olası adayları üretir (öncelik: dünyaya özel → world → genel config).
+    _serverConfigCandidates(...sub) {
         const sp = this._serverPath();
-        if (!sp) return null;
+        if (!sp) return [];
         const level = this._levelName();
-        const candidates = [
-            path.join(sp, level, 'serverconfig', 'ftbranks', 'ranks.snbt'),   // modern: dünyaya özel
-            path.join(sp, 'world', 'serverconfig', 'ftbranks', 'ranks.snbt'), // level-name okunamazsa
-            path.join(sp, 'config', 'ftbranks', 'ranks.snbt'),                // eski/genel
+        return [
+            path.join(sp, level, 'serverconfig', ...sub),   // modern: dünyaya özel
+            path.join(sp, 'world', 'serverconfig', ...sub), // level-name okunamazsa
+            path.join(sp, 'config', ...sub),                // eski/genel
         ];
-        for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch { /* ignore */ } }
-        return candidates[0]; // hiçbiri yoksa en olası yolu döndür (hata mesajı doğru yeri göstersin)
     }
+    // Var olan ilk adayı döndür; hiçbiri yoksa en olası yolu (hata mesajı doğru yeri göstersin).
+    _resolveConfigPath(cands) {
+        for (const c of cands) { try { if (fs.existsSync(c)) return c; } catch { /* ignore */ } }
+        return cands[0] || null;
+    }
+    _ranksPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbranks', 'ranks.snbt')); }
+    _chunksConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbchunks-server.snbt')); }
 
     // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
     /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
@@ -418,6 +424,42 @@ class VipService {
             }
         }
         return null;
+    }
+
+    // ── Genel FTB Chunks ayarları (ftbchunks-server.snbt — sunucu geneli varsayılanları) ──
+    /** Varsayılan claim / force-load limitlerini oku. */
+    readChunksConfig() {
+        const p = this._chunksConfigPath();
+        const found = !!(p && fs.existsSync(p));
+        let settings = { maxClaimedChunks: null, maxForceLoadedChunks: null };
+        if (found) { try { settings = chunksFile.readSettings(fs.readFileSync(p, 'utf-8')); } catch { /* ignore */ } }
+        return { fileFound: found, path: p, serverRunning: this._mcRunning(), settings };
+    }
+
+    /** FTB Chunks genel ayarlarını yaz: yedek + yazma-doğrulama. (Hot-reload yok — sunucu yeniden başlatılmalı.) */
+    saveChunksConfig(settings) {
+        if (!settings || typeof settings !== 'object') throw new Error('settings gerekli');
+        const p = this._chunksConfigPath();
+        if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
+        if (!fs.existsSync(p)) throw new Error(`ftbchunks-server.snbt bulunamadı: ${p} — sunucuda FTB Chunks kurulu/çalışmış olmalı.`);
+
+        const raw = fs.readFileSync(p, 'utf-8');
+        const next = chunksFile.writeSettings(raw, settings);
+
+        try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
+        fs.writeFileSync(p, next, 'utf-8');
+
+        // Yazma doğrulaması — geri oku, geçerli sayı verilen alanlar gerçekten yazıldı mı?
+        const after = chunksFile.readSettings(fs.readFileSync(p, 'utf-8'));
+        for (const [field, def] of Object.entries(chunksFile.MANAGED)) {
+            const w = settings[field];
+            const ok = def.type === 'int' && w != null && w !== '' && Number.isFinite(Number(w));
+            if (ok && Number(after[field]) !== Number(w)) {
+                try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ }
+                throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`);
+            }
+        }
+        return { ok: true, path: p, note: 'Yazıldı. FTB Chunks sunucu ayarları canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
     }
 
     async _applyGrant(pkg, { userId, mcNick }) {
