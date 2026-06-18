@@ -721,6 +721,113 @@ function fieldHint(text) {
     return <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>{text}</div>;
 }
 
+function DonationPackageItem({ p, index, liveGuilds, setPkg, delPkg, vipPackages, savedRoles }) {
+    // Seçilen sunucunun canlı rollerini çek
+    const { data: liveRolesData } = useQuery({
+        queryKey: ['discord-live-roles', p.guildId],
+        queryFn: () => api.get(`/discord/guilds/${p.guildId}/roles`).then(r => r.data),
+        enabled: !!p.guildId,
+    });
+    const liveRoles = liveRolesData?.roles || [];
+    const rolesList = liveRoles.length ? liveRoles : (p.guildId ? [] : savedRoles);
+
+    return (
+        <div style={{ ...card, background: A.bg, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>{p.id}</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer', marginLeft: 'auto' }}>
+                    <input type="checkbox" checked={!!p.stackable} onChange={e => setPkg(index, 'stackable', e.target.checked)}/>
+                    Katlanabilir (2× destek → 2× süre)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!p.enabled} onChange={e => setPkg(index, 'enabled', e.target.checked)}/>
+                    Aktif
+                </label>
+                <button onClick={() => delPkg(index)} title="Paketi sil"
+                    style={{ ...btnGhost, padding: '4px 8px', color: '#f87171' }}>
+                    <I.Trash size={13}/>
+                </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                    {fieldLabel('Paket Adı')}
+                    <input type="text" value={p.label} onChange={e => setPkg(index, 'label', e.target.value)}
+                        placeholder="Örn: Sunucu Katılım Üyeliği (30 gün)" style={inputStyle}/>
+                </div>
+                <div>
+                    {fieldLabel('Tür')}
+                    <select value={p.type} onChange={e => {
+                        setPkg(index, 'type', e.target.value);
+                        if (e.target.value === 'vip') {
+                            setPkg(index, 'guildId', '');
+                            setPkg(index, 'roleId', '');
+                        }
+                    }} style={inputStyle}>
+                        <option value="timed_role">Süreli Rol</option>
+                        <option value="vip">VIP Paketi</option>
+                    </select>
+                </div>
+                <div>
+                    {fieldLabel('Min. Destek (₺)')}
+                    <input type="number" min="1" value={p.price} onChange={e => setPkg(index, 'price', e.target.value)} style={inputStyle}/>
+                </div>
+            </div>
+
+            {p.type === 'timed_role' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 100px', gap: 10 }}>
+                    <div>
+                        {fieldLabel('Sunucu (Guild)')}
+                        <select value={p.guildId || ''} onChange={e => {
+                            setPkg(index, 'guildId', e.target.value);
+                            setPkg(index, 'roleId', '');
+                        }} style={inputStyle}>
+                            <option value="">-- Varsayılan Sunucu --</option>
+                            {liveGuilds.map(g => (
+                                <option key={g.id} value={g.id}>
+                                    {g.name} ({g.id})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        {fieldLabel('Discord Rolü')}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <select value={rolesList.some(r => String(r.id) === String(p.roleId)) ? p.roleId : ''}
+                                onChange={e => e.target.value && setPkg(index, 'roleId', e.target.value)}
+                                style={{ ...inputStyle, width: '50%' }}>
+                                <option value="">Kayıtlı rollerden seç...</option>
+                                {rolesList.map(r => <option key={r.id} value={r.id}>{r.name} ({r.id})</option>)}
+                            </select>
+                            <input type="text" value={p.roleId} onChange={e => setPkg(index, 'roleId', e.target.value)}
+                                placeholder="veya Rol ID yapıştır" style={{ ...inputStyle, width: '50%' }}/>
+                        </div>
+                        {fieldHint('Aynı rol tekrar alınırsa süre üst üste eklenir (uzatma).')}
+                    </div>
+                    <div>
+                        {fieldLabel('Süre (gün)')}
+                        <input type="number" min="1" value={p.durationDays}
+                            onChange={e => setPkg(index, 'durationDays', e.target.value)} style={inputStyle}/>
+                    </div>
+                </div>
+            ) : (
+                <div>
+                    {fieldLabel('Panel VIP Paketi')}
+                    <select value={p.vipPackageId} onChange={e => setPkg(index, 'vipPackageId', e.target.value)} style={inputStyle}>
+                        <option value="">VIP paketi seç...</option>
+                        {vipPackages.map(vp => (
+                            <option key={vp.id} value={vp.id}>
+                                {vp.name} ({vp.duration_days > 0 ? `${vp.duration_days} gün` : 'süresiz'})
+                            </option>
+                        ))}
+                    </select>
+                    {fieldHint('Süre ve roller VIP sayfasındaki paketten gelir. Aynı paket tekrar alınırsa süre uzatılır; daha değerli pakete geçişte kalan süre orana göre yeni pakete aktarılır.')}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function DonationsTab({ botSettings, botSettingsMutation }) {
     const [form, setForm] = useState(DEFAULT_DONATION_CONFIG);
 
@@ -730,6 +837,13 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
     });
     const vipPackages = vipData?.packages || [];
     const savedRoles = botSettings?.savedRoles || [];
+
+    // Canlı sunucu listesini çek
+    const { data: liveGuildsData } = useQuery({
+        queryKey: ['discord-live-guilds'],
+        queryFn: () => api.get('/discord/guilds').then(r => r.data),
+    });
+    const liveGuilds = liveGuildsData?.guilds || [];
 
     useEffect(() => {
         if (botSettings?.donation_config) {
@@ -751,7 +865,7 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
         ...f,
         packages: [...f.packages, {
             id: 'pkg_' + Date.now().toString(36),
-            label: '', type: 'timed_role', roleId: '', vipPackageId: '',
+            label: '', type: 'timed_role', guildId: '', roleId: '', vipPackageId: '',
             durationDays: 30, price: 100, stackable: true, enabled: true,
         }],
     }));
@@ -872,79 +986,16 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {form.packages.map((p, i) => (
-                        <div key={p.id} style={{ ...card, background: A.bg, padding: 14 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                                <span style={{ fontFamily: A.mono, fontSize: 10, color: A.faintest }}>{p.id}</span>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer', marginLeft: 'auto' }}>
-                                    <input type="checkbox" checked={!!p.stackable} onChange={e => setPkg(i, 'stackable', e.target.checked)}/>
-                                    Katlanabilir (2× destek → 2× süre)
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: A.faint, cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={!!p.enabled} onChange={e => setPkg(i, 'enabled', e.target.checked)}/>
-                                    Aktif
-                                </label>
-                                <button onClick={() => delPkg(i)} title="Paketi sil"
-                                    style={{ ...btnGhost, padding: '4px 8px', color: '#f87171' }}>
-                                    <I.Trash size={13}/>
-                                </button>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                                <div>
-                                    {fieldLabel('Paket Adı')}
-                                    <input type="text" value={p.label} onChange={e => setPkg(i, 'label', e.target.value)}
-                                        placeholder="Örn: Sunucu Katılım Üyeliği (30 gün)" style={inputStyle}/>
-                                </div>
-                                <div>
-                                    {fieldLabel('Tür')}
-                                    <select value={p.type} onChange={e => setPkg(i, 'type', e.target.value)} style={inputStyle}>
-                                        <option value="timed_role">Süreli Rol</option>
-                                        <option value="vip">VIP Paketi</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    {fieldLabel('Min. Destek (₺)')}
-                                    <input type="number" min="1" value={p.price} onChange={e => setPkg(i, 'price', e.target.value)} style={inputStyle}/>
-                                </div>
-                            </div>
-
-                            {p.type === 'timed_role' ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
-                                    <div>
-                                        {fieldLabel('Discord Rolü')}
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <select value={savedRoles.some(r => String(r.id) === String(p.roleId)) ? p.roleId : ''}
-                                                onChange={e => e.target.value && setPkg(i, 'roleId', e.target.value)}
-                                                style={{ ...inputStyle, width: '50%' }}>
-                                                <option value="">Kayıtlı rollerden seç...</option>
-                                                {savedRoles.map(r => <option key={r.id} value={r.id}>{r.name} ({r.id})</option>)}
-                                            </select>
-                                            <input type="text" value={p.roleId} onChange={e => setPkg(i, 'roleId', e.target.value)}
-                                                placeholder="veya Rol ID yapıştır" style={{ ...inputStyle, width: '50%' }}/>
-                                        </div>
-                                        {fieldHint('Aynı rol tekrar alınırsa süre üst üste eklenir (uzatma).')}
-                                    </div>
-                                    <div>
-                                        {fieldLabel('Süre (gün)')}
-                                        <input type="number" min="1" value={p.durationDays}
-                                            onChange={e => setPkg(i, 'durationDays', e.target.value)} style={inputStyle}/>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    {fieldLabel('Panel VIP Paketi')}
-                                    <select value={p.vipPackageId} onChange={e => setPkg(i, 'vipPackageId', e.target.value)} style={inputStyle}>
-                                        <option value="">VIP paketi seç...</option>
-                                        {vipPackages.map(vp => (
-                                            <option key={vp.id} value={vp.id}>
-                                                {vp.name} ({vp.duration_days > 0 ? `${vp.duration_days} gün` : 'süresiz'})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {fieldHint('Süre ve roller VIP sayfasındaki paketten gelir. Aynı paket tekrar alınırsa süre uzatılır; daha değerli pakete geçişte kalan süre orana göre yeni pakete aktarılır.')}
-                                </div>
-                            )}
-                        </div>
+                        <DonationPackageItem
+                            key={p.id}
+                            p={p}
+                            index={i}
+                            liveGuilds={liveGuilds}
+                            setPkg={setPkg}
+                            delPkg={delPkg}
+                            vipPackages={vipPackages}
+                            savedRoles={savedRoles}
+                        />
                     ))}
                 </div>
             </div>
