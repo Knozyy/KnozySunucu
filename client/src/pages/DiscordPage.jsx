@@ -311,6 +311,7 @@ export default function DiscordPage() {
         onSuccess: () => {
             toast.success('Bot ayarı kaydedildi. Bot yeniden başlatılınca geçerli olur.');
             queryClient.invalidateQueries({ queryKey: ['discord-bot-settings'] });
+            queryClient.invalidateQueries({ queryKey: ['discord-guild-roles'] });
         },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
@@ -1148,6 +1149,7 @@ function SyncWhitelistButton() {
 
 function SettingsTab({ botSettings, botSettingsMutation }) {
     const [form, setForm] = useState({
+        default_guild_id: '',
         adminRoleIds: [],
         whitelistRoleIds: [],
         whitelistAddRoleIds: [],
@@ -1158,6 +1160,13 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
         role_log_channel_id: '',
         night_guard_log_channel_id: ''
     });
+
+    // Canlı sunucu listesini çek
+    const { data: liveGuildsData } = useQuery({
+        queryKey: ['discord-live-guilds-settings'],
+        queryFn: () => api.get('/discord/guilds').then(r => r.data),
+    });
+    const liveGuilds = liveGuildsData?.guilds || [];
 
     const syncMutation = useMutation({
         mutationFn: async () => {
@@ -1172,6 +1181,7 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
     useEffect(() => {
         if (botSettings) {
             setForm({
+                default_guild_id: botSettings.default_guild_id || '',
                 adminRoleIds: getArray(botSettings.adminRoleIds),
                 whitelistRoleIds: getArray(botSettings.whitelistRoleIds),
                 whitelistAddRoleIds: getArray(botSettings.whitelistAddRoleIds),
@@ -1201,6 +1211,19 @@ function SettingsTab({ botSettings, botSettingsMutation }) {
                 <Cap style={{ display: 'block', marginBottom: 16 }}>Bot Yetki & Rol Ayarları</Cap>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Varsayılan Discord Sunucusu (Guild)</div>
+                        <select value={form.default_guild_id} onChange={e => handleChange('default_guild_id', e.target.value)} style={inputStyle}>
+                            <option value="">-- Listeden Seçin veya Varsayılan Kalsın --</option>
+                            {liveGuilds.map(g => (
+                                <option key={g.id} value={g.id}>{g.name} ({g.id})</option>
+                            ))}
+                        </select>
+                        <div style={{ fontSize: 11, color: A.faint, marginTop: 4 }}>
+                            Rolle alakalı tüm canlı sorgular (yetkili rolleri, whitelist rolleri vb.) varsayılan olarak bu sunucudan çekilecektir.
+                        </div>
+                    </div>
+
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 500, color: A.text, marginBottom: 4 }}>Tam Yetkili (Admin) Rolleri</div>
                         <MultiRoleInput value={form.adminRoleIds} onChange={v => handleChange('adminRoleIds', v)} savedRoles={botSettings?.savedRoles || []} />

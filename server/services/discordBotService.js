@@ -258,6 +258,9 @@ class DiscordBotService {
                 `).run(dbKey, dbValue);
             }
             
+            // Sıfırla ki birincil guild id değişirse cache güncellensin
+            this._primaryGuildId = null;
+            
             // Force bot to sync immediately if running
             this.forceSyncBot();
         } catch (e) {
@@ -610,6 +613,14 @@ class DiscordBotService {
     /** Botun bulunduğu birincil guild id (cache'li). */
     async getPrimaryGuildId() {
         if (this._primaryGuildId) return this._primaryGuildId;
+        try {
+            const dbObj = getDb();
+            const row = dbObj.prepare("SELECT value FROM app_settings WHERE key = 'discord_bot_default_guild_id'").get();
+            if (row && row.value && row.value !== 'null') {
+                this._primaryGuildId = String(row.value).trim();
+                return this._primaryGuildId;
+            }
+        } catch {}
         try {
             const guilds = await this._discordApiGet('/users/@me/guilds');
             if (Array.isArray(guilds) && guilds.length) {
