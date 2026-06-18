@@ -58,6 +58,7 @@ const SETTING_DEFAULTS = {
     reservedSlots: 0,     // sunucu doluysa VIP'lere ayrılan slot (0 = kapalı)
     joinLeaveEnabled: 1,  // VIP giriş/çıkış duyuruları (0/1)
     reminderDays: 3,      // bitişe bu kadar gün kala oyuncuya Discord DM (0 = kapalı)
+    autoReplace: 1,       // VIP verince aynı oyuncunun diğer aktif VIP'lerini otomatik geri al (upgrade/downgrade) (0/1)
 };
 
 class VipService {
@@ -135,6 +136,15 @@ class VipService {
                 "SELECT * FROM vip_grants WHERE status = 'active' AND LOWER(mc_nick) = ? ORDER BY id DESC LIMIT 1"
             ).get(String(nick).toLowerCase()) || null;
         } catch { return null; }
+    }
+    /** Bir oyuncunun (Discord id veya MC nick) tüm aktif grant'ları — upgrade/downgrade için. */
+    _activeGrantsForPlayer(userId, mcNick) {
+        const clauses = [], params = [];
+        if (userId) { clauses.push('user_id = ?'); params.push(String(userId)); }
+        if (mcNick) { clauses.push('LOWER(mc_nick) = ?'); params.push(String(mcNick).toLowerCase()); }
+        if (!clauses.length) return [];
+        try { return db().prepare(`SELECT * FROM vip_grants WHERE status = 'active' AND (${clauses.join(' OR ')})`).all(...params); }
+        catch { return []; }
     }
 
     // ── Giriş/Çıkış duyuruları + rezerve slot ───────────────────────────────
@@ -266,6 +276,14 @@ class VipService {
         const days = durationDays != null && durationDays !== '' ? Number(durationDays) : pkg.duration_days;
         const expiresAt = days > 0 ? now() + Math.round(days * 86400) : null;
 
+        // Otomatik değiştirme (upgrade/downgrade): aynı oyuncunun diğer aktif VIP'lerini geri al → tek aktif VIP.
+        if (this._settings.autoReplace) {
+            for (const og of this._activeGrantsForPlayer(userId, mcNick)) {
+                if (og.package_id === pkg.id) continue; // aynı paket → dokunma (süre için 'extend' kullanılır)
+                try { await this.revoke(og.id, { by: grantedBy || 'system', reason: `değiştirme → ${pkg.name}` }); } catch { /* ignore */ }
+            }
+        }
+
         const res = db().prepare(`INSERT INTO vip_grants
             (package_id, package_name, user_id, mc_nick, granted_by, granted_at, expires_at, status, note)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`).run(
@@ -361,7 +379,7 @@ class VipService {
         return cands[0] || null;
     }
     _ranksPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbranks', 'ranks.snbt')); }
-    _chunksConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbchunks-server.snbt')); }
+    _chunksConfigPath() { return this._resolveConfigPath(this._serverConfigCandidates('ftbchunks-world.snbt')); }
 
     // ── Kademe perkleri (ranks.snbt — panelden düzenlenir) ────────────────────
     /** 3 kademenin (vip/vip_plus/mvp) güncel perklerini ranks.snbt'den oku. */
@@ -441,7 +459,7 @@ class VipService {
         if (!settings || typeof settings !== 'object') throw new Error('settings gerekli');
         const p = this._chunksConfigPath();
         if (!p) throw new Error('Sunucu yolu çözülemedi (aktif sunucu yok mu?).');
-        if (!fs.existsSync(p)) throw new Error(`ftbchunks-server.snbt bulunamadı: ${p} — sunucuda FTB Chunks kurulu/çalışmış olmalı.`);
+        if (!fs.existsSync(p)) throw new Error(`ftbchunks-world.snbt bulunamadı: ${p} — sunucuda FTB Chunks kurulu/çalışmış olmalı.`);
 
         const raw = fs.readFileSync(p, 'utf-8');
         const next = chunksFile.writeSettings(raw, settings);
@@ -449,17 +467,22 @@ class VipService {
         try { fs.writeFileSync(p + '.vipbak', raw, 'utf-8'); } catch { /* yedek best-effort */ }
         fs.writeFileSync(p, next, 'utf-8');
 
-        // Yazma doğrulaması — geri oku, geçerli sayı verilen alanlar gerçekten yazıldı mı?
+        // Yazma doğrulaması — geri oku, verilen değerler gerçekten yazıldı mı? (anahtar dosyada yoksa atlanır)
         const after = chunksFile.readSettings(fs.readFileSync(p, 'utf-8'));
+        const revert = (field) => { try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ } throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`); };
         for (const [field, def] of Object.entries(chunksFile.MANAGED)) {
+            if (!(field in settings) || after[field] === null) continue;
             const w = settings[field];
-            const ok = def.type === 'int' && w != null && w !== '' && Number.isFinite(Number(w));
-            if (ok && Number(after[field]) !== Number(w)) {
-                try { fs.writeFileSync(p, raw, 'utf-8'); } catch { /* ignore */ }
-                throw new Error(`Yazma doğrulanamadı (${field}) — değişiklik geri alındı.`);
+            if (def.type === 'int') {
+                const ok = w != null && w !== '' && Number.isFinite(Number(w));
+                if (ok && Number(after[field]) !== Number(w)) revert(field);
+            } else if (def.type === 'bool') {
+                if (Boolean(after[field]) !== Boolean(w)) revert(field);
+            } else { // enum
+                if (w && def.values.includes(String(w)) && after[field] !== String(w)) revert(field);
             }
         }
-        return { ok: true, path: p, note: 'Yazıldı. FTB Chunks sunucu ayarları canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
+        return { ok: true, path: p, note: 'Yazıldı. FTB Chunks ayarları canlı yenilenmez — etkili olması için sunucuyu yeniden başlat.' };
     }
 
     async _applyGrant(pkg, { userId, mcNick }) {
@@ -576,8 +599,16 @@ class VipService {
         try {
             const active = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'active'").get().n;
             const pkgs = db().prepare('SELECT COUNT(*) n FROM vip_packages WHERE enabled = 1').get().n;
-            return { activeGrants: active, packages: pkgs };
-        } catch { return { activeGrants: 0, packages: 0 }; }
+            const expiringSoon = db().prepare(
+                "SELECT COUNT(*) n FROM vip_grants WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?"
+            ).get(now(), now() + 7 * 86400).n;
+            const expired = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'expired'").get().n;
+            const revoked = db().prepare("SELECT COUNT(*) n FROM vip_grants WHERE status = 'revoked'").get().n;
+            const byPackage = db().prepare(
+                "SELECT COALESCE(package_name, '(silinmiş)') name, COUNT(*) n FROM vip_grants WHERE status = 'active' GROUP BY package_name ORDER BY n DESC"
+            ).all();
+            return { activeGrants: active, packages: pkgs, expiringSoon, expired, revoked, byPackage };
+        } catch { return { activeGrants: 0, packages: 0, expiringSoon: 0, expired: 0, revoked: 0, byPackage: [] }; }
     }
 }
 

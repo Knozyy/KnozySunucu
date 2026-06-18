@@ -106,7 +106,7 @@ const TIER_PERK_DEFAULTS = {
 // "Perkler" sekmesindeki tek-node komut toggle'ları (sunucu ranksFile.MANAGED bool alanlarıyla eşleşir).
 const PERK_TOGGLES = [
     ['back', '/back'], ['tpr', '/tpr (rastgele ışınla)'], ['rtp', '/rtp (FTB Ess.)'], ['enderchest', '/enderchest'],
-    ['spawn', '/spawn'], ['hat', '/hat'], ['nickname', '/nickname'],
+    ['spawn', '/spawn'], ['hat', '/hat'], ['nickname', '/nickname'], ['near', '/near'], ['waystones', '/waystones (menü)'],
     ['craftingTable', 'Craft masası'], ['anvil', 'Örs'], ['smithing', 'Smithing'], ['stonecutter', 'Taş kesici'], ['trashcan', 'Çöp kutusu'],
 ];
 
@@ -210,6 +210,7 @@ export default function VipPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                     <Card title="Aktif VIP"><Num size={22}>{stats?.activeGrants ?? 0}</Num></Card>
+                    <Card title="Yakında dolan (7g)"><Num size={22} style={{ color: stats?.expiringSoon ? A.warn : undefined }}>{stats?.expiringSoon ?? 0}</Num></Card>
                     <Card title="Paket"><Num size={22}>{stats?.packages ?? 0}</Num></Card>
                 </div>
             </div>
@@ -603,35 +604,59 @@ function ChunksConfigTab() {
     const { data, isLoading } = useQuery({ queryKey: ['vip-chunks-config'], queryFn: () => api.get('/vip/chunks-config').then(r => r.data) });
     const [f, setF] = useState(null);
     const s = data?.settings || {};
-    const cur = f || { maxClaimedChunks: s.maxClaimedChunks ?? '', maxForceLoadedChunks: s.maxForceLoadedChunks ?? '' };
+    const cur = f || {
+        maxClaimedChunks: s.maxClaimedChunks ?? '',
+        maxForceLoadedChunks: s.maxForceLoadedChunks ?? '',
+        disableProtection: !!s.disableProtection,
+        noWilderness: !!s.noWilderness,
+        pvpMode: s.pvpMode || 'always',
+    };
     const set = (k, v) => setF({ ...cur, [k]: v });
     const save = useMutation({
         mutationFn: () => api.put('/vip/chunks-config', { settings: {
             maxClaimedChunks: cur.maxClaimedChunks === '' ? null : Number(cur.maxClaimedChunks),
             maxForceLoadedChunks: cur.maxForceLoadedChunks === '' ? null : Number(cur.maxForceLoadedChunks),
+            disableProtection: !!cur.disableProtection,
+            noWilderness: !!cur.noWilderness,
+            pvpMode: cur.pvpMode || 'always',
         } }).then(r => r.data),
         onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['vip-chunks-config'] }); setF(null); toast.success(d.note || 'Kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
     });
     if (isLoading) return <p style={{ fontSize: 12, color: A.faint }}>Yükleniyor…</p>;
     return (
-        <Card title="Genel FTB Chunks Ayarları (ftbchunks-server.snbt)">
+        <Card title="Genel FTB Chunks Ayarları (ftbchunks-world.snbt)">
             <p style={{ fontSize: 11, color: A.faint, margin: 0 }}>
-                Sunucu geneli <strong>varsayılan</strong> claim limitleri. VIP kademelerindeki <code style={{ fontFamily: A.mono, color: A.dim }}>Claim chunk</code> / <code style={{ fontFamily: A.mono, color: A.dim }}>Force-load chunk</code> değerleri bunları oyuncu bazında <strong>ezer</strong> — VIP limitleri buradaki varsayılanın üstünde olmalı. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
+                Sunucu geneli <strong>varsayılan</strong> claim limitleri ve koruma. VIP kademelerindeki <code style={{ fontFamily: A.mono, color: A.dim }}>Claim chunk</code> / <code style={{ fontFamily: A.mono, color: A.dim }}>Force-load chunk</code> değerleri bu varsayılanları oyuncu bazında <strong>ezer</strong> — VIP limitleri buradakinin üstünde olmalı. Kayıttan önce <code style={{ fontFamily: A.mono, color: A.dim }}>.vipbak</code> yedeği alınır.
             </p>
             <div style={{ marginTop: 8, fontSize: 11, color: A.warn }}>
-                ⚠️ FTB Chunks sunucu ayarları canlı yenilenmez — değişiklik için sunucuyu <strong>yeniden başlat</strong>.
+                ⚠️ FTB Chunks ayarları canlı yenilenmez — değişiklik için sunucuyu <strong>yeniden başlat</strong>. (Dosya <code style={{ fontFamily: A.mono }}>config/</code> altındaysa modpack güncellemesinde üzerine yazılabilir.)
             </div>
             {data && !data.fileFound && (
                 <div style={{ marginTop: 10, padding: 10, background: A.bg, border: `1px solid ${A.warn}`, borderRadius: 4, fontSize: 12, color: A.warn }}>
-                    ftbchunks-server.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Chunks kurulu/çalışmış olmalı.
+                    ftbchunks-world.snbt bulunamadı{data.path ? ` (${data.path})` : ''}. Sunucuda FTB Chunks kurulu/çalışmış olmalı.
                 </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12, maxWidth: 440 }}>
                 <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan claim chunk</Cap>
                     <Input type="number" value={cur.maxClaimedChunks} onChange={e => set('maxClaimedChunks', e.target.value)} placeholder="örn. 500" /></div>
                 <div><Cap style={{ display: 'block', marginBottom: 4 }}>Varsayılan force-load chunk</Cap>
-                    <Input type="number" value={cur.maxForceLoadedChunks} onChange={e => set('maxForceLoadedChunks', e.target.value)} placeholder="örn. 50" /></div>
+                    <Input type="number" value={cur.maxForceLoadedChunks} onChange={e => set('maxForceLoadedChunks', e.target.value)} placeholder="örn. 25" /></div>
+                <div><Cap style={{ display: 'block', marginBottom: 4 }}>PvP modu (claim içinde)</Cap>
+                    <select value={cur.pvpMode} onChange={e => set('pvpMode', e.target.value)} style={selStyle}>
+                        <option value="always">always (her zaman açık)</option>
+                        <option value="never">never (kapalı)</option>
+                        <option value="per_team">per_team (takım karar verir)</option>
+                    </select>
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.disableProtection} onChange={e => set('disableProtection', e.target.checked)} /> Korumayı kapat (disable_protection)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: A.text, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.noWilderness} onChange={e => set('noWilderness', e.target.checked)} /> Sadece claim'de inşa (no_wilderness)
+                </label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                 <button onClick={() => save.mutate()} disabled={save.isPending || !data?.fileFound} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Kaydet'}</button>
@@ -644,7 +669,7 @@ function ChunksConfigTab() {
 function VipSettingsTab({ settings }) {
     const qc = useQueryClient();
     const [f, setF] = useState(null);
-    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1, reminderDays: 3 };
+    const cur = f || settings || { lagExemptPct: 50, reservedSlots: 0, joinLeaveEnabled: 1, reminderDays: 3, autoReplace: 1 };
     const set = (k, v) => setF({ ...cur, [k]: v });
     const save = useMutation({
         mutationFn: () => api.put('/vip/settings', {
@@ -652,6 +677,7 @@ function VipSettingsTab({ settings }) {
             reservedSlots: Number(cur.reservedSlots) || 0,
             joinLeaveEnabled: cur.joinLeaveEnabled ? 1 : 0,
             reminderDays: Number(cur.reminderDays) || 0,
+            autoReplace: cur.autoReplace ? 1 : 0,
         }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['vip-settings'] }); toast.success('Ayarlar kaydedildi'); },
         onError: (e) => toast.error(e.response?.data?.error || 'Kaydedilemedi'),
@@ -690,6 +716,15 @@ function VipSettingsTab({ settings }) {
                 </label>
                 <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
                     Mesaj metinleri paket başına ayarlanır (Paketler → Düzenle → Giriş/Çıkış mesajı). Boş bırakılan paket duyuru yapmaz.
+                </p>
+            </Card>
+            <Card title="Otomatik Upgrade/Downgrade">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cur.autoReplace} onChange={e => set('autoReplace', e.target.checked ? 1 : 0)} />
+                    <span style={{ fontSize: 12 }}>Yeni VIP verince oyuncunun diğer aktif VIP'lerini otomatik geri al</span>
+                </label>
+                <p style={{ fontSize: 11, color: A.faint, margin: '8px 0 0' }}>
+                    Açıkken bir oyuncuya VIP+ verirsen mevcut VIP otomatik geri alınır (tek aktif VIP). Aynı paket tekrar verilirse dokunulmaz — süre için <b style={{ color: A.dim }}>Uzat</b> kullan. Kapalıyken birden fazla VIP üst üste kalabilir.
                 </p>
             </Card>
             <div><button onClick={() => save.mutate()} disabled={save.isPending} style={btnPrimary}>{save.isPending ? 'Kaydediliyor…' : 'Ayarları Kaydet'}</button></div>

@@ -143,6 +143,7 @@ test('writePerks → readPerks round-trip', () => {
         back: true, rtp: true, tpr: true, enderchest: true,
         spawn: true, hat: false, nickname: true,
         craftingTable: true, anvil: false, smithing: true, stonecutter: false, trashcan: true,
+        near: true, waystones: false,
         maxClaimed: 2000, maxForceLoaded: 200,
     };
     const out = rf.writePerks(SAMPLE, 'mvp', perks, META.mvp);

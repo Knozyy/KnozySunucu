@@ -26,6 +26,8 @@ const MANAGED = {
     smithing:       { key: 'command.open.smithing',        type: 'bool' },
     stonecutter:    { key: 'command.open.stonecutter',     type: 'bool' },
     trashcan:       { key: 'command.trashcan',             type: 'bool' },
+    near:           { key: 'command.near',                 type: 'bool' },  // yakındaki oyuncular
+    waystones:      { key: 'command.waystones.gui',        type: 'bool' },  // /waystones menüsü
     maxClaimed:     { key: 'ftbchunks.max_claimed',       type: 'int' },
     maxForceLoaded: { key: 'ftbchunks.max_force_loaded',  type: 'int' },
 };
