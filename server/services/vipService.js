@@ -273,6 +273,7 @@ class VipService {
         const grantId = res.lastInsertRowid;
 
         const applied = await this._applyGrant(pkg, { userId, mcNick });
+        if (applied.mcPending) db().prepare('UPDATE vip_grants SET mc_pending = 1 WHERE id = ?').run(grantId);
         this._log(grantId, 'grant', pkg.name, mcNick, userId, applied.detail);
         return { id: grantId, ...this.getGrant(grantId), applyDetail: applied.detail };
     }
@@ -421,6 +422,7 @@ class VipService {
 
     async _applyGrant(pkg, { userId, mcNick }) {
         const parts = [];
+        let mcPending = false;
         // 1) Discord rolü
         if (pkg.discord_role_id && userId) {
             try {
@@ -429,7 +431,7 @@ class VipService {
                 parts.push(r.ok ? 'rol verildi' : `rol HATA(${r.statusCode || r.error})`);
             } catch (e) { parts.push(`rol HATA: ${e.message}`); }
         }
-        // 2) MC komutları
+        // 2) MC komutları — sunucu kapalıysa beklemeye al (sunucu açılınca _check uygular)
         const cmds = parseCmds(pkg.grant_commands);
         if (cmds.length && mcNick) {
             if (this._mcRunning()) {
@@ -437,9 +439,9 @@ class VipService {
                 let n = 0;
                 for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick, userId, packageName: pkg.name })); n++; } catch { /* ignore */ } }
                 parts.push(`${n}/${cmds.length} MC komutu`);
-            } else parts.push('MC komutları ERTELENDİ (sunucu kapalı)');
+            } else { mcPending = true; parts.push('MC komutları ERTELENDİ (sunucu kapalı) — açılınca uygulanacak'); }
         }
-        return { detail: parts.join(' · ') || 'kayıt oluşturuldu' };
+        return { detail: parts.join(' · ') || 'kayıt oluşturuldu', mcPending };
     }
 
     async _applyRevoke(pkg, { userId, mcNick }) {
@@ -479,6 +481,26 @@ class VipService {
                     const res = await this.revoke(row.id, { by: 'system', reason: 'süre doldu', viaExpiry: true });
                     if (res.deferred) console.warn(`[VIP] grant#${row.id} bitişi ertelendi (sunucu kapalı).`);
                 } catch (e) { console.error(`[VIP] grant#${row.id} bitiş hatası:`, e.message); }
+            }
+
+            // Bekleyen verme: sunucu kapalıyken verilen VIP'lerin grant MC komutlarını sunucu açılınca uygula
+            if (this._mcRunning()) {
+                const pending = db().prepare(
+                    "SELECT * FROM vip_grants WHERE status = 'active' AND mc_pending = 1 AND mc_nick IS NOT NULL"
+                ).all();
+                for (const g of pending) {
+                    try {
+                        const pkg = g.package_id ? this.getPackage(g.package_id) : null;
+                        const cmds = pkg ? parseCmds(pkg.grant_commands) : [];
+                        if (cmds.length) {
+                            const inst = this._mcInstance();
+                            let n = 0;
+                            for (const c of cmds) { try { inst.sendCommand(applyTemplate(c, { mcNick: g.mc_nick, userId: g.user_id, packageName: pkg.name })); n++; } catch { /* ignore */ } }
+                            this._log(g.id, 'grant_apply', g.package_name, g.mc_nick, g.user_id, `${n}/${cmds.length} MC komutu (ertelenen verme uygulandı)`);
+                        }
+                        db().prepare('UPDATE vip_grants SET mc_pending = 0 WHERE id = ?').run(g.id);
+                    } catch (e) { console.error(`[VIP] bekleyen verme hatası grant#${g.id}:`, e.message); }
+                }
             }
 
             // Bitiş hatırlatması: bitişe ≤N gün kalan aktif VIP'lere bir kez Discord DM
