@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
-    // HooDoo panel her zaman koyu — Tailwind dark variant'larını da aktif et
+    // Knozy panel her zaman koyu — Tailwind dark variant'larını da aktif et
     const [isDark, setIsDark] = useState(() => {
         const saved = localStorage.getItem('theme');
         return saved !== 'light'; // varsayılan: dark

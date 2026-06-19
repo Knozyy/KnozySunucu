@@ -4,9 +4,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Dot, Pill, Input } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 // ── Log seviyesi renklendirme ───────────────────────────────────────────
 function logColor(line) {
@@ -683,7 +683,7 @@ function LogArchivePanel() {
                     <div style={{
                         width: 12, height: 12, border: `1.5px solid ${A.border}`,
                         borderTopColor: 'var(--accent)', borderRadius: 99,
-                        animation: 'hoodoo-spin 0.8s linear infinite',
+                        animation: 'knozy-spin 0.8s linear infinite',
                     }}/>
                     Tüm log dosyaları taranıyor...
                 </div>
@@ -737,7 +737,7 @@ function LogArchivePanel() {
                     </span>
                 </div>
             )}
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     );
 }
@@ -767,9 +767,9 @@ function CrashReportsPanel() {
                 <div style={{
                     width: 16, height: 16, border: `2px solid ${A.border}`,
                     borderTopColor: 'var(--accent)', borderRadius: 99,
-                    animation: 'hoodoo-spin 0.8s linear infinite',
+                    animation: 'knozy-spin 0.8s linear infinite',
                 }}/>
-                <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+                <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
             </div>
         );
     }
@@ -1044,9 +1044,9 @@ function MacrosPanel({ mcStatus, sendCommand, serverId }) {
                     <div style={{
                         width: 16, height: 16, border: `2px solid ${A.border}`,
                         borderTopColor: 'var(--accent)', borderRadius: 99,
-                        animation: 'hoodoo-spin 0.8s linear infinite',
+                        animation: 'knozy-spin 0.8s linear infinite',
                     }}/>
-                    <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+                    <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
                 </div>
             ) : macros.length === 0 ? (
                 <div style={{
@@ -1134,7 +1134,7 @@ function MacrosPanel({ mcStatus, sendCommand, serverId }) {
                                     <div style={{
                                         width: 12, height: 12, border: '2px solid rgba(0,0,0,0.3)',
                                         borderTopColor: '#000', borderRadius: 99,
-                                        animation: 'hoodoo-spin 0.8s linear infinite',
+                                        animation: 'knozy-spin 0.8s linear infinite',
                                     }}/>
                                 ) : (
                                     <I.Play size={12}/>
@@ -1153,7 +1153,7 @@ function MacrosPanel({ mcStatus, sendCommand, serverId }) {
                     onSave={handleSave}
                 />
             )}
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     );
 }

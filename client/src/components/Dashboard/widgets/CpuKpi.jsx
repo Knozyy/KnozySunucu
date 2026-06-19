@@ -1,5 +1,5 @@
 // client/src/components/Dashboard/widgets/CpuKpi.jsx
-import { KPI } from '@/hoodoo/primitives';
+import { KPI } from '@/knozy/primitives';
 
 export function CpuKpi({ server, series }) {
     const cpu = server?.processStats?.cpuPercent || 0;

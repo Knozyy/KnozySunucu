@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Pill, Card, Input } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Pill, Card, Input } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
-// ── Modal kabuğu (HooDoo) ────────────────────────────────────────────────────
+// ── Modal kabuğu (Knozy) ────────────────────────────────────────────────────
 function Modal({ title, onClose, children, maxWidth = 520 }) {
     return (
         <div onClick={onClose} style={{

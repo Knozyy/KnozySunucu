@@ -2,8 +2,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hoodoo/tokens';
-import { Card } from '@/hoodoo/primitives';
+import { A } from '@/knozy/tokens';
+import { Card } from '@/knozy/primitives';
 import { WidgetGrid } from '@/components/Dashboard/WidgetGrid';
 import { DEFAULT_LAYOUT } from '@/components/Dashboard/defaultLayout';
 

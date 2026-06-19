@@ -8,7 +8,7 @@
 // path     : rota
 // always   : herkese açık (izinden bağımsız — ör. ana panel)
 // adminOnly: yalnızca admin (kategoriye atanamaz; non-admin asla göremez)
-import { I } from '@/hoodoo/icons';
+import { I } from '@/knozy/icons';
 
 export const PAGES = [
     { key: 'dashboard',   path: '/',           label: 'Dashboard',    emoji: '🏠', icon: I.Dashboard, always: true },

@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnGhost, btnPrimary } from '@/hoodoo/tokens';
-import { Cap, Dot, Pill } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnGhost, btnPrimary } from '@/knozy/tokens';
+import { Cap, Dot, Pill } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 // ── Yardımcılar ──────────────────────────────────────────────────────────────
 
@@ -382,7 +382,7 @@ export default function DiscordPage() {
             padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
             fontFamily: A.sans, color: A.text,
         }}>
-            <style>{`@keyframes hoodoo-spin{to{transform:rotate(360deg)}}`}</style>
+            <style>{`@keyframes knozy-spin{to{transform:rotate(360deg)}}`}</style>
 
             {/* ── Başlık ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
@@ -416,7 +416,7 @@ export default function DiscordPage() {
                             <div style={{
                                 width: 16, height: 16, border: `2px solid ${A.border}`,
                                 borderTopColor: 'var(--accent)', borderRadius: '50%',
-                                animation: 'hoodoo-spin 0.8s linear infinite',
+                                animation: 'knozy-spin 0.8s linear infinite',
                             }}/>
                         ) : (
                             <Dot color={isRunning ? A.ok : A.err} size={10}/>
@@ -487,7 +487,7 @@ export default function DiscordPage() {
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <input type="text" value={statusTextInput}
                                     onChange={e => setStatusTextInput(e.target.value)}
-                                    placeholder="HooDoo FTB Evolution"
+                                    placeholder="Knozy FTB Evolution"
                                     style={{ ...inputStyle, flex: 1, fontFamily: A.sans }}
                                     maxLength={128}/>
                                 <button onClick={() => botSettingsMutation.mutate({ status_text: statusTextInput.trim() || null })}
@@ -707,7 +707,7 @@ const DEFAULT_DONATION_CONFIG = {
     enabled: false,
     donateListUrl: '',
     publicDonateUrl: '',
-    codePrefix: 'HOODOO',
+    codePrefix: 'KNOZY',
     claimTtlHours: 72,
     minNotifyAmount: 50,
     incentivePercent: 0,
@@ -890,7 +890,7 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
                 claimTtlHours: Number(form.claimTtlHours) || 72,
                 minNotifyAmount: Number(form.minNotifyAmount) || 0,
                 incentivePercent: Number(form.incentivePercent) || 0,
-                codePrefix: (form.codePrefix || 'HOODOO').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'HOODOO',
+                codePrefix: (form.codePrefix || 'KNOZY').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'KNOZY',
                 packages: form.packages.map(p => ({
                     ...p,
                     price: Number(p.price) || 0,
@@ -946,8 +946,8 @@ function DonationsTab({ botSettings, botSettingsMutation }) {
                         <div>
                             {fieldLabel('Marka Kelimesi')}
                             <input type="text" value={form.codePrefix} onChange={e => set('codePrefix', e.target.value)}
-                                placeholder="HOODOO" style={inputStyle}/>
-                            {fieldHint('Kod bu kelime + doğal bir takıdan oluşur (örn. "hoodoo kavemi") — satın alma kodu gibi durmaz.')}
+                                placeholder="KNOZY" style={inputStyle}/>
+                            {fieldHint('Kod bu kelime + doğal bir takıdan oluşur (örn. "knozy kavemi") — satın alma kodu gibi durmaz.')}
                         </div>
                         <div>
                             {fieldLabel('Kod Geçerliliği (saat)')}

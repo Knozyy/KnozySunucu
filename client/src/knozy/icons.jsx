@@ -1,4 +1,4 @@
-// HooDoo icon seti — inline SVG, stroke based, 18px default
+// Knozy icon seti — inline SVG, stroke based, 18px default
 
 const baseProps = (size, sw) => ({
     width: size, height: size, viewBox: '0 0 24 24',

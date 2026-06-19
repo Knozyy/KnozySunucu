@@ -2,9 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Dot } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Dot } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 function HashIcon({ size = 14 }) {
     return (
@@ -35,7 +35,7 @@ function Spinner({ size = 16 }) {
             border: `2px solid ${A.border}`,
             borderTopColor: 'var(--accent)',
             borderRadius: '50%',
-            animation: 'hoodoo-spin 0.8s linear infinite',
+            animation: 'knozy-spin 0.8s linear infinite',
         }}/>
     );
 }
@@ -130,7 +130,7 @@ export default function WorldsPage() {
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 24,
             fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
 
             {/* ── Başlık ── */}
             <div>

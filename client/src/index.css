@@ -2,20 +2,20 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── HooDoo design tokens ───────────────────────────────────────────── */
+/* ─── Knozy design tokens ───────────────────────────────────────────── */
 :root {
   --accent: #a78bfa;
   --accent-rgb: 167, 139, 250;
-  --hoodoo-bg: #0a0b0d;
-  --hoodoo-panel: #101216;
-  --hoodoo-border: #1f2228;
-  --hoodoo-text: #e8eaed;
-  --hoodoo-dim: #9aa0a6;
-  --hoodoo-faint: #5f6368;
+  --knozy-bg: #0a0b0d;
+  --knozy-panel: #101216;
+  --knozy-border: #1f2228;
+  --knozy-text: #e8eaed;
+  --knozy-dim: #9aa0a6;
+  --knozy-faint: #5f6368;
 }
 
-/* HooDoo sidebar nav hover */
-.hoodoo-navitem:hover {
+/* Knozy sidebar nav hover */
+.knozy-navitem:hover {
   background: rgba(167,139,250,0.04) !important;
   color: #fff !important;
 }

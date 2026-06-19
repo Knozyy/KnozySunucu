@@ -93,12 +93,12 @@ Giriş logundan IP yakalama:
 
 ### 2.6 `client/src/pages/PlayersPage.jsx` (DEĞİŞİKLİK)
 `PlayerProfileModal` sekmeleri:
-- **Genel Bakış**: mevcut + **oynama süresi AreaChart** (`playtimeDaily`, `@/hoodoo/charts`).
+- **Genel Bakış**: mevcut + **oynama süresi AreaChart** (`playtimeDaily`, `@/knozy/charts`).
 - **Envanter** (YENİ): gerçek ızgara düzeni
   - Üst durum çubuğu: can ❤ / açlık 🍗 / XP / boyut / konum.
   - Hotbar (9) + ana envanter (27) + zırh (4 dikey) + offhand (1) + **Ender Chest** (27).
   - Her slot: `<img src="/api/players/item-texture/<id>">` + adet rozeti (>1) + büyü parıltısı (components.enchantments varsa) + hover tooltip (ad, büyüler, dayanıklılık — `max_damage` varsa %, yoksa ham değer, lore).
-  - Boş slotlar HooDoo tarzı soluk hücre.
+  - Boş slotlar Knozy tarzı soluk hücre.
   - Doku 404 → item adı kısaltması fallback (Faz 1'de tüm hücreler isim; Faz 2'de ikon).
 - **Yönetim** (YENİ — Notlar'ı içine alır): ban/unban/ip-ban geçmişi listesi + alt-hesap listesi (tıkla→o profile geç) + not ekle/sil.
 

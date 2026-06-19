@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Input } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Input } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 function formatCountdown(ms) {
     if (ms <= 0) return 'Çalışıyor / Bekliyor...';
@@ -236,7 +236,7 @@ export default function SchedulerPage() {
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
             fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
 
             {/* ── Başlık ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>

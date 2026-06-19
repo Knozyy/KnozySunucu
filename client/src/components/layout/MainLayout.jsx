@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
-import { A, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Dot, NavItem, TickStat } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnGhost } from '@/knozy/tokens';
+import { Cap, Dot, NavItem, TickStat } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 import { PAGES } from '@/config/pages';
 
 // ── Panel yeniden başlama banner'ı ──────────────────────────────────────
@@ -55,7 +55,7 @@ function usePrimaryServer() {
         refetchInterval: 3000,
     });
     const servers = data?.servers || [];
-    return servers[0] || { id: null, name: 'hoodoo-panel', status: 'stopped', playerCount: 0,
+    return servers[0] || { id: null, name: 'knozy-panel', status: 'stopped', playerCount: 0,
         processStats: { cpuPercent: 0, memoryMB: 0 }, tps: null, maxRamGB: 4 };
 }
 
@@ -135,7 +135,7 @@ export default function MainLayout() {
         }}>
             <style>{`
                 @media (max-width: 768px) {
-                    .hoodoo-sidebar {
+                    .knozy-sidebar {
                         position: fixed !important;
                         top: 0 !important;
                         left: 0 !important;
@@ -145,31 +145,31 @@ export default function MainLayout() {
                         transition: transform 200ms ease !important;
                         width: 220px !important;
                     }
-                    .hoodoo-sidebar.open {
+                    .knozy-sidebar.open {
                         transform: translateX(0) !important;
                     }
-                    .hoodoo-sidebar-overlay {
+                    .knozy-sidebar-overlay {
                         display: block !important;
                     }
-                    .hoodoo-main {
+                    .knozy-main {
                         margin-left: 0 !important;
                     }
-                    .hoodoo-topbar-metrics {
+                    .knozy-topbar-metrics {
                         display: none !important;
                     }
-                    .hoodoo-topbar-sep {
+                    .knozy-topbar-sep {
                         display: none !important;
                     }
-                    .hoodoo-hamburger {
+                    .knozy-hamburger {
                         display: flex !important;
                     }
-                    .hoodoo-topbar-clock {
+                    .knozy-topbar-clock {
                         display: none !important;
                     }
                 }
                 @media (min-width: 769px) {
-                    .hoodoo-hamburger { display: none !important; }
-                    .hoodoo-sidebar-overlay { display: none !important; }
+                    .knozy-hamburger { display: none !important; }
+                    .knozy-sidebar-overlay { display: none !important; }
                 }
             `}</style>
 
@@ -193,14 +193,14 @@ export default function MainLayout() {
             )}
 
             {/* ── Mobile overlay ── */}
-            <div className="hoodoo-sidebar-overlay" onClick={() => setMobileOpen(false)} style={{
+            <div className="knozy-sidebar-overlay" onClick={() => setMobileOpen(false)} style={{
                 display: 'none',
                 position: 'fixed', inset: 0, zIndex: 39,
                 background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)',
             }}/>
 
             {/* ── Sidebar ── */}
-            <aside className={`hoodoo-sidebar${mobileOpen ? ' open' : ''}`} style={{
+            <aside className={`knozy-sidebar${mobileOpen ? ' open' : ''}`} style={{
                 width: collapsed ? 56 : 208,
                 background: A.bgDeeper,
                 borderRight: `1px solid ${A.border}`,
@@ -229,7 +229,7 @@ export default function MainLayout() {
                     </div>
                     {!collapsed && (
                         <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', color: A.text }}>HooDoo</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', color: A.text }}>Knozy</div>
                             <div style={{ fontSize: 9, color: A.faint, fontFamily: A.mono, letterSpacing: '0.08em' }}>SERVER PANEL</div>
                         </div>
                     )}
@@ -309,7 +309,7 @@ export default function MainLayout() {
             </aside>
 
             {/* ── Main column ── */}
-            <div className="hoodoo-main" style={{
+            <div className="knozy-main" style={{
                 flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
                 paddingTop: showBanner ? 38 : 0,
             }}>
@@ -325,7 +325,7 @@ export default function MainLayout() {
                     zIndex: 10,
                 }}>
                     {/* Hamburger (mobile only) */}
-                    <button className="hoodoo-hamburger" onClick={() => setMobileOpen(o => !o)} style={{
+                    <button className="knozy-hamburger" onClick={() => setMobileOpen(o => !o)} style={{
                         background: 'none', border: 'none', cursor: 'pointer',
                         color: A.faint, padding: 4, display: 'flex', alignItems: 'center',
                     }}>
@@ -340,21 +340,21 @@ export default function MainLayout() {
                         <Cap>{currentLabel}</Cap>
                         <span style={{ color: A.faintest }}>/</span>
                         <span style={{ fontSize: 13, color: A.text, fontFamily: A.mono }}>
-                            {server.name || 'hoodoo-panel'}
+                            {server.name || 'knozy-panel'}
                         </span>
                     </div>
 
                     <div style={{ flex: 1 }}/>
 
                     {/* Live metrics — desktop only */}
-                    <div className="hoodoo-topbar-metrics" style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                    <div className="knozy-topbar-metrics" style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
                         <TickStat label="CPU" value={`${cpu.toFixed(0)}%`} ok={cpu < 70}/>
                         <TickStat label="RAM" value={`${ramPct.toFixed(0)}%`} ok={ramPct < 80}/>
                         <TickStat label="TPS" value={tps != null ? tps.toFixed(2) : '—'} ok={tps == null || tps >= 19}/>
                         <TickStat label="PL"  value={`${playerCount}/${maxPlayers}`} ok/>
                     </div>
 
-                    <div className="hoodoo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
+                    <div className="knozy-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 
                     {/* Sunucu kontrol butonları */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -401,9 +401,9 @@ export default function MainLayout() {
                         </button>
                     </div>
 
-                    <div className="hoodoo-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
+                    <div className="knozy-topbar-sep" style={{ width: 1, height: 24, background: A.border }}/>
 
-                    <div className="hoodoo-topbar-clock" style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
+                    <div className="knozy-topbar-clock" style={{ fontFamily: A.mono, fontSize: 11, color: A.faint }}>
                         {clock.toTimeString().slice(0, 8)}
                     </div>
                 </div>

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Num, Pill, Card, Input } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Num, Pill, Card, Input } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 const selStyle = { background: A.bg, border: `1px solid ${A.border}`, color: A.text, fontSize: 12, padding: '7px 10px', borderRadius: 3, width: '100%', outline: 'none' };
 const EMPTY_PKG = { name: '', color: '#f1c40f', discord_role_id: '', discord_guild_id: '', duration_days: 30, grant_commands: '', revoke_commands: '', join_message: '', leave_message: '', enabled: true };
@@ -213,7 +213,7 @@ export default function VipPage() {
 
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
             
             {/* Başlık */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -223,7 +223,7 @@ export default function VipPage() {
                     <p style={{ fontSize: 12, color: A.dim, margin: 0 }}>Çoklu paket · Discord rolü + Minecraft komutları · süreli, otomatik bitiş.</p>
                     <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                         <button onClick={() => syncVips.mutate()} disabled={syncVips.isPending} style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 11 }}>
-                            <I.Restart size={12} style={{ animation: syncVips.isPending ? 'hoodoo-spin 0.8s linear infinite' : 'none' }} /> {syncVips.isPending ? 'Senkronize Ediliyor...' : 'Discord Rollerinden Senkronize Et'}
+                            <I.Restart size={12} style={{ animation: syncVips.isPending ? 'knozy-spin 0.8s linear infinite' : 'none' }} /> {syncVips.isPending ? 'Senkronize Ediliyor...' : 'Discord Rollerinden Senkronize Et'}
                         </button>
                     </div>
                 </div>

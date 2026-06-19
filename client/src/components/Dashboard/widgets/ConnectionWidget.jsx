@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A } from '@/hoodoo/tokens';
-import { Card, Cap } from '@/hoodoo/primitives';
+import { A } from '@/knozy/tokens';
+import { Card, Cap } from '@/knozy/primitives';
 
 function Row({ label, value, valueColor, copy, mono = true }) {
     return (

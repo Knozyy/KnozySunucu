@@ -4,7 +4,7 @@
 
 **Hedef:** Mevcut `PlayerProfileModal`'ı tam "360 profil"e genişletmek — oynama grafiği, ban/not geçmişi, envanter+ender chest görüntüleyici (modlu dahil gerçek dokular), alt-hesap (aynı IP) tespiti.
 
-**Mimari:** Backend pure-logic modülleri (`node:test` ile TDD) + ince IO sarmalayıcıları (smoke). Doku pipeline lazy (talep-anında). Frontend mevcut HooDoo modalına yeni sekmeler. 2 faz: Faz 1 = dokusuz 360 çekirdek (tek başına deploy edilebilir), Faz 2 = gerçek doku ikonları.
+**Mimari:** Backend pure-logic modülleri (`node:test` ile TDD) + ince IO sarmalayıcıları (smoke). Doku pipeline lazy (talep-anında). Frontend mevcut Knozy modalına yeni sekmeler. 2 faz: Faz 1 = dokusuz 360 çekirdek (tek başına deploy edilebilir), Faz 2 = gerçek doku ikonları.
 
 **Tech Stack:** Node 25 (yerleşik `fetch`/`zlib`/`node:test`), Express 5, better-sqlite3, React 18 + Vite, TanStack Query, `prismarine-nbt`, `adm-zip`. Görsel kütüphane yok (düz-yüz → PNG doğrudan servis).
 
@@ -593,9 +593,9 @@ git push origin main
 
 - [ ] **Step 1: Chart import'unu doğrula/ekle**
 
-`PlayersPage.jsx` import'larında `@/hoodoo/charts`'tan `AreaChart` import edildiğinden emin ol; yoksa ekle:
+`PlayersPage.jsx` import'larında `@/knozy/charts`'tan `AreaChart` import edildiğinden emin ol; yoksa ekle:
 ```js
-import { AreaChart } from '@/hoodoo/charts';
+import { AreaChart } from '@/knozy/charts';
 ```
 
 - [ ] **Step 2: Sekme listesine Envanter + Yönetim ekle**

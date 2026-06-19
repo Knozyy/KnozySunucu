@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hoodoo/tokens';
-import { Cap, Pill, Card, Num } from '@/hoodoo/primitives';
-import { AreaChart } from '@/hoodoo/charts';
-import { I } from '@/hoodoo/icons';
+import { A } from '@/knozy/tokens';
+import { Cap, Pill, Card, Num } from '@/knozy/primitives';
+import { AreaChart } from '@/knozy/charts';
+import { I } from '@/knozy/icons';
 
 async function fetchPerformance() {
     const { data } = await api.get('/system/performance');

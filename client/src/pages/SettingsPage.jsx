@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Dot, Pill, Input } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Dot, Pill, Input } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
 import { useAuth } from '@/context/AuthContext';
 import { ASSIGNABLE, PERMISSIONS, PAGE_BY_KEY } from '@/config/pages';
@@ -22,15 +22,15 @@ function Spinner({ size = 14 }) {
             <div style={{
                 width: size, height: size,
                 border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
-                borderRadius: 99, animation: 'hoodoo-spin 0.8s linear infinite',
+                borderRadius: 99, animation: 'knozy-spin 0.8s linear infinite',
             }}/>
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
         </>
     );
 }
 
-// ── HooDoo Modal ───────────────────────────────────────────────────────────
-function HooDooModal({ children, onClose, maxWidth = 520 }) {
+// ── Knozy Modal ───────────────────────────────────────────────────────────
+function KnozyModal({ children, onClose, maxWidth = 520 }) {
     return (
         <div style={{
             position: 'fixed', inset: 0, zIndex: 60,
@@ -49,7 +49,7 @@ function HooDooModal({ children, onClose, maxWidth = 520 }) {
     );
 }
 
-function HooDooModalHeader({ title, onClose }) {
+function KnozyModalHeader({ title, onClose }) {
     return (
         <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -63,7 +63,7 @@ function HooDooModalHeader({ title, onClose }) {
     );
 }
 
-// ── HooDoo table ───────────────────────────────────────────────────────────
+// ── Knozy table ───────────────────────────────────────────────────────────
 const tblStyle = {
     width: '100%', borderCollapse: 'collapse',
     fontFamily: A.sans, fontSize: 12,
@@ -783,8 +783,8 @@ function PanelUsersPanel() {
             </div>
 
             {modal && (
-                <HooDooModal onClose={() => setModal(false)} maxWidth={460}>
-                    <HooDooModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
+                <KnozyModal onClose={() => setModal(false)} maxWidth={460}>
+                    <KnozyModalHeader title="Yeni Kullanıcı Ekle" onClose={() => setModal(false)}/>
                     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0, overflowY: 'auto' }}>
                         <div>
                             <Cap style={{ display: 'block', marginBottom: 6 }}>Kullanıcı Adı</Cap>
@@ -837,7 +837,7 @@ function PanelUsersPanel() {
                             OLUŞTUR
                         </button>
                     </div>
-                </HooDooModal>
+                </KnozyModal>
             )}
         </div>
     );
@@ -989,8 +989,8 @@ function CategoryModal({ initial, onClose, onSaved }) {
     };
 
     return (
-        <HooDooModal onClose={onClose} maxWidth={520}>
-            <HooDooModalHeader title={initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'} onClose={onClose}/>
+        <KnozyModal onClose={onClose} maxWidth={520}>
+            <KnozyModalHeader title={initial ? 'Kategoriyi Düzenle' : 'Yeni Kategori Oluştur'} onClose={onClose}/>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                     <Cap style={{ display: 'block', marginBottom: 6 }}>Kategori Adı</Cap>
@@ -1062,7 +1062,7 @@ function CategoryModal({ initial, onClose, onSaved }) {
                     {initial ? 'GÜNCELLE' : 'OLUŞTUR'}
                 </button>
             </div>
-        </HooDooModal>
+        </KnozyModal>
     );
 }
 

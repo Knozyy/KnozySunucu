@@ -1,7 +1,7 @@
 // client/src/components/Dashboard/widgets/MsptKpi.jsx
 import { useState, useEffect } from 'react';
-import { KPI } from '@/hoodoo/primitives';
-import { A } from '@/hoodoo/tokens';
+import { KPI } from '@/knozy/primitives';
+import { A } from '@/knozy/tokens';
 
 export function MsptKpi({ server }) {
     const mspt = server?.mspt ?? null;

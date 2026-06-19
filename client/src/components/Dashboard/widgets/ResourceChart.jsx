@@ -1,9 +1,9 @@
 // client/src/components/Dashboard/widgets/ResourceChart.jsx
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { A } from '@/hoodoo/tokens';
-import { Card, Cap, LegendDot } from '@/hoodoo/primitives';
-import { DualLine, avg, max } from '@/hoodoo/charts';
+import { A } from '@/knozy/tokens';
+import { Card, Cap, LegendDot } from '@/knozy/primitives';
+import { DualLine, avg, max } from '@/knozy/charts';
 
 function fmtMbps(bytesPerSec) {
     if (!bytesPerSec || bytesPerSec < 0) return '0 Mb/s';

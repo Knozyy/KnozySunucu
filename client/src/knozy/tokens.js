@@ -1,4 +1,4 @@
-// HooDoo design tokens — koyu kömür gri, mor aksan, yüksek yoğunluk
+// Knozy design tokens — koyu kömür gri, mor aksan, yüksek yoğunluk
 // Variant A "Console" palette
 
 export const A = {

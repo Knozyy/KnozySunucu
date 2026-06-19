@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap, Num, Pill, Card, KPI, Input, Toggle } from '@/hoodoo/primitives';
-import { AreaChart, avg, max as arrMax } from '@/hoodoo/charts';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap, Num, Pill, Card, KPI, Input, Toggle } from '@/knozy/primitives';
+import { AreaChart, avg, max as arrMax } from '@/knozy/charts';
+import { I } from '@/knozy/icons';
 
 const LEVELS = {
     unknown:  { color: '#5f6368', label: 'VERİ YOK' },
@@ -1012,7 +1012,7 @@ function LeverModal({ lever, onClose, onSave, onBulk, saving }) {
     );
 }
 
-const selStyle = { background: 'var(--hoodoo-bg, #0a0b0d)', border: '1px solid #1f2228', color: '#e8eaed', fontSize: 12, padding: '7px 10px', borderRadius: 3, width: '100%', outline: 'none' };
+const selStyle = { background: 'var(--knozy-bg, #0a0b0d)', border: '1px solid #1f2228', color: '#e8eaed', fontSize: 12, padding: '7px 10px', borderRadius: 3, width: '100%', outline: 'none' };
 function Field({ label, span, children }) {
     return <div style={{ gridColumn: span ? '1 / -1' : 'auto' }}><Cap style={{ display: 'block', marginBottom: 4 }}>{label}</Cap>{children}</div>;
 }

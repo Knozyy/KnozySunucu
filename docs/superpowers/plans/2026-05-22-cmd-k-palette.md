@@ -6,7 +6,7 @@
 
 **Architecture:** React Portal ile `document.body`'e bağlı modal overlay. `App.jsx` seviyesinde render edilir, global `keydown` listener ile tetiklenir. Fuse.js ile fuzzy search, 300ms debounce ile canlı oyuncu araması.
 
-**Tech Stack:** React 19, react-router-dom v7, fuse.js, HooDoo design system (`A` tokens, `I` icons), axios (`api.js`)
+**Tech Stack:** React 19, react-router-dom v7, fuse.js, Knozy design system (`A` tokens, `I` icons), axios (`api.js`)
 
 ---
 
@@ -196,9 +196,9 @@ git commit -m "feat(cmd-k): useCommandPalette hook eklendi"
 
 ```jsx
 // client/src/components/CommandPalette/CommandItem.jsx
-import { I } from '@/hoodoo/icons';
-import { A } from '@/hoodoo/tokens';
-import { Cap } from '@/hoodoo/primitives';
+import { I } from '@/knozy/icons';
+import { A } from '@/knozy/tokens';
+import { Cap } from '@/knozy/primitives';
 
 export function CommandItem({ item, selected, onSelect, onMouseEnter }) {
     const Icon = I[item.icon];
@@ -276,8 +276,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import api from '@/services/api';
-import { A } from '@/hoodoo/tokens';
-import { I } from '@/hoodoo/icons';
+import { A } from '@/knozy/tokens';
+import { I } from '@/knozy/icons';
 import { CommandItem } from './CommandItem';
 import { PAGES, ACTIONS, COMMON_FILES } from './commandRegistry';
 
@@ -403,7 +403,7 @@ export function CommandPalette({ open, onClose, query, setQuery, selectedIndex, 
             }}
             onClick={onClose}
         >
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
 
             <div
                 onClick={e => e.stopPropagation()}
@@ -436,7 +436,7 @@ export function CommandPalette({ open, onClose, query, setQuery, selectedIndex, 
                         <div style={{
                             width: 13, height: 13, flexShrink: 0,
                             border: `2px solid ${A.border}`, borderTopColor: 'var(--accent)',
-                            borderRadius: '50%', animation: 'hoodoo-spin 0.8s linear infinite',
+                            borderRadius: '50%', animation: 'knozy-spin 0.8s linear infinite',
                         }} />
                     )}
                     <kbd style={{

@@ -3,9 +3,9 @@ import api from '@/services/api';
 import { formatBytes, formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/context/I18nContext';
-import { A, btnPrimary, btnGhost } from '@/hoodoo/tokens';
-import { Cap } from '@/hoodoo/primitives';
-import { I } from '@/hoodoo/icons';
+import { A, btnPrimary, btnGhost } from '@/knozy/tokens';
+import { Cap } from '@/knozy/primitives';
+import { I } from '@/knozy/icons';
 
 function RefreshIcon({ size = 14 }) {
     return (
@@ -25,7 +25,7 @@ function Spinner({ size = 16 }) {
             border: `2px solid rgba(255,255,255,0.2)`,
             borderTopColor: '#fff',
             borderRadius: '50%',
-            animation: 'hoodoo-spin 0.8s linear infinite',
+            animation: 'knozy-spin 0.8s linear infinite',
         }}/>
     );
 }
@@ -81,7 +81,7 @@ export default function BackupPage() {
     return (
         <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20,
             fontFamily: A.sans, color: A.text }}>
-            <style>{`@keyframes hoodoo-spin { to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes knozy-spin { to { transform: rotate(360deg); } }`}</style>
 
             {/* ── Başlık ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
